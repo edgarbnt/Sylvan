@@ -1,0 +1,28 @@
+# Environnements / venv
+.venv/
+env_pytorch_3.12/
+
+# Caches Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Données lourdes (régénérables) : checkpoints, replay buffers, rapports
+data/
+godot/data/
+
+# Binaire Godot + archive (téléchargeables, ~200 Mo)
+tools/godot/
+
+# Checkpoints PyTorch (binaires lourds, régénérables / sauvegardés à part) — incl. _archive/
+*.pt
+
+# Cache Godot (régénéré automatiquement)
+godot/.godot/
+
+# Logs
+*.log
+
+# Config Claude Code locale/personnelle + reliquats
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

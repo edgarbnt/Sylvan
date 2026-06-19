@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sylvan"
+version = "0.1.0"
+description = "Phase 1 walking skeleton for the Sylvan embodied AGI project"
+readme = {text = "Sylvan Phase 1 and 2 embodied AGI prototype.", content-type = "text/plain"}
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.21",
+  # torch est fourni par l'image Docker ROCm (version compilée pour AMD).
+  # Ne pas l'ajouter ici pour éviter de télécharger la version CUDA depuis PyPI.
+  "onnx>=1.15.0",
+]
+
+[project.scripts]
+run-sylvan = "scripts.run_sylvan:main"
+export-onnx = "scripts.export_onnx:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sylvan*", "scripts*"]
+

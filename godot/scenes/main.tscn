@@ -1,0 +1,10 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/world/world_v0.tscn" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/agent/sylvan_v0.tscn" id="2"]
+[ext_resource type="Script" path="res://scripts/main.gd" id="3"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("3")
+world_scene = ExtResource("1")
+agent_scene = ExtResource("2")

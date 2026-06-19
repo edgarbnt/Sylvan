@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: sylvan
+Version: 0.1.0
+Summary: Phase 1 walking skeleton for the Sylvan embodied AGI project
+Requires-Python: >=3.10
+Description-Content-Type: text/plain
+Requires-Dist: numpy>=1.26
+Requires-Dist: torch>=2.2
+Requires-Dist: onnx>=1.15.0
+
+Sylvan Phase 1 and 2 embodied AGI prototype.
