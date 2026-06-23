@@ -65,7 +65,12 @@ que le latent ne porte pas DÉJÀ cette perception ? » — si oui, le forçage 
 - **Dims** : proprio=**132**, action=**18**, obs policy=**144** (132+vision12), obs WM=**145** (132+radar12+énergie1).
 - Ne JAMAIS changer ces dims sans synchroniser `constants.py`, `observation_builder.gd`, `sylvan_agent.gd`, `symmetry.py`.
 - **Checkpoints vivants** : base motrice `data/checkpoints/hexapod_v2/policy_best.pt` ;
-  WM `data/checkpoints/wm_command_hex_v2/wm_best.pt`.
+  **FORAGER VIVANT (promu 2026-06-23) = SLOT-PLANNER** : WM `data/checkpoints/wm_rich_fidele_sym/wm_best.pt` (rétine, clé
+  de voûte) + perception apprise `data/checkpoints/retina_head/head_best.pt` (zéro oracle) → `bash run_forage_retina.sh`.
+  Engage l'arrière (S1 14/16 > oracle 10/16), survie foraging méd 1045 > oracle 610. NB **PAS « full-latent »** : c'est
+  perception apprise + slot = coordonnée explicite apprise transportée par la displacement-head (le pur-latent-valeur
+  `plan_latent` échouait, perdait l'objet). Secours = oracle `wm_command_hex_v2` + `run_forage_hex.sh`. Design/preuves :
+  `docs/design_wm_factorise.md`, gate `diag_nav_ab_slot.sh`.
 - **Régime PROPRE de l'hexapode** (TOUJOURS le servir/collecter ainsi, sinon il dérive) :
   `SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5`.
   Plage vx propre ~0.5-0.75 (en dessous il dérive). Tourne ~25-50°/s (le « mur 15°/s » est cassé).

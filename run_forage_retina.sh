@@ -4,9 +4,12 @@
 # couleur bruts → tête → position). Test CHEAP (zéro retrain) du BUT (manger) avant l'étage 2 (retrain WM).
 # Compare à run_forage_hex.sh (même config, oracle). Usage: bash run_forage_retina.sh [eat_radius=1.0] [horizon=80] [episodes=12] [head_ckpt]
 set +e
-ER=${1:-1.0}; HZ=${2:-80}; NEP=${3:-12}
+ER=${1:-1.0}; HZ=${2:-160}; NEP=${3:-12}
 HEAD=${4:-data/checkpoints/retina_head/head_best.pt}
-WM=${WM_CKPT:-data/checkpoints/wm_command_hex_v2/wm_best.pt}  # WM_CKPT=.../wm_command_hex_retina_v1/wm_best.pt pour le WM-rétine (étage 2)
+# FORAGER VIVANT PROMU (2026-06-23) = SLOT-PLANNER : WM-rétine clé de voûte wm_rich_fidele_sym + retina_head →
+# perception apprise (slot, coord explicite) transportée par la displacement-head. Engage l'arrière (S1 14/16 >
+# oracle 10/16), survie foraging méd 1045 > oracle 610. (override WM_CKPT=... pour un autre WM.)
+WM=${WM_CKPT:-data/checkpoints/wm_rich_fidele_sym/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 echo "RÉTINE head=$HEAD WM=$WM eat_radius=$ER horizon=$HZ episodes=$NEP"
@@ -30,6 +33,6 @@ SYLVAN_RUN_DIR=data/replay_buffer/forage_retina \
 ./tools/godot/godot --path godot --headless > /tmp/forage_retina.log 2>&1
 kill -9 $SRV 2>/dev/null
 echo "=== survie par épisode (dernier Step de chaque épisode) ==="
-grep -a "\[Godot\] Episode" /tmp/forage_retina.log | awk '{for(i=1;i<=NF;i++){if($i=="Episode")e=$(i+1);if($i=="Step")s=$(i+1)}; key=e; last[key]=s} END{for(k in last) print "ep"k" steps="last[k]}' | sort -t= -k2 -n
+grep -a "\[Godot\] Episode" /tmp/forage_retina.log | awk '{for(i=1;i<=NF;i++){if($i=="Episode")e=$(i+1);if($i=="Step")s=$(i+1)}; key=e; last[key]=s} END{for(k in last) print "ep"k" steps="last[k]}' | sort -t'=' -k2 -n
 echo "=== planner errors? ==="; grep -a -iE "error|traceback" /tmp/planner_retina.log | head
 echo "done -> /tmp/forage_retina.log + /tmp/planner_retina.log"
