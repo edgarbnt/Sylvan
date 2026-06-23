@@ -43,6 +43,24 @@ Règles :
 4. **Si le vrai fix est cher/hors-scope, le DIRE explicitement** (« corriger ça = retrain moteur, hors scope »),
    ne pas le déguiser en réglage anodin. Le owner tranche en connaissance de cause.
 
+## ⭐ PRINCIPE DE TRAVAIL N°3 — SÉPARER LE SUBSTRAT DES PULSIONS (ne pas câbler une tâche dans le WM)
+**Le but est une ARCHITECTURE GÉNÉRALE (entité intelligente), PAS faire passer la ressource du moment.** Prendre
+du recul sur la bouffe : si l'entité galère sur la bouffe à cause de l'archi, elle galèrera PARTOUT. Ne JAMAIS
+changer l'archi juste pour qu'« une ressource passe ». Couches à NE PAS confondre :
+- **WM = SUBSTRAT LENT** = perception + dynamique, GÉNÉRAL, entraîné RAREMENT (et SEULEMENT si NOUVELLE
+  perception/un nouveau sens). Son latent doit être RICHE + à imagination FIDÈLE → il porte TOUTE la perception
+  (rouge=bouffe, bleu=eau, obstacles…) sans rien de spécifique-ressource.
+- **TÊTES de VALEUR = COUCHE RAPIDE** = une par pulsion, au-dessus du latent, ré-entraînées la nuit (cycle de vie)
+  sur l'expérience vécue. Ajouter une pulsion dont la perception est déjà dans le latent = **juste une tête, WM INTACT**.
+- **DRIVE** (avoir faim/soif) = propriété du CORPS, définie une fois à la conception (comme l'évolution câble les
+  pulsions) ; le LIEN « perception→soulage le drive » s'APPREND (la nuit, idéalement auto-supervisé sur le drive vécu).
+
+🚨 **SIGNAL D'ALERTE = RACCOURCI INTERDIT** : si un fix exige de **ré-entraîner le WM pour UNE pulsion précise**
+(ex. `--w-food` qui force la bouffe DANS le latent), c'est le MAUVAIS ÉTAGE → ça fabrique une archi qui se refond à
+chaque besoin (axée-ressource), exactement la fausse solution du §2. Le bon réflexe : enrichir le WM **une fois**
+(latent riche+fidèle), puis chaque pulsion = une tête. Avant tout `--w-<ressource>` sur le WM, se demander : « est-ce
+que le latent ne porte pas DÉJÀ cette perception ? » — si oui, le forçage est un raccourci à refuser.
+
 ## Corps actuel = HEXAPODE (depuis 2026-06-17)
 - **Dims** : proprio=**132**, action=**18**, obs policy=**144** (132+vision12), obs WM=**145** (132+radar12+énergie1).
 - Ne JAMAIS changer ces dims sans synchroniser `constants.py`, `observation_builder.gd`, `sylvan_agent.gd`, `symmetry.py`.

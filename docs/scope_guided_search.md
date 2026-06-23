@@ -82,3 +82,26 @@ vraie marge de manœuvre. C'est l'étape « recherche guidée » prévue avant M
 0 (gratuit) `diag_cem.py` énergie + contrôle géométrie → décide SCORE-vs-RÊVE.
 1 (si gate) câbler CEM + coût latent dans le planner, assert coordonnées débranchées.
 2 (cher) closed-loop foraging vs baseline. MPC brute-force grille gardé en fallback. Mode-1 plus tard.
+
+## 7. RÉSULTAT DU GATE §3.1 (2026-06-19) — KILL, mais la cause n'est NI la recherche NI le score NI l'horizon
+`diag_cem.py` (offline, 40 frames bouffe 1.5-4m, e0=0.4, eat_v2) :
+| variante | min_dist médiane | <1m |
+|---|---|---|
+| GRILLE (réf) | 1.75 m | 0% |
+| CEM-ÉNERGIE (score latent, coords débranchées) | 1.80 m | 0% |
+| CEM-GÉOMÉTRIE (contrôle, score=-min_dist) | 1.75 m | 0% |
+
+La CEM-géométrie (qui PEUT utiliser les coordonnées et optimise DIRECTEMENT la distance) plafonne aussi à 1.75 m
+→ **ce n'est pas le score, pas la grille, pas la recherche : le RÊVE ne transporte pas le corps.** Probes gratuits
+(refus de la conclusion-horizon de commodité, CLAUDE.md §1/§2) :
+- Rêve droit 120 pas : **eat_v2 = 0.19 m vs live `wm_command_hex_v2` = 0.75 m (4×)**.
+- **Family-wide** (jepa_v2 pré-eat 0.18, eat_v1 0.18, eat_v2 0.19) → pas causé par le retrain eat-aux.
+- Motion réelle ~5 mm/pas (~0.60 m/120) **identique dans tous les datasets** → pas la data.
+- **1 pas teacher-forced parfait pour tous** (≈4.9 mm ≈ réel) → la tête déplacement va bien.
+- ⇒ effondrement = **dérive open-loop du latent** ; meta : retina `latent_loss=cosine`+VICReg(1,1,1) vs v2 `mse`.
+  Le cosine ne contraint que la DIRECTION → la magnitude dérive → le déplacement décroît à ~⅓ sur le rollout.
+
+**Le débloqueur de 🅑 n'est donc PAS la recherche guidée (saine mais affamée — rien à atteindre) mais réparer la
+dérive open-loop du WM-rétine** : terme latent MSE (ancre magnitude) à côté du cosine/VICReg, ou supervision du
+déplacement intégré sur le rollout (scheduled sampling), sans re-collapser le latent → puis re-passer `diag_cem.py`.
+Niveau = retrain-nuit du WM → décision owner, pas lancé. NE PAS câbler le closed-loop (gate non passé).

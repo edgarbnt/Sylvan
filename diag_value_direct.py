@@ -7,7 +7,7 @@ regarde si le candidat argmax-V s'approche de la bouffe (min_dist << médiane, r
 ne transfère pas (entraîner sur latents rêvés, ou enrichir le WM).
 Usage: SYLVAN_WM_USE_RETINA=1 PYTHONPATH=python ./env_pytorch_3.12/bin/python diag_value_direct.py [wm] [value_head]
 """
-import sys, json, glob, math, statistics
+import sys, json, glob, math, statistics, os
 import torch
 from sylvan.models.command_wm import CommandWorldModel, DISPLACEMENT_SCALE
 from sylvan.models.value_head import load_value_head
@@ -18,6 +18,10 @@ VH = sys.argv[2] if len(sys.argv) > 2 else "data/checkpoints/value_head_food/val
 H = 120
 E0S = [0.4, 0.7]      # régime affamé (0.4) + plein (0.7) ; la valeur a du sens quand on PEUT manger
 N_SAMP = 200
+# Bande de distance courante de la bouffe (mètres). DÉFAUT = medium/far (1.5-4.0, l'engagement).
+# Pour tester le CLOSE (le bug) : SYLVAN_DIAG_DMIN=0.8 SYLVAN_DIAG_DMAX=1.6 → rang au close.
+DMIN = float(os.environ.get("SYLVAN_DIAG_DMIN", "1.5"))
+DMAX = float(os.environ.get("SYLVAN_DIAG_DMAX", "4.0"))
 
 pl = torch.load(WM, map_location="cpu", weights_only=False); meta = pl["meta"]
 wm = CommandWorldModel(obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
@@ -39,7 +43,7 @@ def gen():
             if not ret or not fr or fr[2] < 0.5:
                 continue
             d = math.hypot(fr[0], fr[1])
-            if 1.5 <= d <= 4.0:
+            if DMIN <= d <= DMAX:
                 yield r["obs"]["proprio"], ret, fr[0], fr[1]
 
 

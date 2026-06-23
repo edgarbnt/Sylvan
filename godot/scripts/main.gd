@@ -215,6 +215,13 @@ var _wm_ate := 0.0            # energy restored by eating within the current win
 var _WM_VX_MIN := 0.3
 var _WM_VX_MAX := 0.6
 var _WM_WMAX := 0.6
+# Scripted-turn collection (SYLVAN_WM_TURN_SCRIPT=1): instead of random-sign piecewise omega, hold a
+# SUSTAINED single-sign omega for a LONG block so the agent orbits (clean arc R=vx/omega) and its heading
+# sweeps continuously → every 360°-placed target crosses behind↔front each loop = the acquisition event the
+# dream must learn. Random-sign babbling reverses the arc before a sweep completes (1.0 crossing/ep) — this
+# scripts the sweep. vx is fixed mid-clean; sign alternates each block for L/R symmetry.
+var _wm_turn_script := false
+var _wm_turn_sign := 1.0
 
 
 var _diag_heading := ""  # SYLVAN_DIAG_HEADING = "cw"/"ccw": force a CONSTANT egocentric-90° turn command
@@ -340,7 +347,11 @@ func _update_heading() -> void:
 				if _wvmax != "": _WM_VX_MAX = _wvmax.to_float()
 				var _wwm := OS.get_environment("SYLVAN_WM_WMAX")
 				if _wwm != "": _WM_WMAX = _wwm.to_float()
-				print("[Godot] WM COLLECT ON | piecewise cmd: vx in [%.2f,%.2f], omega in [-%.2f,+%.2f], redraw every 40-80 decisions | wm block logged per step" % [_WM_VX_MIN, _WM_VX_MAX, _WM_WMAX, _WM_WMAX])
+				_wm_turn_script = OS.get_environment("SYLVAN_WM_TURN_SCRIPT") == "1"
+				if _wm_turn_script:
+					print("[Godot] WM COLLECT ON | SCRIPTED-TURN: vx fixed=%.2f, omega = sign*%.2f sustained, sign flips every 120-200 decisions (orbit sweep, behind->front acquisition)" % [(_WM_VX_MIN + _WM_VX_MAX) * 0.5, _WM_WMAX])
+				else:
+					print("[Godot] WM COLLECT ON | piecewise cmd: vx in [%.2f,%.2f], omega in [-%.2f,+%.2f], redraw every 40-80 decisions | wm block logged per step" % [_WM_VX_MIN, _WM_VX_MAX, _WM_WMAX, _WM_WMAX])
 			if _cpg_autopilot:
 				print("[Godot] AUTOPILOT ON | omega = clamp(%.1f * bearing_to_nearest_food, +-%.2f)" % [_autopilot_k, _autopilot_wmax])
 			print("[Godot] CPG ON | vx=%.2f omega=%.2f res=%.2f | step=%.2f lift=%.2f liftph=%.2f turnk=%.2f period=%.2f | mod[stride=%.2f cadence=%.2f lift=%.2f]" % [_cmd_vx, _cmd_omega, _res_gain, agent_instance.cpg_step_amp, agent_instance.cpg_lift_amp, agent_instance.cpg_lift_phase, agent_instance.cpg_turn_k, agent_instance.gait_cycle_period, agent_instance.cpg_stride_scale, agent_instance.cpg_cadence_scale, agent_instance.cpg_lift_scale])
@@ -394,10 +405,22 @@ func _physics_process(delta: float) -> void:
 	if _wm_collect and agent_instance.cpg_enabled and current_action_repeat_step == 0:
 		_wm_resample_in -= 1
 		if _wm_resample_in <= 0:
-			_wm_resample_in = _wm_rng.randi_range(40, 80)
-			var _wvx := _wm_rng.randf_range(_WM_VX_MIN, _WM_VX_MAX)
-			var _wom := 0.0 if _wm_straight_ep else _wm_rng.randf_range(-_WM_WMAX, _WM_WMAX)
-			agent_instance.set_cpg_command(_wvx, _wom)
+			if _wm_turn_script:
+				# SCRIPTED sweep: single-sign omega block, fixed mid-clean vx, sign alternates each block.
+				# Block length tunable via SYLVAN_WM_TURN_BLOCK (decisions); shorter = S-curves (un-trap the
+				# orbit so behind targets actually sweep to front), longer = orbit.
+				var _blk := 120
+				var _eblk := OS.get_environment("SYLVAN_WM_TURN_BLOCK")
+				if _eblk != "": _blk = _eblk.to_int()
+				_wm_resample_in = _wm_rng.randi_range(_blk, _blk + 40)
+				_wm_turn_sign = -_wm_turn_sign
+				var _tvx := (_WM_VX_MIN + _WM_VX_MAX) * 0.5
+				agent_instance.set_cpg_command(_tvx, _wm_turn_sign * _WM_WMAX)
+			else:
+				_wm_resample_in = _wm_rng.randi_range(40, 80)
+				var _wvx := _wm_rng.randf_range(_WM_VX_MIN, _WM_VX_MAX)
+				var _wom := 0.0 if _wm_straight_ep else _wm_rng.randf_range(-_WM_WMAX, _WM_WMAX)
+				agent_instance.set_cpg_command(_wvx, _wom)
 
 	if current_action_repeat_step == 0:
 		latest_obs = observation_builder.build_observation(agent_instance, homeostasis.energy, homeostasis.health, _compute_vision())

@@ -36,9 +36,10 @@ VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (ma
 
 class _PlannerService:
     def __init__(self, wm_ckpt: Path, residual_ckpt: Path, cfg: CommandPlanConfig, replan_every: int,
-                 retina_head_ckpt: Path | None = None) -> None:
-        torch.set_num_threads(4)
-        config = SylvanConfig()
+                 retina_head_ckpt: Path | None = None, value_head_ckpt: Path | None = None) -> None:
+        import os as _os
+        torch.set_num_threads(int(_os.environ.get("SYLVAN_PLANNER_THREADS", "4")))  # rollout latent batché →
+        config = SylvanConfig()                                                      # plus de threads = plus de FPS
         payload = torch.load(wm_ckpt, map_location="cpu", weights_only=False)
         meta = payload["meta"]
         self.proprio_dim = meta["proprio_dim"]
@@ -87,6 +88,37 @@ class _PlannerService:
         self._water_pos_ema: tuple[float, float] | None = None
         import os
         self.pos_alpha = float(os.environ.get("SYLVAN_RETINA_POS_ALPHA", "0.0"))  # 0 = position brute (défaut)
+        # 🅑-PUR : coût-VALEUR latent (planifier DANS le latent, AUCUNE coordonnée). Quand une tête de valeur
+        # est chargée, le serveur route vers planner.plan_latent — la bouffe n'existe QUE dans ce que le WM a
+        # appris à percevoir (rétine→latent) + ce que la tête en LIT. Débranche TOTALEMENT food_xz/radar/min_dist.
+        self.value_head = None
+        if value_head_ckpt is not None:
+            from sylvan.models.value_head import load_value_head
+            self.value_head = load_value_head(str(value_head_ckpt))
+            print(f"[planner-cmd] 🅑 VALUE HEAD = {Path(value_head_ckpt).name} → COÛT-VALEUR LATENT actif "
+                  f"(coordonnées DÉBRANCHÉES : plan_latent, aucune position de ressource).")
+        # === CHERCHER — perception active (2026-06-21) ===
+        # Capacité GÉNÉRALE (pas un patch bouffe-derrière) : quand la value latente de la pulsion active est
+        # PLATE (rien d'engageant perçu/imaginable, engage < τ ; gate offline front-proche ~0.98 vs derrière
+        # ~0.17), l'entité EXPLORE (scan du cap puis errance) au lieu de suivre un argmax de paysage plat,
+        # jusqu'à ce qu'une cible entre dans le cône avant (latent fort) → handoff AUTO au mode-avant latent.
+        # JEPA-pur : déclencheur lu DANS le latent, approche planifiée DANS le latent ; seul l'acte d'explorer
+        # est un réflexe substrat (comme le CPG). C'est l'étape 'chercher' du north-star. Drive-agnostique
+        # (déclenché par engage de la pulsion active). Off par défaut → non-régression.
+        self.search_enable = os.environ.get("SYLVAN_SEARCH_ENABLE", "0") == "1"
+        self.search_tau = float(os.environ.get("SYLVAN_SEARCH_TAU", "0.5"))        # seuil engage (trou 0.33–0.73)
+        self.search_vx = float(os.environ.get("SYLVAN_SEARCH_VX", "0.55"))         # vx du scan (régime propre min)
+        self.search_omega = float(os.environ.get("SYLVAN_SEARCH_OMEGA", "0.6"))    # ω du scan (sens fixe = balaye)
+        self.search_scan = int(os.environ.get("SYLVAN_SEARCH_SCAN", "10"))         # replans de scan (balaye le cap)
+        self.search_wander = int(os.environ.get("SYLVAN_SEARCH_WANDER", "3"))      # replans d'errance (couvre l'espace)
+        self.search_patience = int(os.environ.get("SYLVAN_SEARCH_PATIENCE", "1"))  # replans bas-engage avant de chercher
+        self.search_log = os.environ.get("SYLVAN_SEARCH_LOG", "0") == "1"
+        self._low_engage = 0
+        self._search_t = 0
+        self._searching = False
+        if self.search_enable:
+            print(f"[planner-cmd] CHERCHER actif : τ={self.search_tau} scan={self.search_scan}×(vx{self.search_vx},"
+                  f"ω{self.search_omega}) wander={self.search_wander} patience={self.search_patience}")
         print(f"[planner-cmd] WM={wm_ckpt.name} residual={residual_ckpt.name} | replan_every={self.replan_every} "
               f"| horizon={cfg.horizon} grid={len(cfg.vx_grid)}x{len(cfg.omega_grid)}")
 
@@ -135,7 +167,15 @@ class _PlannerService:
                     wm_obs = torch.tensor(proprio + retina + [energy / 100.0], dtype=torch.float32)
                 else:
                     wm_obs = torch.tensor(proprio + radar + [energy / 100.0], dtype=torch.float32)
-                if self.retina_head is not None:
+                if self.value_head is not None:
+                    # 🅑-PUR : planifier DANS LE LATENT — score-valeur sur les latents RÊVÉS, AUCUNE coordonnée
+                    # (food_pos / radar / min_dist / heading TOTALEMENT débranchés). C'est le coût JEPA-pur :
+                    # la bouffe n'existe que dans ce que le WM perçoit (rétine→latent) + ce que la tête en lit.
+                    res = self.planner.plan_latent(wm_obs, self.value_head, energy=energy / 100.0)
+                    # CHERCHER (perception active) : si rien d'engageant n'est perçu, explorer au lieu de suivre
+                    # un argmax plat ; handoff auto au mode-avant latent dès qu'une cible entre dans le cône avant.
+                    self._cmd = self._apply_search(res) if self.search_enable else res["command"]
+                elif self.retina_head is not None:
                     # LOCALISATION = perception APPRISE (oracle food_xz débranché). water override seulement
                     # si la tête gère l'eau ; sinon on garde l'EMA radar eau (2ᵉ pulsion non encore rétinisée).
                     self._cmd = self.planner.plan(
@@ -174,6 +214,30 @@ class _PlannerService:
         setattr(self, attr, ema)
         return ema
 
+    def _apply_search(self, res: dict) -> tuple[float, float]:
+        """Perception active (CHERCHER) : si rien d'engageant n'est perçu (engage < τ), explorer — scan du cap
+        puis errance, cycliquement — jusqu'au handoff. `res` = sortie de plan_latent ('command' + 'engage').
+        État persistant entre replans (le serveur garde le lock). Drive-agnostique (engage = pulsion active)."""
+        engage = float(res.get("engage", 1.0))
+        approach = res["command"]
+        if engage >= self.search_tau:                  # cible engageable perçue → APPROCHER, reset
+            if self._searching and self.search_log:
+                print(f"[planner-cmd] CHERCHER→APPROCHE (engage={engage:.2f})", flush=True)
+            self._low_engage = 0; self._search_t = 0; self._searching = False
+            return approach
+        self._low_engage += 1
+        if self._low_engage <= self.search_patience:   # hystérésis : ignorer un creux transitoire
+            return approach
+        if not self._searching and self.search_log:
+            print(f"[planner-cmd] APPROCHE→CHERCHER (engage={engage:.2f})", flush=True)
+        self._searching = True
+        cycle = max(1, self.search_scan + self.search_wander)
+        phase = self._search_t % cycle
+        self._search_t += 1
+        if phase < self.search_scan:
+            return (self.search_vx, self.search_omega)  # scan : balaye le cap (sens fixe, undirected)
+        return (0.7, 0.0)                               # errance : avance vers un nouveau point de vue
+
     def reset(self) -> None:
         with self._lock:
             self._ticks = 0
@@ -182,6 +246,9 @@ class _PlannerService:
             self._water_ema = None
             self._food_pos_ema = None
             self._water_pos_ema = None
+            self._low_engage = 0
+            self._search_t = 0
+            self._searching = False
 
 
 class _Handler(socketserver.StreamRequestHandler):
@@ -229,11 +296,14 @@ def main() -> None:
     ap.add_argument("--energy-weight", type=float, default=2.0)
     ap.add_argument("--retina-head", default=None, help="checkpoint tête de perception apprise (étage 1) → "
                     "remplace l'oracle food_xz par la localisation depuis les rayons couleur bruts")
+    ap.add_argument("--value-head", default=None, help="🅑-PUR : checkpoint tête de VALEUR (V=latent) → coût-valeur "
+                    "latent, coordonnées DÉBRANCHÉES (plan_latent). Exclut --retina-head (pas de localisation).")
     args = ap.parse_args()
 
     cfg = CommandPlanConfig(horizon=args.horizon, energy_weight=args.energy_weight)
     service = _PlannerService(Path(args.wm), Path(args.residual), cfg, args.replan_every,
-                             retina_head_ckpt=Path(args.retina_head) if args.retina_head else None)
+                             retina_head_ckpt=Path(args.retina_head) if args.retina_head else None,
+                             value_head_ckpt=Path(args.value_head) if args.value_head else None)
     server = _Server((args.host, args.port), service)
     print(f"[planner-cmd] serving on {args.host}:{args.port} — Ctrl-C to stop")
     try:

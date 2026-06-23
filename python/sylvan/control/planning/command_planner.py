@@ -321,3 +321,92 @@ class CommandPlanner:
             "pred_min_water": float(min_dw[best]),
             "reason": "plan_multi",
         }
+
+    def _retina_mirror_map(self, obs_dim: int):
+        """Carte miroir gauche↔droite de l'obs WM-rétine (277 = proprio132 ++ rétine144(36×4) ++ énergie1).
+        Réutilise la carte proprio de ppo/symmetry ; rétine = inverse l'ordre azimutal des rayons (ray k ↔
+        (n−k)%n, validé : bouffe-droite miroitée → bouffe-gauche) ; énergie inchangée. Mise en cache."""
+        cached = getattr(self, "_mir_cache", None)
+        if cached is not None and cached[0] == obs_dim:
+            return cached[1], cached[2]
+        from ..ppo.symmetry import _build_proprio_maps
+        pperm, psign = _build_proprio_maps()
+        pd = self.world_model.proprio_dim
+        perm = list(range(obs_dim)); sign = [1.0] * obs_dim
+        for i in range(min(pd, len(pperm))):
+            perm[i] = pperm[i]; sign[i] = psign[i]
+        n_ray = (obs_dim - pd - 1) // 4
+        for k in range(n_ray):
+            src = (n_ray - k) % n_ray
+            for j in range(4):
+                perm[pd + 4 * k + j] = pd + 4 * src + j
+        P = torch.tensor(perm, device=self.device); S = torch.tensor(sign, dtype=torch.float32, device=self.device)
+        self._mir_cache = (obs_dim, P, S)
+        return P, S
+
+    @torch.no_grad()
+    def plan_latent(self, obs: torch.Tensor, value_head, *, energy: float | None = None,
+                    orient_head=None) -> dict[str, object]:
+        """🅑-PUR (planning DANS LE LATENT, 2026-06-19) — score les candidats par la VALEUR du latent RÊVÉ
+        (tête apprise V = 'va manger bientôt'), MOYENNÉE sur l'horizon, − pénalité de chute. AUCUNE coordonnée :
+        ne touche NI food_xz, NI radar, NI min_dist, NI heading. La bouffe n'existe que dans ce que le WM a
+        APPRIS à percevoir (rétine→latent) et ce que la tête de valeur en LIT. C'est le coût JEPA-pur.
+        `obs` [obs_dim] = proprio ++ rétine ++ énergie (l'entrée encodeur du WM)."""
+        n = self._cmd_seqs.shape[0]
+        h = self.cfg.horizon
+        obs0 = obs.to(self.device).reshape(1, -1).expand(n, -1).contiguous()
+        out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs)
+        # LOGIT (pré-sigmoid, pas la proba qui SATURE), agrégé sur l'horizon. AGRÉGAT DÉPEND DE LA VALUE :
+        #   • value TEACHER-FORCED (value_head_food) → MAX (le PIC où le rêve touche ; .mean récompensait l'orbite,
+        #     rang 0.75 vs 0.38). • value RÊVE-MULTIPAS (value_head_food_dream, 2026-06-21) → MEAN bat MAX (calibrée
+        #     à toutes les profondeurs, la moyenne DÉBRUITE : close rang 0.08 vs 0.33). Switch SYLVAN_VALUE_AGG.
+        _agg = os.environ.get("SYLVAN_VALUE_AGG", "max")
+
+        def _aggregate(logits):  # logits [N, H] → [N]
+            return logits.mean(dim=1) if _agg == "mean" else logits.max(dim=1).values
+
+        Vlogit = value_head.logit(out["predicted_latents"])                 # [N, H]
+        L = _aggregate(Vlogit)                                              # [N] — LIT le latent rêvé, rien d'autre
+        # ENGAGE (2026-06-21) — « quelque chose d'engageant est-il perçu/imaginable ? » = pic de proba-repas du
+        # MEILLEUR futur (max sur candidats × horizon). Gate offline diag_search_trigger : front-proche ~0.98 vs
+        # derrière ~0.17 (trou net) → seuil fiable pour déclencher la PERCEPTION ACTIVE (CHERCHER) côté serveur.
+        # JEPA-pur : ne lit que la value du latent rêvé, aucune coordonnée.
+        engage = float(torch.sigmoid(Vlogit).max())
+        # SYMÉTRISATION gauche↔droite (fix de l'ASYMÉTRIE du WM, validé 2026-06-19 : le rêve tourne ~1.4× plus
+        # fort à gauche qu'à droite → sans ça l'agent dérive à gauche et meurt). On évalue CHAQUE candidat aussi
+        # dans le monde MIROIR (obs miroitée + omega négé) et on moyenne → le biais directionnel du WM s'annule,
+        # seul le signal 'où est la bouffe' survit. (Toujours JEPA-pur : aucune coordonnée ; la symétrie est une
+        # propriété du corps, pas une position de ressource.)
+        try:
+            P, S = self._retina_mirror_map(obs.shape[-1])
+            obs_mir = (obs.to(self.device)[P] * S).reshape(1, -1).expand(n, -1).contiguous()
+            seqs_mir = self._cmd_seqs.clone(); seqs_mir[..., 1] = -seqs_mir[..., 1]
+            out_m = self.world_model.rollout_open_loop(obs_mir, seqs_mir)
+            L = 0.5 * (L + _aggregate(value_head.logit(out_m["predicted_latents"])))
+        except Exception:
+            pass
+        # TERME DE CAP LATENT (2026-06-21) — l'analogue JEPA-pur du heading_weight coordonnées : récompense le
+        # rêve qui finit ORIENTÉ vers la cible (orient_head.ahead lit le bearing PERÇU dans le latent, +1=devant).
+        # Comble le trou de credit-assignment de la value-de-proximité pour les cibles ARRIÈRE (orienter ne réduit
+        # pas la proximité dans l'horizon → value plate → jamais de demi-tour). GATÉ par (1−V) : s'éteint quand un
+        # repas devient atteignable (V haut) → la proximité pilote le close (équivalent de heading_far_gate).
+        # AUCUNE coordonnée : ahead vient du latent (perception apprise). Off par défaut (SYLVAN_ORIENT_W=0).
+        _ow = float(os.environ.get("SYLVAN_ORIENT_W", "0.0"))
+        if orient_head is not None and _ow > 0.0:
+            ahead = orient_head.ahead(out["predicted_latents"])           # [N, H] ∈ [-1,1], +1 = cible devant
+            val = torch.sigmoid(value_head.logit(out["predicted_latents"]))  # [N, H] proximité (gate)
+            orient_term = (ahead * (1.0 - val)).mean(dim=1)               # [N] : cap moyen, atténué près du repas
+            L = L + _ow * orient_term
+        done_prob = torch.sigmoid(out["predicted_done_logits"])
+        alive = torch.ones(n, device=self.device)
+        survival_pen = torch.zeros(n, device=self.device)
+        for t in range(h):
+            survival_pen = survival_pen + alive * done_prob[:, t]
+            alive = alive * (1.0 - done_prob[:, t])
+        score = L - self.cfg.done_penalty * survival_pen               # valeur future + cap latent, AUCUNE coordonnée
+        # GARDE-FOU 🅑 : ce chemin ne doit JAMAIS lire de position de ressource. (Vérif structurelle : aucune
+        # des variables food/water/min_dist/heading n'est référencée ici — le score ne dépend que de V et done.)
+        best = int(torch.argmax(score).item())
+        vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+        return {"command": (vx, om), "reason": "plan_latent", "best_value": float(score[best]),
+                "engage": engage}

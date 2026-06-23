@@ -53,6 +53,7 @@ class CommandWorldModel(nn.Module):
         latent_dim: int = 128,
         predictor_arch: str = "shallow",
         with_food_head: bool = False,
+        with_bearing_head: bool = False,
     ) -> None:
         super().__init__()
         # obs = proprio ++ food radar ++ energy. In CPG mode the POLICY's vision channel carries
@@ -92,6 +93,15 @@ class CommandWorldModel(nn.Module):
         if with_food_head:
             self.food_head = nn.Sequential(
                 nn.Linear(latent_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, 1),
+            )
+        # Tête AUXILIAIRE 'bearing du plus proche objet PERÇU' (clé de voûte, 2026-06-21) — NON sauvée.
+        # Sert UNIQUEMENT à FORCER le latent RÊVÉ (dream) à transporter la perception (où est le plus proche
+        # objet) À TRAVERS LA ROTATION imaginée (le manque mesuré : rêve corr +0.08, cf diag_wm_rotation). Cible
+        # COLOR-AGNOSTIC (rayon de rétine le plus proche, pas 'food') → enrichit le SUBSTRAT en général (§3), pas
+        # une pulsion. À l'inférence : non utilisée (la perception vit dans le latent ; têtes value/orient séparées).
+        if with_bearing_head:
+            self.bearing_head = nn.Sequential(
+                nn.Linear(latent_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, 2),  # (cos, sin) du bearing
             )
 
     def dream_latents(self, obs0: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:
