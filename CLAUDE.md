@@ -83,7 +83,10 @@ tombent / deviennent impossibles (mémoire, curiosité, hiérarchie reposent sur
   slot = coordonnée explicite apprise (le pur-latent-valeur `plan_latent` était lossy, perdait l'objet). Étape précédente
   `retina_head` (SUPERVISÉ-oracle) = superseded mais valide (`run_forage_retina.sh`). Secours ultime = oracle
   `wm_command_hex_v2` + `run_forage_hex.sh`. Design/preuves : `docs/design_wm_factorise.md` + `docs/plan_wm_objectcentric_pur.md`,
-  gates `diag_nav_ab_purslot.sh` (engagement) + `forage_ab_purslot.sh` (survie).
+  gates `diag_nav_ab_purslot.sh` (engagement) + `forage_ab_purslot.sh` (survie). **Coût planner = `-min_dist` PUR
+  (heading_weight=0 par défaut depuis 2026-06-25)** : le slot précis (4.9°) rend le « how-to-hint » `heading_weight`
+  INUTILE — A/B `forage_ab_hw.sh` : hw=0 ≥ hw=2 (engagement 13/16 arrière 3/4≥2/4 ; foraging méd 1040 ≥ 860). Un hack
+  flaggé de moins dans le chemin vivant. (Niveau 2 possible = remplacer `-min_dist` par un CRITIQUE APPRIS sur le slot.)
 - **Régime PROPRE de l'hexapode** (TOUJOURS le servir/collecter ainsi, sinon il dérive) :
   `SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5`.
   Plage vx propre ~0.5-0.75 (en dessous il dérive). Tourne ~25-50°/s (le « mur 15°/s » est cassé).

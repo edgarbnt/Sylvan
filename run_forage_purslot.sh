@@ -9,7 +9,10 @@ ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 echo "PUR-SLOT slot=$SLOT WM=$WM eat_radius=$ER horizon=$HZ episodes=$NEP"
 
-SYLVAN_PLANNER_HEADING_W=2.0 \
+# heading_w=0 par défaut (2026-06-25) : le slot PUR précis (4.9°) rend le « how-to-hint » heading_weight INUTILE.
+# A/B validé : hw=0 vs hw=2 → engagement 13/16 (arrière 3/4 ≥ 2/4), foraging méd 1040 ≥ 915. Coût = -min_dist PUR.
+export SYLVAN_PLANNER_HEADING_W=${SYLVAN_PLANNER_HEADING_W:-0.0}
+echo "heading_w=$SYLVAN_PLANNER_HEADING_W"
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt --slot-head "$SLOT" \
   --host 127.0.0.1 --port 6052 --horizon $HZ --replan-every 10 > /tmp/planner_purslot.log 2>&1 &
