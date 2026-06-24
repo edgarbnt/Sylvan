@@ -36,7 +36,8 @@ VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (ma
 
 class _PlannerService:
     def __init__(self, wm_ckpt: Path, residual_ckpt: Path, cfg: CommandPlanConfig, replan_every: int,
-                 retina_head_ckpt: Path | None = None, value_head_ckpt: Path | None = None) -> None:
+                 retina_head_ckpt: Path | None = None, value_head_ckpt: Path | None = None,
+                 slot_head_ckpt: Path | None = None) -> None:
         import os as _os
         torch.set_num_threads(int(_os.environ.get("SYLVAN_PLANNER_THREADS", "4")))  # rollout latent batché →
         config = SylvanConfig()                                                      # plus de threads = plus de FPS
@@ -84,6 +85,20 @@ class _PlannerService:
             self.retina_head.eval()
             print(f"[planner-cmd] RETINA HEAD = {retina_head_ckpt.name} (n_res={self._retina_n_res}, "
                   f"heldout_mae={hck.get('heldout_mae_m', '?')}) → oracle food_xz REMPLACÉ par la perception apprise")
+        # SLOT object-centric AUTO-SUPERVISÉ (chantier WM pur) — drop-in de retina_head MAIS entraîné SANS label
+        # de position (consistance de transport + saillance perceptuelle, cf train_slot_head). Prioritaire s'il est
+        # chargé. Même interface .locate() → la perception devient pleinement label-free (zéro oracle dans la boucle).
+        self.slot_head = None
+        if slot_head_ckpt is not None:
+            from sylvan.models.slot_head import load_slot_head
+            self.slot_head = load_slot_head(str(slot_head_ckpt))
+            self._retina_n_res = self.slot_head.n_resources
+            sck = torch.load(slot_head_ckpt, map_location="cpu", weights_only=False)
+            print(f"[planner-cmd] SLOT HEAD (auto-supervisé, label-free) = {slot_head_ckpt.name} "
+                  f"(bearing_mae={sck.get('heldout_bearing_deg', '?')}°, pos_mae={sck.get('heldout_mae_m', '?')}m) "
+                  f"→ perception PURE (remplace retina_head)")
+        # localizer effectif = slot_head (pur) en priorité, sinon retina_head (supervisé)
+        self.localizer = self.slot_head if self.slot_head is not None else self.retina_head
         self._food_pos_ema: tuple[float, float] | None = None
         self._water_pos_ema: tuple[float, float] | None = None
         import os
@@ -153,8 +168,8 @@ class _PlannerService:
                     self._water_ema = [a * e + (1.0 - a) * r for e, r in zip(self._water_ema, water_fine)]
             # RÉTINE étage 1 : localiser food/eau via la TÊTE APPRISE (rayons bruts), EMA sur les positions.
             food_pos = water_pos = None
-            if self.retina_head is not None and len(retina) == RETINA_DIM:
-                locs = self.retina_head.locate(torch.tensor(retina, dtype=torch.float32))
+            if self.localizer is not None and len(retina) == RETINA_DIM:
+                locs = self.localizer.locate(torch.tensor(retina, dtype=torch.float32))
                 food_pos = self._ema_pos("_food_pos_ema", locs[0])
                 if self._retina_n_res > 1:
                     water_pos = self._ema_pos("_water_pos_ema", locs[1])
@@ -175,8 +190,8 @@ class _PlannerService:
                     # CHERCHER (perception active) : si rien d'engageant n'est perçu, explorer au lieu de suivre
                     # un argmax plat ; handoff auto au mode-avant latent dès qu'une cible entre dans le cône avant.
                     self._cmd = self._apply_search(res) if self.search_enable else res["command"]
-                elif self.retina_head is not None:
-                    # LOCALISATION = perception APPRISE (oracle food_xz débranché). water override seulement
+                elif self.localizer is not None:
+                    # LOCALISATION = perception APPRISE (slot pur si chargé, sinon retina_head). water override seulement
                     # si la tête gère l'eau ; sinon on garde l'EMA radar eau (2ᵉ pulsion non encore rétinisée).
                     self._cmd = self.planner.plan(
                         wm_obs, self._radar_ema,
@@ -298,12 +313,15 @@ def main() -> None:
                     "remplace l'oracle food_xz par la localisation depuis les rayons couleur bruts")
     ap.add_argument("--value-head", default=None, help="🅑-PUR : checkpoint tête de VALEUR (V=latent) → coût-valeur "
                     "latent, coordonnées DÉBRANCHÉES (plan_latent). Exclut --retina-head (pas de localisation).")
+    ap.add_argument("--slot-head", default=None, help="SLOT object-centric AUTO-SUPERVISÉ (label-free) → drop-in pur "
+                    "de --retina-head (perception sans aucun label de position ; prioritaire s'il est fourni).")
     args = ap.parse_args()
 
     cfg = CommandPlanConfig(horizon=args.horizon, energy_weight=args.energy_weight)
     service = _PlannerService(Path(args.wm), Path(args.residual), cfg, args.replan_every,
                              retina_head_ckpt=Path(args.retina_head) if args.retina_head else None,
-                             value_head_ckpt=Path(args.value_head) if args.value_head else None)
+                             value_head_ckpt=Path(args.value_head) if args.value_head else None,
+                             slot_head_ckpt=Path(args.slot_head) if args.slot_head else None)
     server = _Server((args.host, args.port), service)
     print(f"[planner-cmd] serving on {args.host}:{args.port} — Ctrl-C to stop")
     try:

@@ -74,12 +74,16 @@ tombent / deviennent impossibles (mémoire, curiosité, hiérarchie reposent sur
 - **Dims** : proprio=**132**, action=**18**, obs policy=**144** (132+vision12), obs WM=**145** (132+radar12+énergie1).
 - Ne JAMAIS changer ces dims sans synchroniser `constants.py`, `observation_builder.gd`, `sylvan_agent.gd`, `symmetry.py`.
 - **Checkpoints vivants** : base motrice `data/checkpoints/hexapod_v2/policy_best.pt` ;
-  **FORAGER VIVANT (promu 2026-06-23) = SLOT-PLANNER** : WM `data/checkpoints/wm_rich_fidele_sym/wm_best.pt` (rétine, clé
-  de voûte) + perception apprise `data/checkpoints/retina_head/head_best.pt` (zéro oracle) → `bash run_forage_retina.sh`.
-  Engage l'arrière (S1 14/16 > oracle 10/16), survie foraging méd 1045 > oracle 610. NB **PAS « full-latent »** : c'est
-  perception apprise + slot = coordonnée explicite apprise transportée par la displacement-head (le pur-latent-valeur
-  `plan_latent` échouait, perdait l'objet). Secours = oracle `wm_command_hex_v2` + `run_forage_hex.sh`. Design/preuves :
-  `docs/design_wm_factorise.md`, gate `diag_nav_ab_slot.sh`.
+  **FORAGER VIVANT (promu 2026-06-24) = SLOT-PLANNER PUR** : WM `data/checkpoints/wm_rich_fidele_sym/wm_best.pt` (rétine,
+  clé de voûte) + **SLOT object-centric AUTO-SUPERVISÉ** `data/checkpoints/slot_head/slot_best.pt` (perception 100%
+  label-free, ZÉRO oracle de position) → `bash run_forage_purslot.sh` (serveur `--slot-head`). Le slot = coordonnée ego
+  apprise SANS label (consistance de transport Rot(+Δyaw) + saillance perceptuelle ; module `slot_head.py`, trainer
+  `train_slot_head.py`), transportée par la displacement-head. Engage l'arrière (re-gate 13/16 ≈ retina_head 14/16, arrière
+  2/4 préservé), foraging méd 915 ≈ retina_head 860, précis (bearing 4.9° < retina_head 8.4°). NB **PAS « full-latent »** :
+  slot = coordonnée explicite apprise (le pur-latent-valeur `plan_latent` était lossy, perdait l'objet). Étape précédente
+  `retina_head` (SUPERVISÉ-oracle) = superseded mais valide (`run_forage_retina.sh`). Secours ultime = oracle
+  `wm_command_hex_v2` + `run_forage_hex.sh`. Design/preuves : `docs/design_wm_factorise.md` + `docs/plan_wm_objectcentric_pur.md`,
+  gates `diag_nav_ab_purslot.sh` (engagement) + `forage_ab_purslot.sh` (survie).
 - **Régime PROPRE de l'hexapode** (TOUJOURS le servir/collecter ainsi, sinon il dérive) :
   `SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5`.
   Plage vx propre ~0.5-0.75 (en dessous il dérive). Tourne ~25-50°/s (le « mur 15°/s » est cassé).
