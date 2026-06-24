@@ -97,3 +97,45 @@ secondaire, il a une marge). Convergence : ce même rêve faible explique le for
 recherche latent-pure (`diagnostic_engagement_perception.md`). **Prochaine étape archi×gain : concevoir cette clé
 de voûte sur ces mesures** (pistes : données riches en rotation, perte de fidélité rollout ciblée perception,
 représentation équivariante, latent stochastique pour l'uncertainty) — départager par tests gratuits AVANT tout retrain.
+
+## 8. MAJ POST-CLÉ-DE-VOÛTE (2026-06-23) — résolue PRATIQUEMENT via un SLOT object-centric (≠ fix pur)
+
+Voir `docs/design_wm_factorise.md` (autoritaire). Parcours gratuit : 3b (mur géométrique) → 3c-linéaire (transport
+latent +0.30, entortillé) → re-validation closed-loop (verrou = WM, pas moteur) → F1/F2/F3 → S1.
+**Découverte :** le readout **pur-latent-valeur** (`plan_latent`) est intrinsèquement LOSSY (le rêve monolithique perd
+l'objet, +0.30). Le fix = un **SLOT** = coordonnée ego de l'objet, lue depuis la perception apprise (retina_head) et
+**transportée par la displacement-head** du WM (intégration = `plan()` override_pos). Un slot qui PERSISTE transporte
+le bearing à **+0.90/+0.65** vs +0.30. **Résultat closed-loop : engagement arrière 0/4→2/4 (=oracle), global 14/16 >
+oracle 10/16 ; foraging survie méd 1045 > oracle 610.** Promu forager vivant (commit 1ee1f85). Base déplacement
+**validée complète en reach** (tous azimuts, `diag_rear_gap.sh` : le « trou ±179° » = temps, pas moteur) ; seul résidu
+= orbite terminale (forward-only, masquée par eat_radius).
+
+**Ce que le slot CHANGE à l'audit (honnête) :**
+- Il **route AUTOUR** du mur de la §7 (rêve latent qui perd la perception) au lieu de le résoudre purement : la
+  position d'objet vit dans une **coordonnée explicite** (object-centric), pas dans une représentation latente
+  rotation-équivariante. C'est JEPA-légitime (perception + dynamique APPRISES, zéro oracle) mais c'est un
+  **échafaudage object-centric codé-main** (1 seul objet le + proche, transport analytique), PAS des slots appris
+  ni l'incertitude. Le WM reste **déterministe + reconstructif** (🟡 inchangé).
+- Il **débloque la suite** : on a maintenant une **position d'objet qui persiste dans un rêve** = la brique de base
+  d'une **mémoire spatiale** (persister le slot ENTRE replans = se souvenir d'une ressource non perçue → recherche
+  DIRIGÉE, l'étape « chercher » du north-star, jusqu'ici impossible).
+
+**Table MAJ :**
+
+| Module LeCun | État post-23/06 |
+|---|---|
+| Perception | ✅ rétine apprise |
+| World Model | 🟡 partiel (déterministe, reconstructif, pas d'incertitude) — MAIS contourné en pratique par le slot object-centric |
+| Cost intrinsèque | ✅ faim/soif |
+| Critique (valeur) | 🟡 `value_head` existe mais le chemin VIVANT = slot + coût analytique (le pur-latent-valeur était lossy) ; critique foresighted multi-pulsions = myope |
+| Actor | 🟡 Mode-2 (MPC) ✅ ; Mode-1 absent |
+| Mémoire spatiale/épisodique | ❌ — mais le SLOT en est la brique de base (persister entre replans = chantier naturel) |
+| Configurator | ❌ |
+| Curiosité / incertitude | ❌ (WM déterministe) |
+| Hiérarchie (H-JEPA) | ❌ |
+
+**Candidats prochain chantier (à décider) :** (A) **mémoire spatiale** (persister les slots → recherche dirigée,
+north-star « chercher », build direct sur le slot) ; (B) **multi-pulsions + critique foresighted** (arbitrage =
+décisions réfléchies, couche ALife) ; (C) **curiosité/latent stochastique** (exploration émergente, mais exige
+l'incertitude du WM = plus dur) ; (D) **clé de voûte PURE** (WM équivariant/stochastique — payoff immédiat baissé car
+le slot route autour). Reco = A (momentum + débloque le north-star).
