@@ -293,6 +293,13 @@ class CommandPlanner:
         disp = out["predicted_displacement"] / DISPLACEMENT_SCALE
         done_prob = torch.sigmoid(out["predicted_done_logits"])
 
+        # SLOT (perception promue, 2026-06-25) : si le WM porte un slot object-centric, localiser la BOUFFE
+        # via le slot APPRIS (out["slot"][:,0] = position ego perçue à t0, identique pour tous les candidats)
+        # au lieu de l'oracle radar `food`. L'EAU reste planner-only (étage 1, pas dans le WM). Backward-compat :
+        # WM sans slot → garde l'oracle `food`. Le single-drive (plan_wm_slot / single-resource) n'est PAS touché.
+        if getattr(self.world_model, "with_slot", False) and "slot" in out:
+            food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
+
         e0 = float(obs[-1]) if energy is None else float(energy)
         t0 = 1.0 if thirst is None else float(thirst)
         e_lvl = torch.full((n,), max(0.0, min(1.0, e0)), device=self.device)
