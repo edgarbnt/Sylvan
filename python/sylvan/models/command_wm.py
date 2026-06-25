@@ -20,7 +20,9 @@ import torch.nn.functional as F
 
 from .encoders import ProprioEncoder
 from .heads import DoneHead, MetricsPredictionHead, ProprioPredictionHead
+from .perception_head import RETINA_DIM
 from .rssm import SimpleRSSM
+from .slot_head import SelfSupervisedSlotHead
 
 COMMAND_DIM = 2          # (vx, omega)
 DISPLACEMENT_DIM = 3     # (d_fwd, d_lat, d_yaw) in the body frame at t
@@ -54,6 +56,8 @@ class CommandWorldModel(nn.Module):
         predictor_arch: str = "shallow",
         with_food_head: bool = False,
         with_bearing_head: bool = False,
+        with_slot: bool = False,
+        slot_resources: int = 1,
     ) -> None:
         super().__init__()
         # obs = proprio ++ food radar ++ energy. In CPG mode the POLICY's vision channel carries
@@ -103,6 +107,31 @@ class CommandWorldModel(nn.Module):
             self.bearing_head = nn.Sequential(
                 nn.Linear(latent_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, 2),  # (cos, sin) du bearing
             )
+        # CANAL-SLOT object-centric (2026-06-25, internaliser l'échafaudage). Le slot = coordonnée ego de l'objet,
+        # ENCODÉE par attention géométrique sur la rétine (slot_head, label-free) puis TRANSPORTÉE le long du rêve par
+        # l'ego-motion que le WM prédit (displacement-head) — équivariant par construction (cf plan §1). Composant du WM
+        # → out["slot"], object-permanence possédée par le WM (plus la boucle trigo du planner). Optionnel → checkpoint
+        # inchangé quand absent. slot_calib = (kfwd, klat, kyaw) : aligne la convention displacement↔repère slot.
+        self.with_slot = with_slot
+        self.slot_resources = slot_resources
+        if with_slot:
+            self.slot_encoder = SelfSupervisedSlotHead(n_resources=slot_resources)
+            self.slot_calib = nn.Parameter(torch.tensor([1.0, 1.0, 1.0]))
+
+    def encode_slot(self, obs: torch.Tensor) -> torch.Tensor:
+        """obs [..., obs_dim] → slot food [..., 2] (x_right, z_fwd) depuis la tranche rétine (attention apprise)."""
+        retina = obs[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
+        return self.slot_encoder.positions(retina)[..., 0, :]
+
+    def transport_slot(self, slot: torch.Tensor, disp_real: torch.Tensor) -> torch.Tensor:
+        """Transporte le slot [..., 2] d'un pas par l'ego-motion RÉELLE disp_real [..., 3]=(d_fwd,d_lat,d_yaw).
+        Translate (par l'auto-déplacement, calibré) puis Rot(−Δyaw) — même convention que diag_test6/fpure1b."""
+        kf, kl, ky = self.slot_calib[0], self.slot_calib[1], self.slot_calib[2]
+        px = slot[..., 0] - kl * disp_real[..., 1]
+        pz = slot[..., 1] - kf * disp_real[..., 0]
+        a = -ky * disp_real[..., 2]
+        ca, sa = torch.cos(a), torch.sin(a)
+        return torch.stack([ca * px - sa * pz, sa * px + ca * pz], dim=-1)
 
     def dream_latents(self, obs0: torch.Tensor, commands: torch.Tensor) -> torch.Tensor:
         """Rollout FREE-RUNNING (open-loop) AVEC gradient → latents rêvés [B, T, latent_dim].
@@ -166,12 +195,23 @@ class CommandWorldModel(nn.Module):
             done_logits.append(self.done_head(latent))
             latents.append(latent)
             obs_input = self.encoded_predictor(latent)
-        return {
-            "predicted_displacement": torch.stack(disps, dim=1),   # [B, T, 3]
+        disp_stack = torch.stack(disps, dim=1)                     # [B, T, 3] (scaled)
+        out = {
+            "predicted_displacement": disp_stack,                  # [B, T, 3]
             "predicted_next_obs": torch.stack(obs_preds, dim=1),   # [B, T, obs_dim]
             "predicted_done_logits": torch.stack(done_logits, dim=1),
             "predicted_latents": torch.stack(latents, dim=1),      # [B, T, latent_dim] — dreamed RSSM latents (critic probe)
         }
+        if getattr(self, "with_slot", False):
+            # SLOT object-centric : init depuis la perception à t0, puis dead-reckon par la displacement RÊVÉE.
+            disp_real = disp_stack / DISPLACEMENT_SCALE            # [B, T, 3] = (d_fwd,d_lat,d_yaw) réels
+            slot = self.encode_slot(obs0)                          # [B, 2] à t=0
+            slots = [slot]
+            for t in range(horizon - 1):
+                slot = self.transport_slot(slot, disp_real[:, t])
+                slots.append(slot)
+            out["slot"] = torch.stack(slots, dim=1)                # [B, T, 2] coordonnée ego de l'objet par pas
+        return out
 
 
 def compute_command_wm_losses(
