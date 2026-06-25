@@ -5,6 +5,10 @@ diag_slot_memory_drift.py) sur frames consécutives du buffer.
 
 Cross-val PAR ÉPISODE (80/20) — jamais de split intra-épisode.
 
+Architecture : MLP 1-couche cachée (132→H→3, SiLU).  Le linéaire a été testé en premier et a
+échoué (dfwd R²=0.665, dlat R²=0.416 < seuil 0.9), ce qui a déclenché la montée en 1-hidden
+MLP conformément au protocole « linear-first » (CLAUDE.md §1).
+
 Usage :
     # Entraîner :
     PYTHONPATH=python ./env_pytorch_3.12/bin/python train_egomotion_head.py
@@ -18,7 +22,7 @@ Usage :
     --epochs 300
     --batch 512
     --lr 1e-3
-    --hidden 128
+    --hidden 128                      (dim couche cachée du MLP)
     --seed 0
 """
 
@@ -145,12 +149,12 @@ def train(args):
     Xtr, Ytr, Xte, Yte = build_tensors(episodes, ntr)
     print(f"[train] Frames train={len(Xtr)}, test={len(Xte)}")
 
-    # Normalisation des entrées
+    # Normalisation des entrées — buffers stockés dans le checkpoint
     mu_x = Xtr.mean(0)
     sd_x = Xtr.std(0) + 1e-6
 
-    # Modèle
-    head = EgomotionHead()
+    # Modèle MLP 1-couche cachée
+    head = EgomotionHead(hidden=args.hidden)
     head.mu_x.copy_(mu_x)
     head.sd_x.copy_(sd_x)
 
@@ -158,21 +162,19 @@ def train(args):
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     loss_fn = nn.MSELoss()
 
-    Xtr_n = (Xtr - mu_x) / sd_x  # pré-normalisé pour la boucle d'entraînement
-
     best_r2_min = -float("inf")
     best_state = None
 
     for epoch in range(1, args.epochs + 1):
         head.train()
-        perm = torch.randperm(len(Xtr_n))
+        perm = torch.randperm(len(Xtr))
         total_loss = 0.0
         n_batches = 0
-        for start in range(0, len(Xtr_n), args.batch):
+        for start in range(0, len(Xtr), args.batch):
             idx = perm[start: start + args.batch]
-            xb = Xtr_n[idx]
+            xb = Xtr[idx]          # entrée brute non normalisée
             yb = Ytr[idx]
-            pred = head.net(xb)          # net seul (entrée déjà normalisée)
+            pred = head(xb)        # forward() normalise en interne
             loss = loss_fn(pred, yb)
             opt.zero_grad()
             loss.backward()
@@ -184,7 +186,7 @@ def train(args):
         if epoch % 50 == 0 or epoch == args.epochs:
             head.eval()
             with torch.no_grad():
-                pred_te = head(Xte)      # via forward() qui normalise
+                pred_te = head(Xte)      # forward() normalise en interne
                 r2 = r2_score(pred_te, Yte)
             r2_min = r2.min().item()
             print(
@@ -255,7 +257,7 @@ def selfcheck(args):
     print(f"[selfcheck] Épisodes test={len(episodes) - ntr}, frames test={len(Xte)}")
 
     with torch.no_grad():
-        pred_te = head(Xte)
+        pred_te = head(Xte)      # forward() normalise en interne
         r2 = r2_score(pred_te, Yte)
 
     print("\n[selfcheck] R² (test, par composante) :")
@@ -282,7 +284,7 @@ def selfcheck(args):
 # ---------------------------------------------------------------------------
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Entraîne / vérifie EgomotionHead")
+    p = argparse.ArgumentParser(description="Entraîne / vérifie EgomotionHead (MLP 1-hidden)")
     p.add_argument("--selfcheck", action="store_true",
                    help="Mode self-check : charge le checkpoint et vérifie R² ≥ 0.9")
     p.add_argument("--bufs", nargs="+", default=DEFAULT_BUFS,
@@ -292,7 +294,8 @@ def parse_args():
     p.add_argument("--epochs", type=int, default=300)
     p.add_argument("--batch", type=int, default=512)
     p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--hidden", type=int, default=128)
+    p.add_argument("--hidden", type=int, default=128,
+                   help="Dimension de la couche cachée du MLP 1-hidden")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
 

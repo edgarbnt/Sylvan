@@ -1,8 +1,12 @@
 """EgomotionHead — proprio[132] → (dyaw, dfwd, dlat).
 
-Petite tête apprise (1-hidden-layer MLP) qui prédit l'ego-motion en un pas depuis le vecteur
-proprioceptif 132-d.  La normalisation d'entrée (μ, σ) est stockée dans le checkpoint pour
-que `predict()` soit auto-contenu (aucun état externe requis).
+Architecture : MLP 1-couche cachée (nn.Linear 132→H→3, SiLU).  Le choix linéaire a été testé
+en premier (R² dyaw=0.929 / dfwd=0.665 / dlat=0.416 sur le split test) ; dfwd et dlat n'ont pas
+atteint le seuil ≥ 0.9, ce qui a déclenché la montée en 1-hidden-layer MLP conformément au
+protocole « linear-first ».
+
+La normalisation d'entrée (μ, σ) est stockée dans le checkpoint pour que `predict()` soit
+auto-contenu (aucun état externe requis).
 
 Convention ego-motion (identique à egomotion_from_torso dans diag_slot_memory_drift.py) :
   dyaw  (rad)  = wrap(yaw1 − yaw0)
@@ -25,7 +29,7 @@ __all__ = ["EgomotionHead", "load_egomotion_head"]
 
 
 class EgomotionHead(nn.Module):
-    """MLP proprio[132] → (dyaw, dfwd, dlat).
+    """MLP 1-couche cachée proprio[132] → (dyaw, dfwd, dlat).
 
     La normalisation d'entrée est un buffer persistant stocké dans le checkpoint,
     ce qui rend `predict()` entièrement auto-contenu.
@@ -33,16 +37,14 @@ class EgomotionHead(nn.Module):
 
     PROPRIO_DIM = 132
     OUTPUT_DIM = 3       # dyaw, dfwd, dlat
-    HIDDEN = 128
 
-    def __init__(self) -> None:
+    def __init__(self, hidden: int = 128) -> None:
         super().__init__()
+        self.hidden = hidden
         self.net = nn.Sequential(
-            nn.Linear(self.PROPRIO_DIM, self.HIDDEN),
+            nn.Linear(self.PROPRIO_DIM, hidden),
             nn.SiLU(),
-            nn.Linear(self.HIDDEN, self.HIDDEN),
-            nn.SiLU(),
-            nn.Linear(self.HIDDEN, self.OUTPUT_DIM),
+            nn.Linear(hidden, self.OUTPUT_DIM),
         )
         # Normalisation entrée : initialisée à identité, remplie au moment de l'entraînement
         self.register_buffer("mu_x", torch.zeros(self.PROPRIO_DIM))
@@ -53,7 +55,7 @@ class EgomotionHead(nn.Module):
     # ------------------------------------------------------------------
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """x : (B, 132) tenseur brut.  Retourne (B, 3) = (dyaw, dfwd, dlat)."""
+        """x : (B, 132) tenseur brut non normalisé.  Retourne (B, 3) = (dyaw, dfwd, dlat)."""
         xn = (x - self.mu_x) / self.sd_x
         return self.net(xn)
 
@@ -80,13 +82,14 @@ def save_egomotion_head(head: EgomotionHead, path: str) -> None:
     """Sauvegarde le module + ses buffers de normalisation."""
     import os
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save({"model": head.state_dict()}, path)
+    torch.save({"model": head.state_dict(), "hidden": head.hidden}, path)
 
 
 def load_egomotion_head(path: str) -> EgomotionHead:
     """Charge un EgomotionHead depuis un checkpoint.  Prêt pour `predict()`."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    head = EgomotionHead()
+    hidden = ck.get("hidden", 128)
+    head = EgomotionHead(hidden=hidden)
     head.load_state_dict(ck["model"])
     head.eval()
     return head
