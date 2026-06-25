@@ -3,17 +3,23 @@
 const ETAT_LABEL = { pur: "pur", partiel: "partiel", echafaudage: "échafaudage", manquant: "manquant" };
 let MODULES_BY_ID = {};
 
+// Échappe le texte issu de la donnée avant injection via innerHTML (la donnée est locale et de
+// confiance, mais des `<`/`>` littéraux dans les preuves cassaient le rendu — robuste pour le futur).
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function nodeEl(m, focus) {
   const el = document.createElement("div");
   el.className = `node etat-${m.etat}` + (m.id === focus ? " focus" : "");
   el.dataset.id = m.id;
   if (m.live_field) el.dataset.liveField = m.live_field;
   const deps = (m.depends_on || [])
-    .map((d) => `<span>${(MODULES_BY_ID[d] || {}).titre || d}</span>`)
+    .map((d) => `<span>${esc((MODULES_BY_ID[d] || {}).titre || d)}</span>`)
     .join("");
   el.innerHTML =
-    `<div class="titre">${m.titre}</div>` +
-    `<div class="quoi">${m.quoi}</div>` +
+    `<div class="titre">${esc(m.titre)}</div>` +
+    `<div class="quoi">${esc(m.quoi)}</div>` +
     (deps ? `<div class="deps">⬆ alimenté par : ${deps}</div>` : "") +
     (m.id === focus ? `<div class="focus-badge">◀ ON BOSSE ICI</div>` : "") +
     `<div class="live-val"></div>`;
@@ -29,24 +35,24 @@ function section(label, html) {
 function openPanel(m) {
   const body = document.getElementById("panel-body");
   const preuves = (m.preuves && m.preuves.length)
-    ? `<ul class="preuves">${m.preuves.map((p) => `<li>${p}</li>`).join("")}</ul>`
+    ? `<ul class="preuves">${m.preuves.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`
     : "";
   const liens = (m.depends_on || [])
-    .map((d) => `<span>${(MODULES_BY_ID[d] || {}).titre || d}</span>`)
+    .map((d) => `<span>${esc((MODULES_BY_ID[d] || {}).titre || d)}</span>`)
     .join(" ");
   const limites = m.limites && m.limites !== "—" ? m.limites : "";
   body.innerHTML =
-    `<h2>${m.titre}</h2>` +
+    `<h2>${esc(m.titre)}</h2>` +
     `<span class="pill etat-${m.etat}">${ETAT_LABEL[m.etat]}</span>` +
-    `<div class="quoi-line">${m.quoi}</div>` +
-    section("Rôle", m.role) +
-    section("Comment", m.comment) +
-    section("Ce qu'il apporte", m.apporte) +
-    section("État &amp; pourquoi", m.etat_detail) +
-    section("Limites", limites) +
+    `<div class="quoi-line">${esc(m.quoi)}</div>` +
+    section("Rôle", esc(m.role)) +
+    section("Comment", esc(m.comment)) +
+    section("Ce qu'il apporte", esc(m.apporte)) +
+    section("État &amp; pourquoi", esc(m.etat_detail)) +
+    section("Limites", esc(limites)) +
     section("Preuves", preuves) +
     section("Alimenté par", liens) +
-    (m.code ? `<div class="code">📄 ${m.code}</div>` : `<div class="code">— pas encore de code —</div>`);
+    (m.code ? `<div class="code">📄 ${esc(m.code)}</div>` : `<div class="code">— pas encore de code —</div>`);
   document.getElementById("panel").classList.remove("hidden");
 }
 

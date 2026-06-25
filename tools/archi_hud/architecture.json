@@ -138,7 +138,7 @@
         "checkpoint partagé avec le résidu PPO"
       ],
       "code": "data/checkpoints/hexapod_v2/policy_best.pt",
-      "live_field": "fwd_v",
+      "live_field": null,
       "depends_on": ["residu_ppo"]
     },
     {
