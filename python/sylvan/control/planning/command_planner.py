@@ -86,6 +86,10 @@ class CommandPlanConfig:
     resource_drain: float = 0.0016         # drain normalisé/pas (≈ homeostasis passive_drain 0.15 / max 100)
     resource_restore: float = 0.5          # refill normalisé au contact (≈ energy_per_food 40-50 / 100)
     resource_reach: float = 1.0            # mètres : distance de capture imaginée (≈ eat/drink_radius)
+    survival_weight: float = 0.0           # FORESIGHT de survie consciente du TRAJET (défaut 0 = inchangé). Pénalise un
+                                            # candidat si une ressource passerait SOUS zéro AVANT qu'on l'atteigne depuis
+                                            # la position imaginée en fin de rollout. Anti-myopie. Env: SYLVAN_PLANNER_SURVIVAL_W
+    nominal_speed: float = 0.02            # m/pas d'approche imaginée (calibre temps-pour-atteindre). Env: SYLVAN_PLANNER_SPEED
 
 
 def food_xz_from_radar(radar: list[float] | torch.Tensor) -> tuple[float, float] | None:
@@ -127,6 +131,12 @@ class CommandPlanner:
         _uw = os.environ.get("SYLVAN_PLANNER_URGENCY_W")  # cheap arbitration tuning (2ᵉ pulsion)
         if _uw not in (None, ""):
             self.cfg.urgency_weight = float(_uw)
+        _sw = os.environ.get("SYLVAN_PLANNER_SURVIVAL_W")  # foresight de survie consciente du trajet (anti-myopie)
+        if _sw not in (None, ""):
+            self.cfg.survival_weight = float(_sw)
+        _sp = os.environ.get("SYLVAN_PLANNER_SPEED")
+        if _sp not in (None, ""):
+            self.cfg.nominal_speed = float(_sp)
         self.device = torch.device(device)
         self.world_model = world_model.to(self.device).eval()
         for p in self.world_model.parameters():
@@ -354,11 +364,26 @@ class CommandPlanner:
         ue0 = (1.0 - max(0.0, min(1.0, e0))) ** cfg.urgency_exp
         ut0 = (1.0 - max(0.0, min(1.0, t0))) ** cfg.urgency_exp
         attract = ut0 * min_dw + (ue0 * min_df if has_food else 0.0)
+        # FORESIGHT de survie consciente du TRAJET (anti-myopie, défaut OFF). Pour chaque ressource : de combien le
+        # niveau passerait SOUS zéro le temps de l'atteindre depuis la position imaginée en fin de rollout
+        # (deficit = relu(dist/vitesse × drain − niveau_fin), en unités de niveau). Pénalise les candidats qui laissent
+        # une ressource devenir fatalement inatteignable → l'agent y va AU BON MOMENT (tôt si loin). 0 → inchangé.
+        if cfg.survival_weight != 0.0:
+            spd = max(cfg.nominal_speed, 1e-4)
+            df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
+            dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+            deficit = torch.relu(dw_end / spd * cfg.resource_drain - t_lvl)
+            if has_food:
+                deficit = deficit + torch.relu(df_end / spd * cfg.resource_drain - e_lvl)
+            survival_def = cfg.survival_weight * deficit
+        else:
+            survival_def = 0.0
         score = (
             -cfg.urgency_weight * discomfort
             - cfg.dist_weight * attract
             + cfg.heading_weight * (align_sum / float(h))
             - cfg.done_penalty * survival_pen
+            - survival_def
         )
         best = int(torch.argmax(score).item())
         vx, om = (float(v) for v in self._cmd_seqs[best, 0])
