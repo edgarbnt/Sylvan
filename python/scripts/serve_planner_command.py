@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import socketserver
 import threading
 from pathlib import Path
@@ -30,6 +32,7 @@ from sylvan.control.ppo.policy import GaussianActorCritic
 from sylvan.models.command_wm import CommandWorldModel
 from sylvan.models.perception_head import RetinaPerceptionHead, RETINA_DIM
 from sylvan.training.checkpointing import load_checkpoint
+from sylvan.hud.live_writer import write_live
 
 VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (matches training)
 
@@ -101,7 +104,10 @@ class _PlannerService:
         self.localizer = self.slot_head if self.slot_head is not None else self.retina_head
         self._food_pos_ema: tuple[float, float] | None = None
         self._water_pos_ema: tuple[float, float] | None = None
-        import os
+        self.hud_enable = os.environ.get("SYLVAN_HUD") == "1"
+        self.hud_ts = 0
+        self.hud_path = os.environ.get("SYLVAN_HUD_PATH", "data/hud/live.json")
+        self._last_min_dist = float("nan")
         self.pos_alpha = float(os.environ.get("SYLVAN_RETINA_POS_ALPHA", "0.0"))  # 0 = position brute (défaut)
         # 🅑-PUR : coût-VALEUR latent (planifier DANS le latent, AUCUNE coordonnée). Quand une tête de valeur
         # est chargée, le serveur route vers planner.plan_latent — la bouffe n'existe QUE dans ce que le WM a
@@ -193,14 +199,16 @@ class _PlannerService:
                 elif self.localizer is not None:
                     # LOCALISATION = perception APPRISE (slot pur si chargé, sinon retina_head). water override seulement
                     # si la tête gère l'eau ; sinon on garde l'EMA radar eau (2ᵉ pulsion non encore rétinisée).
-                    self._cmd = self.planner.plan(
+                    plan_res = self.planner.plan(
                         wm_obs, self._radar_ema,
                         water_radar=None if self._retina_n_res > 1 else self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
                         override_pos=True, food_override=food_pos,
                         water_override=water_pos if self._retina_n_res > 1 else (
                             None),
-                    )["command"]
+                    )
+                    self._cmd = plan_res["command"]
+                    self._last_min_dist = float(plan_res.get("pred_min_dist", float("nan")))
                 else:
                     # food LOCALISED from the fine EMA (oracle).
                     self._cmd = self.planner.plan(
@@ -210,6 +218,17 @@ class _PlannerService:
                     )["command"]
             self._ticks += 1
             vx, om = self._cmd
+            if self.hud_enable:
+                self.hud_ts += 1
+                fields = {"command": [float(vx), float(om)], "energy": float(energy), "thirst": float(thirst)}
+                if food_pos is not None:
+                    fields["bearing"] = math.degrees(math.atan2(float(food_pos[0]), float(food_pos[1])))
+                if self._last_min_dist == self._last_min_dist:  # pas NaN
+                    fields["min_dist"] = self._last_min_dist
+                try:
+                    write_live(self.hud_path, ts=self.hud_ts, episode=0, step=self._ticks, fields=fields)
+                except Exception:
+                    pass
             vision = [float(vx), float(om)] + [0.0] * (VISION_DIM - 2)
             res_in = torch.tensor(proprio + vision, dtype=torch.float32).unsqueeze(0)
             action = self.residual.mean(res_in)[0]
