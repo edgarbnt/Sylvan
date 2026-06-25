@@ -123,3 +123,14 @@ tombent / deviennent impossibles (mémoire, curiosité, hiérarchie reposent sur
 
 ## Pipeline (3 couches)
 JEPA (planner MPC commande-space, foraging) → sur RÉSIDU PPO borné (équilibre/perf) → sur CPG codé-main (marche+virage par construction). Le WM/planner planifient en (vx,ω) ; "bouffe" vit SEULEMENT dans le coût du planner (agnosticité, BLUEPRINT §14).
+
+## ⭐ CARTE VIVANTE DE L'ARCHI (Archi-HUD) — LA TENIR À JOUR (obligatoire)
+`tools/archi_hud/architecture.json` est la **source de vérité** de l'état de l'archi (modules, état
+pur/partiel/échafaudage/manquant, rôle JEPA, ce qu'ils sont/apportent, ancre code, focus). Visualisation :
+`bash voir_archi.sh` (carte cliquable ; s'anime en live pendant un run lancé via `bash run_forage_hud.sh`).
+**RÈGLE : dès qu'une décision change la CONCEPTION, l'IMPLÉMENTATION ou les décisions générales d'un module
+(ex. un étage passe pur↔échafaudage, une impureté est résorbée, un module manquant est construit, le focus
+change, une preuve/limite évolue) → METTRE À JOUR `architecture.json` DANS LE MÊME COMMIT** (champs `etat`,
+`etat_detail`, `role`/`comment`/`apporte`, `limites`, `preuves`, `code`, `focus`). Le validateur
+`env_pytorch_3.12/bin/python tools/archi_hud/validate_architecture.py` garde la carte honnête (états/clés/ancres) ;
+`voir_archi.sh` refuse de servir une carte invalide. Ne JAMAIS laisser la carte mentir (cf §2 ne-pas-masquer).
