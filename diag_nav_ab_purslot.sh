@@ -9,7 +9,7 @@ ANGLES=(0 45 90 135 180 225 270 315)
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 rm -f /tmp/nav_ab_*.log
-WM=${WM:-data/checkpoints/wm_rich_fidele_sym/wm_best.pt}
+WM=${WM:-data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt}  # WM purifié live (2026-06-25)
 SLOT=${SLOT:-data/checkpoints/slot_head/slot_best.pt}
 export SYLVAN_PLANNER_HEADING_W=${SYLVAN_PLANNER_HEADING_W:-2.0}
 echo "PUR-SLOT WM=$WM slot=$SLOT heading_w=$SYLVAN_PLANNER_HEADING_W dist=$DIST"

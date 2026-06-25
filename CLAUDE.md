@@ -74,8 +74,11 @@ tombent / deviennent impossibles (mémoire, curiosité, hiérarchie reposent sur
 - **Dims** : proprio=**132**, action=**18**, obs policy=**144** (132+vision12), obs WM=**145** (132+radar12+énergie1).
 - Ne JAMAIS changer ces dims sans synchroniser `constants.py`, `observation_builder.gd`, `sylvan_agent.gd`, `symmetry.py`.
 - **Checkpoints vivants** : base motrice `data/checkpoints/hexapod_v2/policy_best.pt` ;
-  **FORAGER VIVANT (promu 2026-06-24) = SLOT-PLANNER PUR** : WM `data/checkpoints/wm_rich_fidele_sym/wm_best.pt` (rétine,
-  clé de voûte) + **SLOT object-centric AUTO-SUPERVISÉ** `data/checkpoints/slot_head/slot_best.pt` (perception 100%
+  **FORAGER VIVANT = SLOT-PLANNER PUR** : WM **PURIFIÉ `data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt`**
+  (promu 2026-06-25 : reconstruction droppée `--w-proprio/radar 0` → JEPA principe n°1 « prédire la repr., pas
+  reconstruire l'entrée » ; warm-start de `wm_rich_fidele_sym`, recette identique sinon ; eff_rank 21>13, transport slot
+  +0.65 préservé, engagement 15/16>13/16, foraging survie méd 1100≥1040 = parité gratuite ; trainer `train_wm_jepa_pur.sh`,
+  ancien non-purifié = `wm_rich_fidele_sym`) + **SLOT object-centric AUTO-SUPERVISÉ** `data/checkpoints/slot_head/slot_best.pt` (perception 100%
   label-free, ZÉRO oracle de position) → `bash run_forage_purslot.sh` (serveur `--slot-head`). Le slot = coordonnée ego
   apprise SANS label (consistance de transport Rot(+Δyaw) + saillance perceptuelle ; module `slot_head.py`, trainer
   `train_slot_head.py`), transportée par la displacement-head. Engage l'arrière (re-gate 13/16 ≈ retina_head 14/16, arrière

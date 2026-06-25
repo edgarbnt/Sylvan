@@ -4,7 +4,9 @@
 set +e
 ER=${1:-1.0}; HZ=${2:-160}; NEP=${3:-12}
 SLOT=${SLOT:-data/checkpoints/slot_head/slot_best.pt}
-WM=${WM_CKPT:-data/checkpoints/wm_rich_fidele_sym/wm_best.pt}
+# WM PURIFIÉ (2026-06-25) : reconstruction droppée (--w-proprio/radar 0) → JEPA principe n°1. eff_rank 21>13,
+# transport slot +0.65 préservé, engagement 15/16>13/16, foraging survie 1100≥1040. Ancien = wm_rich_fidele_sym.
+WM=${WM_CKPT:-data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 echo "PUR-SLOT slot=$SLOT WM=$WM eat_radius=$ER horizon=$HZ episodes=$NEP"
