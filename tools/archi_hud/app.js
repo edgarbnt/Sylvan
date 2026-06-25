@@ -21,12 +21,31 @@ function nodeEl(m, focus) {
   return el;
 }
 
+function section(label, html) {
+  if (!html) return "";
+  return `<div class="sec"><div class="sec-h">${label}</div><div class="sec-b">${html}</div></div>`;
+}
+
 function openPanel(m) {
   const body = document.getElementById("panel-body");
+  const preuves = (m.preuves && m.preuves.length)
+    ? `<ul class="preuves">${m.preuves.map((p) => `<li>${p}</li>`).join("")}</ul>`
+    : "";
+  const liens = (m.depends_on || [])
+    .map((d) => `<span>${(MODULES_BY_ID[d] || {}).titre || d}</span>`)
+    .join(" ");
+  const limites = m.limites && m.limites !== "—" ? m.limites : "";
   body.innerHTML =
     `<h2>${m.titre}</h2>` +
-    `<span class="pill etat-${m.etat}" style="background:#2a3540">${ETAT_LABEL[m.etat]}</span>` +
-    `<div class="detail">${m.detail}</div>` +
+    `<span class="pill etat-${m.etat}">${ETAT_LABEL[m.etat]}</span>` +
+    `<div class="quoi-line">${m.quoi}</div>` +
+    section("Rôle", m.role) +
+    section("Comment", m.comment) +
+    section("Ce qu'il apporte", m.apporte) +
+    section("État &amp; pourquoi", m.etat_detail) +
+    section("Limites", limites) +
+    section("Preuves", preuves) +
+    section("Alimenté par", liens) +
     (m.code ? `<div class="code">📄 ${m.code}</div>` : `<div class="code">— pas encore de code —</div>`);
   document.getElementById("panel").classList.remove("hidden");
 }

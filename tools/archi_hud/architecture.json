@@ -7,7 +7,16 @@
       "titre": "Perception / Slot",
       "couche": "perception",
       "quoi": "Localise la nourriture depuis les rayons couleur bruts (vision), 100% label-free",
-      "detail": "Slot auto-supervisé (slot_head) : attention géométrique soft-argmax sur 36 rayons, gatée par la saillance perceptuelle. Entraîné SANS label (consistance de transport Rot(+Δyaw) + VICReg). A éliminé l'oracle de position de la boucle (promu live 2026-06-24).",
+      "role": "C'est l'œil du système. À partir des rayons de la rétine (couleur brute par direction), il dit OÙ est la ressource en coordonnées égocentriques (devant/derrière, gauche/droite).",
+      "comment": "Une attention géométrique (soft-argmax) balaye 36 rayons et pointe la direction la plus saillante ; la saillance = saturation de couleur × proximité. Entraîné SANS aucun label de position : par consistance de transport (l'objet doit se déplacer comme le prédit l'auto-mouvement Rot(+Δyaw)) + VICReg anti-collapse.",
+      "apporte": "Une perception 100% apprise qui a éliminé l'oracle de position de la boucle vivante. L'entité « voit » réellement la bouffe au lieu qu'on lui souffle ses coordonnées.",
+      "etat_detail": "PUR : zéro label, zéro oracle dans la boucle. Promu forager vivant le 2026-06-24.",
+      "limites": "Un seul type de ressource géré (food) ; le multi-type (eau/prédateur) = un slot par type, trivial mais pas encore câblé.",
+      "preuves": [
+        "bearing MAE 4.9° (< retina_head supervisé 8.4°)",
+        "robuste sur 5 seeds après ajout de la saillance (le transport seul était sous-déterminé : 127°)",
+        "F-pure-1 : |corr| 0.70 = égal au supervisé"
+      ],
       "code": "python/sylvan/models/slot_head.py",
       "live_field": "bearing",
       "depends_on": []
@@ -18,7 +27,17 @@
       "titre": "World Model",
       "couche": "wm",
       "quoi": "Imagine la dynamique en espace latent (rêve open-loop des déplacements)",
-      "detail": "WM purifié (recon droppée 2026-06-25 → JEPA principe n°1 : prédire la représentation, pas reconstruire l'entrée). RESTE impur : déterministe + sans incertitude (bloque la curiosité). C'est la grosse refonte object-centric différée.",
+      "role": "Le simulateur interne. Il prédit comment le monde et le corps évoluent quand on imagine une séquence de commandes — sans bouger réellement. C'est lui qui permet de PLANIFIER.",
+      "comment": "Un réseau récurrent (RSSM/GRU) encode l'observation en latent puis déroule le futur en latent. Depuis le 2026-06-25 il prédit la REPRÉSENTATION (perte latente cosine + VICReg + fidélité de rêve w-rollout) au lieu de reconstruire l'entrée (proprio/radar droppés).",
+      "apporte": "Le rêve fournit le déplacement ego prédit (displacement-head) qui sert à scorer les plans : c'est le cœur du « penser avant d'agir ».",
+      "etat_detail": "PARTIEL. La reconstruction d'entrée a été retirée (JEPA principe n°1 ✅), mais il reste DÉTERMINISTE et SANS INCERTITUDE — il ne sait pas dire « je ne sais pas ».",
+      "limites": "Déterministe (un seul futur) + pas d'incertitude → bloque la curiosité. Et l'objet n'est pas encore une entité de son latent (cf Transport du slot). C'est la grande refonte object-centric différée.",
+      "preuves": [
+        "eff_rank latent 21 (> 13 avant purification) = représentation plus riche",
+        "open-loop pos 0.21 m @100 pas (meilleur du projet)",
+        "transport du slot +0.65 préservé après purification",
+        "foraging survie 1100 ≥ 1040 (parité : la purification est gratuite)"
+      ],
       "code": "data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt",
       "live_field": null,
       "depends_on": ["perception_slot"]
@@ -29,7 +48,16 @@
       "titre": "Transport du slot",
       "couche": "planner",
       "quoi": "Transporte la position de l'objet à la main (trigo) au fil du rêve",
-      "detail": "BÉQUILLE : l'objet est une coordonnée FIGÉE à t=0 (perception apprise ✅) puis transportée par une boucle trigo (sin/cos) DANS le planner. Le WM n'est jamais interrogé sur 'où est l'objet maintenant' — l'object-permanence vit hors du WM. À internaliser dans le latent du WM (chantier courant).",
+      "role": "Maintenir où est l'objet pendant que l'entité imagine bouger — l'object-permanence à l'intérieur du plan.",
+      "comment": "BÉQUILLE : l'objet est une coordonnée FIGÉE à t=0 (perçue), puis une boucle trigo (sin/cos) dans le planner déplace l'AGENT par dead-reckoning du déplacement prédit et recalcule la distance à l'objet fixe. Le WM n'est JAMAIS interrogé sur « où est l'objet maintenant ».",
+      "apporte": "Ça fait marcher le foraging (l'entité garde le cap vers la cible pendant tout le plan), y compris partiellement la cible-derrière.",
+      "etat_detail": "ÉCHAFAUDAGE. La perception est apprise ✅, mais la PERSISTANCE/transport vit dans ~6 lignes de Python HORS du WM, pas dans le latent. C'est le chantier courant : l'internaliser dans le WM.",
+      "limites": "Comme l'objet vit hors du latent, le rêve du WM « corrompt » l'objet en rotation → cible-derrière seulement 3/4. La vraie fix = slot dans le latent (qui résout aussi mémoire + incertitude d'un seul coup).",
+      "preuves": [
+        "le pur-latent-valeur (sans cette béquille) = lossy +0.30, perdait l'objet",
+        "le slot explicite atteint +0.65",
+        "la béquille = command_planner.py:204-218"
+      ],
       "code": "python/sylvan/control/planning/command_planner.py:204-218",
       "live_field": "min_dist",
       "depends_on": ["world_model", "perception_slot"]
@@ -40,7 +68,15 @@
       "titre": "Coût planner",
       "couche": "planner",
       "quoi": "Score d'un plan = -distance à la nourriture (coût intrinsèque pur)",
-      "detail": "Coût = -min_dist PUR (heading_weight retiré 2026-06-25 : le slot précis à 4.9° rend le how-to-hint inutile). La nourriture n'existe QUE dans ce coût (corps/WM/CPG food-agnostiques, BLUEPRINT §14).",
+      "role": "La fonction objectif : dire quel plan imaginé est bon. Ici « bon » = se rapprocher de la ressource voulue.",
+      "comment": "Le score d'une séquence = -min_dist (la plus petite distance à la cible atteinte au fil du rêve), pondéré par l'urgence des drives. Le « how-to-hint » heading_weight a été RETIRÉ le 2026-06-25 (le slot précis le rend inutile).",
+      "apporte": "Le plan moteur (« oriente-toi puis avance ») ÉMERGE du coût, on ne le code pas. La bouffe n'existe QUE dans ce coût — corps/WM/CPG restent agnostiques (BLUEPRINT §14).",
+      "etat_detail": "PUR. Coût DESIGNED (LeCun autorise un coût conçu), zéro hack flaggé depuis le retrait de heading_weight.",
+      "limites": "Coût géométrique : suffit pour « aller à la ressource visible ». En multi-drive prévoyant (où la géométrie ne suffit plus), il faudra un CRITIQUE APPRIS (cf module manquant).",
+      "preuves": [
+        "A/B hw=0 ≥ hw=2 : engagement 13/16, arrière 3/4 ≥ 2/4, foraging méd 1040 ≥ 915",
+        "le coût = command_planner.py:226"
+      ],
       "code": "python/sylvan/control/planning/command_planner.py:226",
       "live_field": null,
       "depends_on": ["transport_slot", "drives"]
@@ -51,7 +87,15 @@
       "titre": "Planner MPC",
       "couche": "planner",
       "quoi": "Cherche la meilleure commande (vx, ω) en espace-commande sur l'horizon",
-      "detail": "Actor haut-niveau : déroule des séquences de commandes dans le WM, score chacune par le coût, renvoie la meilleure (vx, ω). Le plan moteur ('oriente puis avance') ÉMERGE du coût.",
+      "role": "L'acteur de haut niveau : décider QUOI faire. Il choisit la commande (vitesse vx, rotation ω) envoyée au corps.",
+      "comment": "MPC : il déroule beaucoup de séquences de commandes candidates dans le WM, score chacune avec le coût, et renvoie la première commande de la meilleure. Re-planifie tous les ~10 pas.",
+      "apporte": "Une décision « pilotée par l'imagination » : l'entité essaie mentalement des trajectoires et garde la plus prometteuse. C'est la planification au sens propre.",
+      "etat_detail": "PUR. Recherche en espace-commande sur un WM appris ; rien de spécifique-ressource ici.",
+      "limites": "Recherche par échantillonnage de commandes constantes/arcs ; pas encore de planification hiérarchique ou à long terme (ce sera le rôle du Configurator).",
+      "preuves": [
+        "plan moteur « oriente puis fonce » émergent (non codé)",
+        "le planner = command_planner.py:166"
+      ],
       "code": "python/sylvan/control/planning/command_planner.py:166",
       "live_field": "command",
       "depends_on": ["cout_planner", "world_model"]
@@ -62,7 +106,17 @@
       "titre": "Résidu PPO",
       "couche": "moteur",
       "quoi": "Petit résidu borné qui rend la marche rapide ET stable",
-      "detail": "Actor bas-niveau : corrige le CPG codé-main (équilibre/perf), gain borné 0.4. Warm-start hexapod_v2 + symétrie. Banké comme base motrice finale.",
+      "role": "Corriger en temps réel la marche du CPG pour qu'elle soit rapide, stable et fidèle à la commande (vx, ω).",
+      "comment": "Une petite politique RL (PPO) ajoute un résidu BORNÉ (gain 0.4) par-dessus le CPG codé-main. Warm-start hexapod_v2 + symétrie sagittale + lissage anti-jitter.",
+      "apporte": "3× la vitesse de l'ancien quadrupède (0.49 m/s), cap droit, virages symétriques, 0% de chute — la locomotion « ça marche, juste ».",
+      "etat_detail": "PUR. Base motrice finale bankée le 2026-06-17.",
+      "limites": "Plafond de vitesse propre atteint (~0.2–0.5 m/s) ; aller plus vite = redesign morpho, hors scope.",
+      "preuves": [
+        "0.49 m/s @ vx0.7",
+        "dérive +12° → −1° après symétrie",
+        "fall 0%",
+        "checkpoint hexapod_v2/policy_best.pt"
+      ],
       "code": "data/checkpoints/hexapod_v2/policy_best.pt",
       "live_field": null,
       "depends_on": ["planner_mpc"]
@@ -73,7 +127,16 @@
       "titre": "Corps / CPG",
       "couche": "moteur",
       "quoi": "Hexapode + générateur de marche (CPG) : marche et tourne par construction",
-      "detail": "Substrat moteur. Le CPG produit la démarche trépied et le virage par construction ; le corps hexapode est stable (6 pattes) → l'énergie va à la propulsion. 0.49 m/s, virages symétriques, fall 0%.",
+      "role": "Le substrat physique : un corps hexapode et un générateur central de patterns (CPG) qui produit la démarche.",
+      "comment": "6 pattes en démarche trépied (cafard) → stabilité gratuite. Le CPG génère les oscillations des pattes et le virage par construction ; il prend une commande (vx, ω) et la réalise dans le moteur Godot.",
+      "apporte": "Une stabilité qui libère l'énergie pour la propulsion (stable = moteur de vitesse). La locomotion est un PRÉREQUIS résolu, pas le but.",
+      "etat_detail": "PUR. Codé-main par construction — légitime : c'est le corps, pas la cognition.",
+      "limites": "Régime propre étroit (vx 0.55–0.75, PERIOD 0.5) ; hors de cette plage il dérive.",
+      "preuves": [
+        "démarche trépied stable, fall 0%",
+        "régime propre documenté (CLAUDE.md)",
+        "checkpoint partagé avec le résidu PPO"
+      ],
       "code": "data/checkpoints/hexapod_v2/policy_best.pt",
       "live_field": "fwd_v",
       "depends_on": ["residu_ppo"]
@@ -84,7 +147,16 @@
       "titre": "Drives faim/soif",
       "couche": "pulsions",
       "quoi": "Pulsions homéostatiques (faim, soif) qui pondèrent le coût",
-      "detail": "Propriété du CORPS (définie une fois). L'arbitrage affamé→bouffe / assoiffé→eau ÉMERGE (non codé). Eau/soif = inputs planner-only, WM inchangé (étage 1).",
+      "role": "Les motivations du corps : avoir faim, avoir soif. Elles décident QUELLE ressource compte à cet instant.",
+      "comment": "Propriété du CORPS, définie une fois (comme l'évolution câble les pulsions). L'urgence de chaque drive (niveau d'énergie/soif) pondère le terme d'attraction correspondant dans le coût du planner. Eau/soif = inputs planner-only, WM inchangé.",
+      "apporte": "Un arbitrage homéostatique ÉMERGENT (non codé) : affamé→bouffe, assoiffé→eau, l'urgence bat la proximité.",
+      "etat_detail": "PUR. Le DRIVE est câblé (corps), mais le LIEN perception→soulage-le-drive s'apprend — conforme à la séparation substrat/pulsions (CLAUDE.md §3).",
+      "limites": "Deux pulsions pour l'instant ; le lien « perception soulage le drive » est encore analytique côté coût, pas auto-supervisé sur le drive vécu.",
+      "preuves": [
+        "arbitrage émergent 11/12 sur le diag",
+        "urgence-bat-proximité 3/4",
+        "drives = command_planner.py:249"
+      ],
       "code": "python/sylvan/control/planning/command_planner.py:249",
       "live_field": "energy",
       "depends_on": []
@@ -95,7 +167,14 @@
       "titre": "Mémoire spatiale",
       "couche": "manquant",
       "quoi": "Se souvenir où est un objet quand on ne le voit plus (permanence)",
-      "detail": "MANQUANT (Short-term memory de LeCun). Tombe gratuitement une fois le slot internalisé dans le WM : un slot non-perçu persiste par dead-reckoning (permanence prouvée F-pure-3 à +0.95).",
+      "role": "La mémoire spatiale court-terme de LeCun : garder en tête la position des objets sortis du champ de vision.",
+      "comment": "N'existe pas encore. Tomberait GRATUITEMENT une fois le slot internalisé dans le WM : un slot non-perçu persisterait par dead-reckoning de l'auto-mouvement.",
+      "apporte": "(à venir) L'entité pourrait se détourner d'une ressource, contourner un obstacle et y revenir en « sachant » qu'elle est toujours là. Le premier vrai modèle du monde hors-champ.",
+      "etat_detail": "MANQUANT. Débloqué par la refonte object-centric (internaliser le Transport du slot).",
+      "limites": null,
+      "preuves": [
+        "permanence prouvée gratuitement (F-pure-3) : un slot dead-reckoné tient l'objet à +0.95 à travers une réorientation > 60° (vs +0.30 figé)"
+      ],
       "code": null,
       "live_field": null,
       "depends_on": ["perception_slot", "world_model"]
@@ -106,7 +185,14 @@
       "titre": "Critique appris",
       "couche": "manquant",
       "quoi": "Une valeur apprise V(slot) = gain futur, à la place du coût géométrique",
-      "detail": "MANQUANT (Critic de LeCun). Remplacerait -min_dist par un critique appris sur le slot ; gagnera sa place en multi-drive foresighted où la géométrie ne suffit plus.",
+      "role": "Le critique de LeCun : estimer la valeur future d'un état, au lieu d'un coût géométrique figé.",
+      "comment": "N'existe pas encore. Remplacerait -min_dist par une valeur V(slot) apprise sur l'expérience (le gain futur attendu depuis la position perçue de l'objet).",
+      "apporte": "(à venir) Des décisions plus fines que « va vers le plus proche » — utile quand la géométrie ne suffit plus (détours, arbitrage prévoyant).",
+      "etat_detail": "MANQUANT. -min_dist (coût designed) suffit pour l'instant ; le critique gagnera sa place en multi-drive prévoyant.",
+      "limites": null,
+      "preuves": [
+        "une tentative pur-latent-valeur (value_head) a existé mais était lossy en multi-pas → le slot explicite l'a remplacée"
+      ],
       "code": null,
       "live_field": null,
       "depends_on": ["world_model"]
@@ -117,7 +203,12 @@
       "titre": "Configurator",
       "couche": "manquant",
       "quoi": "Chef d'orchestre : module l'attention et arbitre les pulsions selon le but",
-      "detail": "MANQUANT (Configurator de LeCun). Au-dessus de tout : configure perception/WM/coût selon la tâche du moment. Chantier lointain.",
+      "role": "Le configurateur de LeCun : au sommet, il configure perception/WM/coût selon la tâche du moment (mode-2 réfléchi → mode-1 réflexe).",
+      "comment": "N'existe pas encore. Orchestrerait quelle pulsion/quel objectif est actif, où porter l'attention, quel sous-but poursuivre.",
+      "apporte": "(à venir) Un comportement vraiment dirigé par des buts changeants — la marche vers l'ALife complète.",
+      "etat_detail": "MANQUANT. Chantier lointain (après mémoire, multi-type, curiosité).",
+      "limites": null,
+      "preuves": [],
       "code": null,
       "live_field": null,
       "depends_on": ["drives"]

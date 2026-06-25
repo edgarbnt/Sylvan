@@ -8,7 +8,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ARCHI = os.path.join(ROOT, "tools", "archi_hud", "architecture.json")
 ALLOWED_ETATS = {"pur", "partiel", "echafaudage", "manquant"}
-REQUIRED_KEYS = {"id", "etat", "titre", "couche", "quoi", "detail", "code", "live_field", "depends_on"}
+REQUIRED_KEYS = {"id", "etat", "titre", "couche", "quoi", "role", "comment", "apporte",
+                 "etat_detail", "limites", "preuves", "code", "live_field", "depends_on"}
 
 
 def validate(path: str) -> list[str]:
@@ -41,6 +42,14 @@ def validate(path: str) -> list[str]:
                     errs.append(f"[{mid}] depends_on référence un id inconnu : '{dep}'")
         if m["live_field"] is not None and not isinstance(m["live_field"], str):
             errs.append(f"[{mid}] live_field doit être str ou null")
+        # Sections riches du panneau : textes obligatoires + listes/null typés.
+        for key in ("role", "comment", "apporte", "etat_detail"):
+            if not isinstance(m[key], str) or not m[key].strip():
+                errs.append(f"[{mid}] '{key}' doit être un texte non vide")
+        if m["limites"] is not None and not isinstance(m["limites"], str):
+            errs.append(f"[{mid}] limites doit être str ou null")
+        if not isinstance(m["preuves"], list) or any(not isinstance(p, str) for p in m["preuves"]):
+            errs.append(f"[{mid}] preuves doit être une liste de chaînes")
         code = m["code"]
         if code is not None:
             relpath = code.split(":", 1)[0]
