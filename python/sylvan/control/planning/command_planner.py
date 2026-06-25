@@ -84,9 +84,6 @@ class CommandPlanConfig:
     dist_weight: float = 1.0               # poids de l'attraction-proximité (le -min_dist validé A→B), pondérée par urgence
     urgency_exp: float = 2.0               # convexité de l'urgence (2 = le critique coûte bien plus que le modéré)
     resource_drain: float = 0.0016         # drain normalisé/pas (≈ homeostasis passive_drain 0.15 / max 100)
-    foresight_steps: float = 0.0           # FORESIGHT anti-myopie : anticipe l'urgence N pas en avant (énergie/soif
-                                            # FUTURE) pour l'attraction-proximité → l'agent va se ravitailler AVANT la
-                                            # crise. 0 = urgence COURANTE (comportement validé inchangé). Env: SYLVAN_PLANNER_FORESIGHT_STEPS
     resource_restore: float = 0.5          # refill normalisé au contact (≈ energy_per_food 40-50 / 100)
     resource_reach: float = 1.0            # mètres : distance de capture imaginée (≈ eat/drink_radius)
 
@@ -130,9 +127,6 @@ class CommandPlanner:
         _uw = os.environ.get("SYLVAN_PLANNER_URGENCY_W")  # cheap arbitration tuning (2ᵉ pulsion)
         if _uw not in (None, ""):
             self.cfg.urgency_weight = float(_uw)
-        _fs = os.environ.get("SYLVAN_PLANNER_FORESIGHT_STEPS")  # cheap anti-myopie foresight test (défaut 0 = inchangé)
-        if _fs not in (None, ""):
-            self.cfg.foresight_steps = float(_fs)
         self.device = torch.device(device)
         self.world_model = world_model.to(self.device).eval()
         for p in self.world_model.parameters():
@@ -357,11 +351,8 @@ class CommandPlanner:
         # Urgency-weighted proximity gradient = the VALIDATED A→B -min_dist attraction, but scaled by each
         # resource's CURRENT urgency → strong smooth pull toward the urgent resource (engages the WM's weak
         # right-turn side too), while a satisfied resource (urg→0) stops attracting. Keeps arbitration emergent.
-        # FORESIGHT anti-myopie : pondère l'attraction par l'urgence ANTICIPÉE (niveau dans foresight_steps pas)
-        # au lieu du niveau courant → l'agent se ravitaille AVANT la crise. foresight_steps=0 → fore=0 → INCHANGÉ.
-        fore = cfg.foresight_steps * cfg.resource_drain
-        ue0 = (1.0 - max(0.0, min(1.0, e0 - fore))) ** cfg.urgency_exp
-        ut0 = (1.0 - max(0.0, min(1.0, t0 - fore))) ** cfg.urgency_exp
+        ue0 = (1.0 - max(0.0, min(1.0, e0))) ** cfg.urgency_exp
+        ut0 = (1.0 - max(0.0, min(1.0, t0))) ** cfg.urgency_exp
         attract = ut0 * min_dw + (ue0 * min_df if has_food else 0.0)
         score = (
             -cfg.urgency_weight * discomfort
