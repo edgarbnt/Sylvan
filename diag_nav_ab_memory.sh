@@ -23,7 +23,8 @@ echo "START diag_nav_ab_memory"
 DIST=${1:-3.0}; NEP=${2:-2}; MS=${3:-700}
 MEM=${MEM:-on}
 export SYLVAN_OCCLUDE_FOV_DEG=${SYLVAN_OCCLUDE_FOV_DEG:-180}
-ANGLES=(${=SYLVAN_NAV_ANGLES:-0 45 90 135 180 225 270 315})
+# défaut = sweep complet (littéral → marche en bash ET zsh) ; override SYLVAN_NAV_ANGLES = word-split (bash, ou zsh via ./)
+if [ -n "$SYLVAN_NAV_ANGLES" ]; then ANGLES=($SYLVAN_NAV_ANGLES); else ANGLES=(0 45 90 135 180 225 270 315); fi
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 find /tmp -maxdepth 1 -name 'nav_ab_*.log' -delete 2>/dev/null
@@ -35,17 +36,17 @@ echo "    dist=$DIST  eps_per_angle=$NEP  max_steps=$MS  heading_w=$SYLVAN_PLANN
 
 # Construire les flags mémoire selon MEM=on|off
 if [[ "$MEM" == "on" ]]; then
-    MEM_FLAGS="--egomotion-head $EGOMOTION_CKPT --slot-memory"
+    MEM_FLAGS=(--egomotion-head $EGOMOTION_CKPT --slot-memory)
     echo "    [MEMOIRE ON]  egomotion=$EGOMOTION_CKPT + --slot-memory"
 else
-    MEM_FLAGS=""
+    MEM_FLAGS=()
     echo "    [MEMOIRE OFF] pas de mémoire (live perception only)"
 fi
 
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
   --host 127.0.0.1 --port 6052 --horizon 160 --replan-every 10 \
-  ${=MEM_FLAGS} > /tmp/nav_ab_planner.log 2>&1 &
+  "${MEM_FLAGS[@]}" > /tmp/nav_ab_planner.log 2>&1 &
 SRV=$!
 for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ':6052' && break; sleep 1; done
 echo "serve up=$(ss -ltn 2>/dev/null | grep -c ':6052') | planner log:"; head -6 /tmp/nav_ab_planner.log 2>&1

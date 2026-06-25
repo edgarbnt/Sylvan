@@ -28,17 +28,17 @@ echo "    eat_radius=$ER  horizon=$HZ  episodes=$NEP  heading_w=$SYLVAN_PLANNER_
 
 # Construire les flags mémoire selon MEM=on|off
 if [[ "$MEM" == "on" ]]; then
-    MEM_FLAGS="--egomotion-head $EGOMOTION_CKPT --slot-memory"
+    MEM_FLAGS=(--egomotion-head $EGOMOTION_CKPT --slot-memory)
     echo "    [MEMOIRE ON]  egomotion=$EGOMOTION_CKPT + --slot-memory"
 else
-    MEM_FLAGS=""
+    MEM_FLAGS=()
     echo "    [MEMOIRE OFF] pas de mémoire (live perception only)"
 fi
 
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
   --host 127.0.0.1 --port 6052 --horizon $HZ --replan-every 10 \
-  ${=MEM_FLAGS} > /tmp/planner_memory.log 2>&1 &
+  "${MEM_FLAGS[@]}" > /tmp/planner_memory.log 2>&1 &
 SRV=$!
 for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ':6052' && break; sleep 1; done
 
