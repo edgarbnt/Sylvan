@@ -191,6 +191,43 @@ class CommandPlanner:
         n = self._cmd_seqs.shape[0]
         h = cfg.horizon
 
+        # ── WM-SLOT (object-centric PUR, 2026-06-25) : la perception ET la permanence de l'objet vivent DANS le
+        #    WM (out["slot"]). Le WM perçoit l'objet via son slot_encoder (rétine de l'obs) et le transporte par sa
+        #    PROPRE displacement → coordonnée ego par pas. PLUS de coordonnée codée-main ni de boucle trigo de pose
+        #    (l'échafaudage est dissous). Single-resource (l'eau reste gérée par le chemin multi-ressource ci-dessous). ──
+        if getattr(self.world_model, "with_slot", False) and water is None:
+            obs0 = obs.to(self.device).reshape(1, -1).expand(n, -1).contiguous()
+            out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs)
+            slot = out["slot"]                                    # [n, h, 2] (x_right, z_fwd) ego par pas
+            dist = torch.linalg.vector_norm(slot, dim=-1)         # [n, h]
+            min_dist = dist.min(dim=1).values                     # [n]
+            done_prob = torch.sigmoid(out["predicted_done_logits"])
+            energy_pred = out["predicted_next_obs"][..., -1].clamp(0.0, 1.0)
+            cos_brg = slot[..., 1] / (dist + 1e-6)                # z_fwd / dist = cos(bearing)
+            far_gate = (dist / cfg.heading_far_gate).clamp(max=1.0)
+            mean_align = (cos_brg * far_gate).mean(dim=1)         # [n]
+            alive = torch.ones(n, device=self.device)
+            survival_pen = torch.zeros(n, device=self.device)
+            for t in range(h):
+                survival_pen = survival_pen + alive * done_prob[:, t]
+                alive = alive * (1.0 - done_prob[:, t])
+            score = (
+                -min_dist
+                + cfg.heading_weight * mean_align
+                + cfg.energy_weight * energy_pred[:, -1]
+                - cfg.done_penalty * survival_pen
+            )
+            best = int(torch.argmax(score).item())
+            vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            fx, fz = float(slot[best, 0, 0]), float(slot[best, 0, 1])
+            return {
+                "command": (vx, om),
+                "food": (fx, fz),
+                "food_dist": math.hypot(fx, fz),
+                "pred_min_dist": float(min_dist[best]),
+                "reason": "plan_wm_slot",
+            }
+
         # ── SINGLE-RESOURCE (no water sensed): the original VALIDATED cost, untouched (A→B + foraging). ──
         if water is None:
             if food is None:

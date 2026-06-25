@@ -50,9 +50,14 @@ class _PlannerService:
         # RÉTINE étage 2 : WM-rétine si l'obs = proprio ++ rétine(144) ++ énergie (277) au lieu de +radar(12).
         self.wm_uses_retina = (meta["obs_dim"] == meta["proprio_dim"] + RETINA_DIM + 1)
         wm = CommandWorldModel(obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
-                               predictor_arch=meta.get("predictor_arch", "shallow"))
+                               predictor_arch=meta.get("predictor_arch", "shallow"),
+                               with_slot=meta.get("with_slot", False),
+                               slot_resources=meta.get("slot_resources", 1))
         wm.load_state_dict(payload["model"])
         wm.eval()
+        if meta.get("with_slot", False):
+            print(f"[planner-cmd] WM OBJECT-CENTRIC : out['slot'] actif (slot appris dans le WM) → "
+                  f"la perception+permanence vient du WM, plus de coordonnée codée-main dans le planner")
         self.planner = CommandPlanner(wm, cfg)
         self.action_dim = config.env.action_dim  # 18 (hexapod); used by the TCP fallbacks below
         self.residual = GaussianActorCritic(
