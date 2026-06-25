@@ -24,6 +24,55 @@ import socketserver
 import threading
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# OCCLUSION MASK — MÉMOIRE SPATIALE (Task 4)
+# ---------------------------------------------------------------------------
+# Simule un CÔNE FRONTAL de perception : les rayons hors du cône sont mis à
+# zéro (depth→1.0, RGB→0.0), ce qui efface la saillance dans le slot_encoder
+# et force SlotMemory à maintenir l'objet par dead-reckoning (mémoire pure).
+#
+# NOTE HONNÊTETÉ : occluder la rétine côté serveur présente une rétine
+# hors-distribution au WM (entraîné sur 360°).  C'est une approximation
+# acceptable pour la GATE (l'objet disparaît correctement de la perception),
+# mais un cône frontal « de production » nécessiterait un retrain WM sur
+# données avec cone — travail différé, hors scope Task 4.
+# ---------------------------------------------------------------------------
+_N_RAYS = 36          # rayons 0..35, espacement 10° (ray 0 = avant)
+_CHANNELS = 4         # [depth, R, G, B] par rayon → 36×4 = 144 floats
+
+# Lire la valeur au démarrage du process (une seule fois) pour éviter les
+# appels os.environ dans la boucle chaude.
+_OCCLUDE_FOV_DEG: float = float(os.environ.get("SYLVAN_OCCLUDE_FOV_DEG", "360.0"))
+
+
+def occlude_retina(retina: list[float], fov_deg: float) -> list[float]:
+    """Retourne une COPIE de la rétine (144 floats) dans laquelle tous les
+    rayons dont la distance angulaire par rapport à l'avant (ray 0) dépasse
+    ``fov_deg / 2`` sont mis à zéro :
+        depth  → 1.0  (objet à l'infini)
+        R,G,B  → 0.0  (aucune saturation → saillance 0 dans slot_encoder)
+
+    ``fov_deg >= 360`` → identité exacte (aucun changement, non-régression).
+
+    Le rayon k est à l'angle ``k × 10°`` ; distance angulaire par rapport à
+    l'avant = ``min(k*10, 360 - k*10)`` degrés.
+    L'entrée n'est PAS mutée (copie défensive).
+    """
+    if fov_deg >= 360.0:
+        return list(retina)          # identité — non-régression byte-identique
+    half = fov_deg / 2.0
+    out = list(retina)               # copie
+    for k in range(_N_RAYS):
+        angle = k * 10.0
+        dist = min(angle, 360.0 - angle)
+        if dist > half:
+            base = k * _CHANNELS
+            out[base] = 1.0          # depth = loin (rien à voir)
+            out[base + 1] = 0.0      # R
+            out[base + 2] = 0.0      # G
+            out[base + 3] = 0.0      # B
+    return out
+
 import torch
 
 from sylvan.config import SylvanConfig
@@ -166,6 +215,12 @@ class _PlannerService:
                   f"ω{self.search_omega}) wander={self.search_wander} patience={self.search_patience}")
         print(f"[planner-cmd] WM={wm_ckpt.name} residual={residual_ckpt.name} | replan_every={self.replan_every} "
               f"| horizon={cfg.horizon} grid={len(cfg.vx_grid)}x{len(cfg.omega_grid)}")
+        if _OCCLUDE_FOV_DEG < 360.0:
+            print(f"[planner-cmd] OCCLUSION MASK actif : SYLVAN_OCCLUDE_FOV_DEG={_OCCLUDE_FOV_DEG}° "
+                  f"(cone frontal ±{_OCCLUDE_FOV_DEG/2:.0f}°, rayons hors-cone zeroed → SlotMemory requis)")
+        else:
+            print(f"[planner-cmd] OCCLUSION MASK inactif : SYLVAN_OCCLUDE_FOV_DEG={_OCCLUDE_FOV_DEG}° "
+                  f"(perception 360° intacte, non-régression)")
 
     @torch.no_grad()
     def predict_full(self, payload: dict) -> dict:
@@ -175,6 +230,9 @@ class _PlannerService:
         radar = list(payload.get("vision") or [])
         fine = list(payload.get("vision_fine") or [])
         retina = list(payload.get("retina") or [])  # RÉTINE étage 1 : rayons couleur bruts (144)
+        # OCCLUSION MASK (Task 4) : appliquer UNE SEULE FOIS ici, avant tout usage downstream
+        # (localisation, wm_obs, SlotMemory re-grounding).  FOV >= 360 → identité (non-régression).
+        retina = occlude_retina(retina, _OCCLUDE_FOV_DEG)
         energy = float(payload.get("energy", 0.0))
         # 2ᵉ pulsion (planner-only, HORS WM): radar eau + niveau de soif. Absents → run mono-ressource
         # → thirst plein (pas de pression) → coût identique à avant.
