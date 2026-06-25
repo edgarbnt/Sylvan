@@ -65,8 +65,76 @@ function renderArchitecture(data) {
   });
 }
 
+let LAST_TS = null;
+let STALE_POLLS = 0;
+const STALE_LIMIT = 6; // 6 × 500ms = 3s sans changement → mode conceptuel
+
+function liveUrl() {
+  return window.HUD_LIVE_URL || "/data/hud/live.json";
+}
+
+function fmt(field, value) {
+  if (field === "command" && Array.isArray(value)) {
+    return `vx ${value[0].toFixed(2)}  ω ${value[1].toFixed(2)}`;
+  }
+  if (field === "bearing") return `${value.toFixed(0)}°`;
+  if (typeof value === "number") return value.toFixed(2);
+  return String(value);
+}
+
+function setMode(live) {
+  const el = document.getElementById("mode");
+  el.textContent = live ? "● live" : "mode conceptuel";
+  el.className = "mode " + (live ? "live" : "conceptuel");
+}
+
+function applyLive(fields) {
+  document.querySelectorAll(".node").forEach((node) => {
+    const field = node.dataset.liveField;
+    const valEl = node.querySelector(".live-val");
+    if (field && field in fields) {
+      valEl.textContent = fmt(field, fields[field]);
+      node.classList.remove("pulse");
+      void node.offsetWidth; // relance l'animation
+      node.classList.add("pulse");
+    } else if (valEl) {
+      valEl.textContent = "";
+    }
+  });
+}
+
+function clearLive() {
+  document.querySelectorAll(".node .live-val").forEach((v) => (v.textContent = ""));
+}
+
+async function pollOnce() {
+  try {
+    const res = await fetch(liveUrl(), { cache: "no-store" });
+    if (!res.ok) throw new Error("no live");
+    const data = await res.json();
+    if (data.ts !== LAST_TS) {
+      LAST_TS = data.ts;
+      STALE_POLLS = 0;
+      setMode(true);
+      applyLive(data.fields || {});
+    } else {
+      STALE_POLLS += 1;
+      if (STALE_POLLS >= STALE_LIMIT) {
+        setMode(false);
+        clearLive();
+      }
+    }
+  } catch (e) {
+    STALE_POLLS += 1;
+    if (STALE_POLLS >= STALE_LIMIT) {
+      setMode(false);
+      clearLive();
+    }
+  }
+}
+
 function startLivePolling() {
-  /* complété en Task 5 */
+  setInterval(pollOnce, 500);
 }
 
 async function init() {
