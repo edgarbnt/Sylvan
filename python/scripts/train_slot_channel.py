@@ -45,11 +45,12 @@ print(f"WM chargé (slot manquant attendu : {[m for m in miss if m.startswith('s
 sh = load_slot_head(SLOT)
 model.slot_encoder.load_state_dict(sh.state_dict())
 print("slot_encoder warm-start depuis slot_head ✓")
-# GEL : seuls slot_encoder + slot_calib s'entraînent
+# GEL : seul slot_encoder s'entraîne. slot_calib = buffer (convention géométrique FIXE (1,−1,−1), pas appris :
+# l'apprendre sur food_rel0 faisait orbiter le slot → 0 engagement, cf command_wm.py).
 for n, p in model.named_parameters():
-    p.requires_grad = n.startswith("slot_encoder") or n == "slot_calib"
+    p.requires_grad = n.startswith("slot_encoder")
 trainables = [n for n, p in model.named_parameters() if p.requires_grad]
-print(f"params entraînés = {trainables[:1]}... (+slot_calib)  ; WM gelé")
+print(f"params entraînés = {trainables[:1]}... ; slot_calib={model.slot_calib.tolist()} (fixe) ; WM gelé")
 model.eval()  # WM en eval (pas de dropout/scheduled-sampling), le canal apprend quand même
 
 files = []

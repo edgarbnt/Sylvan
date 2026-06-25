@@ -24,4 +24,21 @@ SYLVAN_REFLEX_STRENGTH=0 SYLVAN_ASSIST_RATIO=0 \
 SYLVAN_RUN_DIR=data/replay_buffer/forage_wmslot \
 ./tools/godot/godot --path godot --headless > /tmp/forage_wmslot.log 2>&1
 kill -9 $SRV 2>/dev/null
-echo "done -> /tmp/forage_wmslot.log"
+echo "=== SURVIE (médiane des derniers pas par épisode) ==="
+PYTHONPATH=python ./env_pytorch_3.12/bin/python - <<'PY'
+import re, statistics as st
+eps = {}
+for line in open('/tmp/forage_wmslot.log'):
+    m = re.search(r'Episode (\d+) \| Step (\d+) .* Energy: ([\d.]+)', line)
+    if not m:
+        continue
+    ep, sstep, en = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    eps.setdefault(ep, []).append((sstep, en))
+surv = []
+for ep in sorted(eps):
+    rows = sorted(eps[ep]); surv.append(rows[-1][0])
+    meals = sum(1 for i in range(1, len(rows)) if rows[i][1] - rows[i-1][1] > 5)
+    print(f"Ep{ep}: survie={rows[-1][0]:>5} meals={meals}")
+print(f"SURVIE MÉDIANE = {st.median(surv):.0f}  (baseline échafaudage ~1040)")
+PY
+echo "ALL_DONE_FORAGE_WMSLOT"

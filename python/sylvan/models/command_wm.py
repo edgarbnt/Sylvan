@@ -116,7 +116,14 @@ class CommandWorldModel(nn.Module):
         self.slot_resources = slot_resources
         if with_slot:
             self.slot_encoder = SelfSupervisedSlotHead(n_resources=slot_resources)
-            self.slot_calib = nn.Parameter(torch.tensor([1.0, 1.0, 1.0]))
+            # slot_calib = (kfwd, klat, kyaw) : convention GÉOMÉTRIQUE FIXE du transport (PAS un paramètre appris).
+            # = l'inverse exact du transport-agent du planner codé-main (qui marche 14/16), donc on utilise le
+            # déplacement BRUT (magnitude 1) avec les signes de la displacement-head de CE WM = (+, −, −). LEÇON
+            # (2026-06-25) : l'avoir APPRIS par consistance-de-transport sur food_rel0 a donné (0.31, −0.30, −0.93)
+            # → translations 3× trop petites → le slot ORBITE (bearing OK mais distance constante → coût plat → 0
+            # engagement closed-loop : 7/16). Magnitude 1 le fait APPROCHER → 13/16 (≈ codé-main). C'est une géométrie,
+            # pas une quantité à fitter. Buffer (non entraîné).
+            self.register_buffer("slot_calib", torch.tensor([1.0, -1.0, -1.0]))
 
     def encode_slot(self, obs: torch.Tensor) -> torch.Tensor:
         """obs [..., obs_dim] → slot food [..., 2] (x_right, z_fwd) depuis la tranche rétine (attention apprise)."""
