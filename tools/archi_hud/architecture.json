@@ -1,0 +1,126 @@
+{
+  "focus": "transport_slot",
+  "modules": [
+    {
+      "id": "perception_slot",
+      "etat": "pur",
+      "titre": "Perception / Slot",
+      "couche": "perception",
+      "quoi": "Localise la nourriture depuis les rayons couleur bruts (vision), 100% label-free",
+      "detail": "Slot auto-supervisé (slot_head) : attention géométrique soft-argmax sur 36 rayons, gatée par la saillance perceptuelle. Entraîné SANS label (consistance de transport Rot(+Δyaw) + VICReg). A éliminé l'oracle de position de la boucle (promu live 2026-06-24).",
+      "code": "python/sylvan/models/slot_head.py",
+      "live_field": "bearing",
+      "depends_on": []
+    },
+    {
+      "id": "world_model",
+      "etat": "partiel",
+      "titre": "World Model",
+      "couche": "wm",
+      "quoi": "Imagine la dynamique en espace latent (rêve open-loop des déplacements)",
+      "detail": "WM purifié (recon droppée 2026-06-25 → JEPA principe n°1 : prédire la représentation, pas reconstruire l'entrée). RESTE impur : déterministe + sans incertitude (bloque la curiosité). C'est la grosse refonte object-centric différée.",
+      "code": "data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt",
+      "live_field": null,
+      "depends_on": ["perception_slot"]
+    },
+    {
+      "id": "transport_slot",
+      "etat": "echafaudage",
+      "titre": "Transport du slot",
+      "couche": "planner",
+      "quoi": "Transporte la position de l'objet à la main (trigo) au fil du rêve",
+      "detail": "BÉQUILLE : l'objet est une coordonnée FIGÉE à t=0 (perception apprise ✅) puis transportée par une boucle trigo (sin/cos) DANS le planner. Le WM n'est jamais interrogé sur 'où est l'objet maintenant' — l'object-permanence vit hors du WM. À internaliser dans le latent du WM (chantier courant).",
+      "code": "python/sylvan/control/planning/command_planner.py:204-218",
+      "live_field": "min_dist",
+      "depends_on": ["world_model", "perception_slot"]
+    },
+    {
+      "id": "cout_planner",
+      "etat": "pur",
+      "titre": "Coût planner",
+      "couche": "planner",
+      "quoi": "Score d'un plan = -distance à la nourriture (coût intrinsèque pur)",
+      "detail": "Coût = -min_dist PUR (heading_weight retiré 2026-06-25 : le slot précis à 4.9° rend le how-to-hint inutile). La nourriture n'existe QUE dans ce coût (corps/WM/CPG food-agnostiques, BLUEPRINT §14).",
+      "code": "python/sylvan/control/planning/command_planner.py:226",
+      "live_field": null,
+      "depends_on": ["transport_slot", "drives"]
+    },
+    {
+      "id": "planner_mpc",
+      "etat": "pur",
+      "titre": "Planner MPC",
+      "couche": "planner",
+      "quoi": "Cherche la meilleure commande (vx, ω) en espace-commande sur l'horizon",
+      "detail": "Actor haut-niveau : déroule des séquences de commandes dans le WM, score chacune par le coût, renvoie la meilleure (vx, ω). Le plan moteur ('oriente puis avance') ÉMERGE du coût.",
+      "code": "python/sylvan/control/planning/command_planner.py:166",
+      "live_field": "command",
+      "depends_on": ["cout_planner", "world_model"]
+    },
+    {
+      "id": "residu_ppo",
+      "etat": "pur",
+      "titre": "Résidu PPO",
+      "couche": "moteur",
+      "quoi": "Petit résidu borné qui rend la marche rapide ET stable",
+      "detail": "Actor bas-niveau : corrige le CPG codé-main (équilibre/perf), gain borné 0.4. Warm-start hexapod_v2 + symétrie. Banké comme base motrice finale.",
+      "code": "data/checkpoints/hexapod_v2/policy_best.pt",
+      "live_field": null,
+      "depends_on": ["planner_mpc"]
+    },
+    {
+      "id": "corps_cpg",
+      "etat": "pur",
+      "titre": "Corps / CPG",
+      "couche": "moteur",
+      "quoi": "Hexapode + générateur de marche (CPG) : marche et tourne par construction",
+      "detail": "Substrat moteur. Le CPG produit la démarche trépied et le virage par construction ; le corps hexapode est stable (6 pattes) → l'énergie va à la propulsion. 0.49 m/s, virages symétriques, fall 0%.",
+      "code": "data/checkpoints/hexapod_v2/policy_best.pt",
+      "live_field": "fwd_v",
+      "depends_on": ["residu_ppo"]
+    },
+    {
+      "id": "drives",
+      "etat": "pur",
+      "titre": "Drives faim/soif",
+      "couche": "pulsions",
+      "quoi": "Pulsions homéostatiques (faim, soif) qui pondèrent le coût",
+      "detail": "Propriété du CORPS (définie une fois). L'arbitrage affamé→bouffe / assoiffé→eau ÉMERGE (non codé). Eau/soif = inputs planner-only, WM inchangé (étage 1).",
+      "code": "python/sylvan/control/planning/command_planner.py:249",
+      "live_field": "energy",
+      "depends_on": []
+    },
+    {
+      "id": "memoire_spatiale",
+      "etat": "manquant",
+      "titre": "Mémoire spatiale",
+      "couche": "manquant",
+      "quoi": "Se souvenir où est un objet quand on ne le voit plus (permanence)",
+      "detail": "MANQUANT (Short-term memory de LeCun). Tombe gratuitement une fois le slot internalisé dans le WM : un slot non-perçu persiste par dead-reckoning (permanence prouvée F-pure-3 à +0.95).",
+      "code": null,
+      "live_field": null,
+      "depends_on": ["perception_slot", "world_model"]
+    },
+    {
+      "id": "critique_appris",
+      "etat": "manquant",
+      "titre": "Critique appris",
+      "couche": "manquant",
+      "quoi": "Une valeur apprise V(slot) = gain futur, à la place du coût géométrique",
+      "detail": "MANQUANT (Critic de LeCun). Remplacerait -min_dist par un critique appris sur le slot ; gagnera sa place en multi-drive foresighted où la géométrie ne suffit plus.",
+      "code": null,
+      "live_field": null,
+      "depends_on": ["world_model"]
+    },
+    {
+      "id": "configurator",
+      "etat": "manquant",
+      "titre": "Configurator",
+      "couche": "manquant",
+      "quoi": "Chef d'orchestre : module l'attention et arbitre les pulsions selon le but",
+      "detail": "MANQUANT (Configurator de LeCun). Au-dessus de tout : configure perception/WM/coût selon la tâche du moment. Chantier lointain.",
+      "code": null,
+      "live_field": null,
+      "depends_on": ["drives"]
+    }
+  ]
+}
