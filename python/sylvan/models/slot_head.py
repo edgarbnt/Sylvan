@@ -42,6 +42,21 @@ class SelfSupervisedSlotHead(nn.Module):
         self.register_buffer("sin", torch.sin(th))
         self.register_buffer("cos", torch.cos(th))
 
+    def _attend(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Shared helper: returns (dist, sal, a_list) without allocating positions.
+
+        dist  [..., NRAY]          — ray distance in metres
+        sal   [..., NRAY]          — saliency mask (coloured object, un-normalised)
+        a_list list of [..., NRAY] — normalised learned attention per resource
+        """
+        r = retina.reshape(*retina.shape[:-1], NRAY, 4)
+        depth, R, G, B = r[..., 0], r[..., 1], r[..., 2], r[..., 3]
+        dist = depth * RANGE + DEPTH_OFFSET                          # [..., NRAY]
+        sat = torch.stack([R, G, B], -1).amax(-1) - torch.stack([R, G, B], -1).amin(-1)
+        sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
+        a_list = [torch.softmax(self.score[k](r).squeeze(-1), dim=-1) for k in range(self.n_resources)]
+        return dist, sal, a_list
+
     def positions(self, retina: torch.Tensor) -> torch.Tensor:
         """retina [..., 144] → [..., n_resources, 2] (x_right, z_fwd) en mètres.
 
@@ -50,19 +65,31 @@ class SelfSupervisedSlotHead(nn.Module):
         color-AGNOSTIQUE → général, §3) ; elle BRISE la sous-détermination de la transport-consistance (qui sinon
         verrouille aussi bien sur une direction VIDE opposée → 127° MAE, non robuste). La position fine ÉMERGE
         toujours de l'attention apprise + la consistance ; la saillance ne fait qu'ancrer 'sur un objet'."""
-        r = retina.reshape(*retina.shape[:-1], NRAY, 4)
-        depth, R, G, B = r[..., 0], r[..., 1], r[..., 2], r[..., 3]
-        dist = depth * RANGE + DEPTH_OFFSET                          # [..., NRAY]
-        sat = torch.stack([R, G, B], -1).amax(-1) - torch.stack([R, G, B], -1).amin(-1)  # saturation (objet coloré)
-        sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))                   # × hit (soft)
+        dist, sal, a_list = self._attend(retina)
         outs = []
         for k in range(self.n_resources):
-            a = torch.softmax(self.score[k](r).squeeze(-1), dim=-1)   # [..., NRAY] attention apprise
-            w = a * sal                                              # gatée par la saillance perceptuelle
+            w = a_list[k] * sal
             w = w / (w.sum(-1, keepdim=True) + 1e-6)
             px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
             outs.append(torch.stack([px, pz], dim=-1))
         return torch.stack(outs, dim=-2)                             # [..., n_resources, 2]
+
+    def positions_and_salience(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """retina [..., 144] → (positions [..., n_resources, 2], salience [..., n_resources]).
+
+        salience = un-normalised gated attention mass (a * sal).sum(-1) per resource.
+        salience → 0 means no coloured object was hit (occluded / out of range).
+        Output byte-identical to positions() for the positions tensor.
+        """
+        dist, sal, a_list = self._attend(retina)
+        pos_outs, sal_outs = [], []
+        for k in range(self.n_resources):
+            aw = a_list[k] * sal                                     # [..., NRAY] un-normalised gated mass
+            sal_outs.append(aw.sum(-1))                              # [...] scalar saliency per resource
+            w = aw / (aw.sum(-1, keepdim=True) + 1e-6)
+            px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
+            pos_outs.append(torch.stack([px, pz], dim=-1))
+        return torch.stack(pos_outs, dim=-2), torch.stack(sal_outs, dim=-1)  # ([..., n_res, 2], [..., n_res])
 
     @torch.no_grad()
     def locate(self, retina: torch.Tensor) -> list[list[float]]:

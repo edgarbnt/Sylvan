@@ -183,12 +183,17 @@ class CommandWorldModel(nn.Module):
         self,
         obs0: torch.Tensor,
         commands: torch.Tensor,
+        slot0: "torch.Tensor | None" = None,
     ) -> dict[str, torch.Tensor]:
         """Dream forward from a single real observation under a command sequence.
 
         obs0: [B, obs_dim]; commands: [B, T, 2]. Mirrors the free-running branch of the
         RSSM's scheduled sampling exactly: after step 0 the obs input is the model's own
         encoded prediction, never a real observation.
+
+        slot0 (optional, MÉMOIRE SPATIALE Task 3): when provided, seeds the slot at t=0
+        with this tensor instead of self.encode_slot(obs0).  Shape [B, 2] or broadcastable.
+        When None (default) → byte-identical behaviour to before this change.
         """
         batch_size, horizon, _ = commands.shape
         hidden = torch.zeros(batch_size, self.rssm.gru.hidden_size, device=obs0.device, dtype=obs0.dtype)
@@ -210,9 +215,13 @@ class CommandWorldModel(nn.Module):
             "predicted_latents": torch.stack(latents, dim=1),      # [B, T, latent_dim] — dreamed RSSM latents (critic probe)
         }
         if getattr(self, "with_slot", False):
-            # SLOT object-centric : init depuis la perception à t0, puis dead-reckon par la displacement RÊVÉE.
+            # SLOT object-centric : init depuis la perception à t0 (ou slot0 fourni), puis dead-reckon par la displacement RÊVÉE.
             disp_real = disp_stack / DISPLACEMENT_SCALE            # [B, T, 3] = (d_fwd,d_lat,d_yaw) réels
-            slot = self.encode_slot(obs0)                          # [B, 2] à t=0
+            if slot0 is not None:
+                # MÉMOIRE SPATIALE (Task 3): override t0 with persisted belief from the server.
+                slot = slot0.to(obs0.device).expand(batch_size, -1).contiguous()
+            else:
+                slot = self.encode_slot(obs0)                      # [B, 2] à t=0
             slots = [slot]
             for t in range(horizon - 1):
                 slot = self.transport_slot(slot, disp_real[:, t])

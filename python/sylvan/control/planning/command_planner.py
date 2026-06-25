@@ -173,6 +173,7 @@ class CommandPlanner:
         override_pos: bool = False,
         food_override: tuple[float, float] | None = None,
         water_override: tuple[float, float] | None = None,
+        slot_belief: "list[float] | None" = None,
     ) -> dict[str, object]:
         """obs [obs_dim] = proprio ++ radar ++ energy(normalised) (the WM's encoder input).
         radar = the REAL 12-sector food radar. water_radar/energy/thirst are the 2ᵉ-pulsion planner-only
@@ -197,7 +198,13 @@ class CommandPlanner:
         #    (l'échafaudage est dissous). Single-resource (l'eau reste gérée par le chemin multi-ressource ci-dessous). ──
         if getattr(self.world_model, "with_slot", False) and water is None:
             obs0 = obs.to(self.device).reshape(1, -1).expand(n, -1).contiguous()
-            out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs)
+            # MÉMOIRE SPATIALE (Task 3): when slot_belief is provided, override the t0 slot with the
+            # server's persisted belief (dead-reckoned across replans). When None → encode from obs0 as before.
+            if slot_belief is not None:
+                _s0 = torch.tensor(slot_belief, dtype=torch.float32).reshape(1, 2)
+                out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs, slot0=_s0)
+            else:
+                out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs)
             slot = out["slot"]                                    # [n, h, 2] (x_right, z_fwd) ego par pas
             dist = torch.linalg.vector_norm(slot, dim=-1)         # [n, h]
             min_dist = dist.min(dim=1).values                     # [n]

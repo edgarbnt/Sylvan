@@ -40,7 +40,9 @@ VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (ma
 class _PlannerService:
     def __init__(self, wm_ckpt: Path, residual_ckpt: Path, cfg: CommandPlanConfig, replan_every: int,
                  retina_head_ckpt: Path | None = None, value_head_ckpt: Path | None = None,
-                 slot_head_ckpt: Path | None = None) -> None:
+                 slot_head_ckpt: Path | None = None,
+                 egomotion_head_ckpt: Path | None = None,
+                 use_slot_memory: bool = False) -> None:
         import os as _os
         torch.set_num_threads(int(_os.environ.get("SYLVAN_PLANNER_THREADS", "4")))  # rollout latent batché →
         config = SylvanConfig()                                                      # plus de threads = plus de FPS
@@ -109,6 +111,23 @@ class _PlannerService:
         self.localizer = self.slot_head if self.slot_head is not None else self.retina_head
         self._food_pos_ema: tuple[float, float] | None = None
         self._water_pos_ema: tuple[float, float] | None = None
+        # MÉMOIRE SPATIALE (Task 3) — OPT-IN : uniquement quand --egomotion-head + --slot-memory + WM with_slot.
+        # Quand inactif (défaut), le code path est BYTE-IDENTIQUE à aujourd'hui (non-régression).
+        self.slot_memory = None
+        self._slot_belief: list[float] | None = None
+        if use_slot_memory and egomotion_head_ckpt is not None and wm.with_slot:
+            from sylvan.models.egomotion_head import load_egomotion_head
+            from sylvan.control.slot_memory import SlotMemory
+            ego_head = load_egomotion_head(str(egomotion_head_ckpt))
+            # slot_encoder = le SelfSupervisedSlotHead déjà chargé dans le WM
+            slot_enc = self.planner.world_model.slot_encoder
+            self.slot_memory = SlotMemory(ego_head, slot_enc)
+            print(f"[planner-cmd] MÉMOIRE SPATIALE active : egomotion={egomotion_head_ckpt.name} "
+                  f"threshold={self.slot_memory.salience_threshold} — belief persistant entre replans")
+        elif use_slot_memory:
+            print("[planner-cmd] AVERTISSEMENT : --slot-memory demandé mais ignoré "
+                  f"(egomotion_head={'OK' if egomotion_head_ckpt else 'MANQUANT'}, "
+                  f"wm.with_slot={wm.with_slot})")
         self.hud_enable = os.environ.get("SYLVAN_HUD") == "1"
         self.hud_ts = 0
         self.hud_path = os.environ.get("SYLVAN_HUD_PATH", "data/hud/live.json")
@@ -162,6 +181,11 @@ class _PlannerService:
         water_fine = list(payload.get("vision_water") or [])
         thirst = float(payload.get("thirst", 100.0))
         with self._lock:
+            # MÉMOIRE SPATIALE (Task 3) : mise à jour du belief par tick (dead-reckon + re-ground si saillant).
+            # Doit s'exécuter AVANT le bloc de replan pour que belief soit à jour quand le planner est appelé.
+            # Quand slot_memory est None (défaut) : cette section est absente → non-régression totale.
+            if self.slot_memory is not None and len(retina) > 0:
+                self._slot_belief = self.slot_memory.update(proprio, retina)
             # A1: localise food from the FINER radar when Godot sends it (±5° vs ±15°); the WM still
             # encodes the trained 12-sector radar. Smooth whichever radar drives localisation.
             loc = fine if fine else radar
@@ -215,11 +239,14 @@ class _PlannerService:
                     self._cmd = plan_res["command"]
                     self._last_min_dist = float(plan_res.get("pred_min_dist", float("nan")))
                 else:
-                    # food LOCALISED from the fine EMA (oracle).
+                    # food LOCALISED from the fine EMA (oracle) — or plan_wm_slot when wm.with_slot=True.
+                    # MÉMOIRE SPATIALE (Task 3) : passer slot_belief quand actif → override slot t0 du WM.
+                    # Quand slot_memory est None → slot_belief=None → comportement byte-identique à avant.
                     self._cmd = self.planner.plan(
                         wm_obs, self._radar_ema,
                         water_radar=self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
+                        slot_belief=self._slot_belief,
                     )["command"]
             self._ticks += 1
             vx, om = self._cmd
@@ -288,6 +315,10 @@ class _PlannerService:
             self._low_engage = 0
             self._search_t = 0
             self._searching = False
+            # MÉMOIRE SPATIALE (Task 3) : réinitialiser le belief entre épisodes
+            if self.slot_memory is not None:
+                self.slot_memory.reset()
+                self._slot_belief = None
 
 
 class _Handler(socketserver.StreamRequestHandler):
@@ -339,13 +370,20 @@ def main() -> None:
                     "latent, coordonnées DÉBRANCHÉES (plan_latent). Exclut --retina-head (pas de localisation).")
     ap.add_argument("--slot-head", default=None, help="SLOT object-centric AUTO-SUPERVISÉ (label-free) → drop-in pur "
                     "de --retina-head (perception sans aucun label de position ; prioritaire s'il est fourni).")
+    ap.add_argument("--egomotion-head", default=None, help="MÉMOIRE SPATIALE (Task 3) : checkpoint EgomotionHead "
+                    "(proprio→dyaw,dfwd,dlat) pour dead-reckoner le belief entre replans. Requis avec --slot-memory.")
+    ap.add_argument("--slot-memory", action="store_true", default=False,
+                    help="MÉMOIRE SPATIALE (Task 3) : activer la persistance inter-replans du slot (OPT-IN). "
+                    "Requiert --egomotion-head + WM with_slot. Défaut OFF → comportement byte-identique.")
     args = ap.parse_args()
 
     cfg = CommandPlanConfig(horizon=args.horizon, energy_weight=args.energy_weight)
     service = _PlannerService(Path(args.wm), Path(args.residual), cfg, args.replan_every,
                              retina_head_ckpt=Path(args.retina_head) if args.retina_head else None,
                              value_head_ckpt=Path(args.value_head) if args.value_head else None,
-                             slot_head_ckpt=Path(args.slot_head) if args.slot_head else None)
+                             slot_head_ckpt=Path(args.slot_head) if args.slot_head else None,
+                             egomotion_head_ckpt=Path(args.egomotion_head) if args.egomotion_head else None,
+                             use_slot_memory=args.slot_memory)
     server = _Server((args.host, args.port), service)
     print(f"[planner-cmd] serving on {args.host}:{args.port} — Ctrl-C to stop")
     try:
