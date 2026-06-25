@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sylvan — carte de l'architecture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Sylvan — architecture</h1>
+    <div id="mode" class="mode conceptuel">mode conceptuel</div>
+    <ul id="legend" class="legend">
+      <li class="etat-pur">pur</li>
+      <li class="etat-partiel">partiel</li>
+      <li class="etat-echafaudage">échafaudage</li>
+      <li class="etat-manquant">manquant</li>
+    </ul>
+  </header>
+  <main>
+    <section id="pipeline" class="pipeline" aria-label="pipeline des modules"></section>
+    <aside id="panel" class="panel hidden">
+      <button id="panel-close" class="panel-close" aria-label="fermer">×</button>
+      <div id="panel-body"></div>
+    </aside>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
