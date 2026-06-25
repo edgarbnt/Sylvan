@@ -74,15 +74,18 @@ tombent / deviennent impossibles (mémoire, curiosité, hiérarchie reposent sur
 - **Dims** : proprio=**132**, action=**18**, obs policy=**144** (132+vision12), obs WM=**145** (132+radar12+énergie1).
 - Ne JAMAIS changer ces dims sans synchroniser `constants.py`, `observation_builder.gd`, `sylvan_agent.gd`, `symmetry.py`.
 - **Checkpoints vivants** : base motrice `data/checkpoints/hexapod_v2/policy_best.pt` ;
-  **FORAGER VIVANT = SLOT-PLANNER PUR** : WM **PURIFIÉ `data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt`**
-  (promu 2026-06-25 : reconstruction droppée `--w-proprio/radar 0` → JEPA principe n°1 « prédire la repr., pas
-  reconstruire l'entrée » ; warm-start de `wm_rich_fidele_sym`, recette identique sinon ; eff_rank 21>13, transport slot
-  +0.65 préservé, engagement 15/16>13/16, foraging survie méd 1100≥1040 = parité gratuite ; trainer `train_wm_jepa_pur.sh`,
-  ancien non-purifié = `wm_rich_fidele_sym`) + **SLOT object-centric AUTO-SUPERVISÉ** `data/checkpoints/slot_head/slot_best.pt` (perception 100%
-  label-free, ZÉRO oracle de position) → `bash run_forage_purslot.sh` (serveur `--slot-head`). Le slot = coordonnée ego
-  apprise SANS label (consistance de transport Rot(+Δyaw) + saillance perceptuelle ; module `slot_head.py`, trainer
-  `train_slot_head.py`), transportée par la displacement-head. Engage l'arrière (re-gate 13/16 ≈ retina_head 14/16, arrière
-  2/4 préservé), foraging méd 915 ≈ retina_head 860, précis (bearing 4.9° < retina_head 8.4°). NB **PAS « full-latent »** :
+  **FORAGER VIVANT = SLOT INTERNALISÉ DANS LE WM (object-centric, promu 2026-06-25)** : WM
+  **`data/checkpoints/wm_objcentric_s1/wm_best.pt`** = WM purifié GELÉ + **canal-slot** (`out['slot']`) → `bash
+  run_forage_wmslot.sh` (serveur SANS `--slot-head` : la perception+permanence vient du WM). Le slot = composant du WM :
+  slot_encoder (= `slot_head`, perception label-free) + transport GÉOMÉTRIQUE FIXE `slot_calib=(1,-1,-1)` (inverse exact
+  du transport-agent codé-main). La boucle trigo du planner (l'ancienne béquille) est DISSOUTE — le planner LIT `out['slot']`
+  (branche `plan_wm_slot`). Build = `build_slot_channel.py` (PAS de fine-tune : l'avoir appris faisait ORBITER le slot,
+  calib (0.31,-0.30,-0.93) → 0 engagement ; la calib est une géométrie, pas à fitter — leçon clé). Re-gate : engagement
+  **15/16 (rear 3/4) > échafaudage 14/16** ; foraging méd 860 (repas 18) = bande échafaudage = parité ; WM gelé → eff_rank/pos
+  intacts. Gates `diag_nav_ab_wmslot.sh` + `run_forage_wmslot.sh`. **ÉCHAFAUDAGE = SECOURS** : slot codé-main (WM
+  `wm_rich_fidele_sym_jepa` + `--slot-head slot_best.pt`, transport trigo dans le planner) = `run_forage_purslot.sh` (14/16,
+  superseded). Slot label-free (consistance de transport Rot(+Δyaw) + saillance ; `slot_head.py`, `train_slot_head.py`).
+  NB **PAS « full-latent »** :
   slot = coordonnée explicite apprise (le pur-latent-valeur `plan_latent` était lossy, perdait l'objet). Étape précédente
   `retina_head` (SUPERVISÉ-oracle) = superseded mais valide (`run_forage_retina.sh`). Secours ultime = oracle
   `wm_command_hex_v2` + `run_forage_hex.sh`. Design/preuves : `docs/design_wm_factorise.md` + `docs/plan_wm_objectcentric_pur.md`,

@@ -1,5 +1,5 @@
 {
-  "focus": "transport_slot",
+  "focus": "memoire_spatiale",
   "modules": [
     {
       "id": "perception_slot",
@@ -30,37 +30,38 @@
       "quoi": "Imagine la dynamique en espace latent (rêve open-loop des déplacements)",
       "role": "Le « simulateur interne » de l'entité — son imagination. Sa fonction est de répondre à « si je faisais cette séquence de commandes, que deviendraient le monde et mon corps ? », et d'y répondre SANS bouger réellement, en déroulant un futur dans un espace latent appris. C'est la pièce qui rend la planification possible : sans modèle du monde, on ne peut qu'essayer pour de vrai (cher et dangereux) ; avec lui, on essaie « dans sa tête ».",
       "comment": "Architecture de type RSSM : un réseau récurrent (GRU) encode l'observation courante en un état latent, puis prédit l'état latent suivant pour chaque commande imaginée, pas après pas, en boucle ouverte (il se ré-alimente de ses propres prédictions). Depuis la purification du 2026-06-25, il est entraîné à la manière JEPA : il prédit la REPRÉSENTATION future (perte latente cosinus + VICReg anti-collapse + un terme « w-rollout » qui force le rêve multi-pas à rester fidèle), au lieu de RECONSTRUIRE l'entrée brute (proprio/radar) comme le faisait un Dreamer. Concrètement il fournit, à chaque pas rêvé, le déplacement ego prédit (vitesse avant, latérale, rotation) via une « displacement-head ».",
-      "apporte": "C'est le déplacement rêvé fourni par ce WM qui permet de scorer les plans (« où serais-je après cette manœuvre ? »). C'est le cœur du « penser avant d'agir » : toute la planification du forager repose sur la fidélité de ce rêve. La purification l'a rendu plus JEPA (il porte plus d'information dans son latent) sans rien casser au comportement.",
-      "etat_detail": "PARTIEL — et c'est le module le plus important à comprendre pour la suite. Côté positif : la reconstruction d'entrée a été RETIRÉE (principe JEPA n°1 « prédire la représentation, pas reconstruire l'entrée » respecté), ce qui a fait MONTER la richesse du latent. Côté manquant : il reste DÉTERMINISTE (il n'imagine qu'UN seul futur) et SANS INCERTITUDE (il ne sait pas dire « là, je ne sais pas »). Et surtout, l'objet perçu ne vit pas encore comme une entité de son latent — c'est la cause directe de la béquille « Transport du slot » juste en dessous.",
-      "limites": "Trois limites liées : (1) déterminisme → pas de gestion des futurs multiples ; (2) pas d'incertitude → bloque la curiosité (qui a besoin de « où suis-je ignorant ? ») ; (3) l'objet n'est pas internalisé → le rêve « corrompt » l'objet en rotation. Les trois tombent ENSEMBLE avec la refonte object-centric (faire vivre l'objet comme un slot DANS le latent). C'est le grand chantier différé, justifié sur preuve mais coûteux.",
+      "apporte": "C'est le déplacement rêvé fourni par ce WM qui permet de scorer les plans (« où serais-je après cette manœuvre ? »). C'est le cœur du « penser avant d'agir » : toute la planification du forager repose sur la fidélité de ce rêve. La purification l'a rendu plus JEPA (il porte plus d'information dans son latent) sans rien casser au comportement. Et depuis le 2026-06-25 il porte aussi le SLOT object-centric (out['slot']).",
+      "etat_detail": "PARTIEL, mais MOINS qu'avant. Acquis : (1) reconstruction d'entrée RETIRÉE (principe JEPA n°1 respecté → latent plus riche) ; (2) l'OBJET est désormais INTERNALISÉ comme un canal-slot du WM (out['slot']) → la béquille trigo du planner est dissoute (cf module « Slot object-centric »). Reste manquant : DÉTERMINISTE (un seul futur) et SANS INCERTITUDE — c'est ce qui bloque encore la curiosité.",
+      "limites": "Deux limites restantes : (1) déterminisme → pas de futurs multiples ; (2) pas d'incertitude → bloque la curiosité (« où suis-je ignorant ? »). C'est la prochaine grande étape de purification du WM (canal-slot stochastique / latents-variables). Le checkpoint vivant object-centric = wm_objcentric_s1.",
       "preuves": [
-        "eff_rank du latent 21 (> 13 avant purification) → représentation nettement plus riche, plus JEPA",
+        "eff_rank du latent 21 (> 13 avant purification) → représentation plus riche, plus JEPA",
         "imagination open-loop : erreur de position 0.21 m à 100 pas (meilleur du projet)",
-        "transport du slot +0.65 PRÉSERVÉ après purification (rien cassé)",
-        "foraging : survie médiane 1100 ≥ 1040 → la purification est gratuite (parité dans le bruit, gain ailleurs)"
+        "porte out['slot'] : engagement internalisé 15/16 > échafaudage 14/16 (WM gelé, dynamique intacte)",
+        "transport du slot +0.65 préservé ; foraging à parité après chaque étape"
       ],
-      "code": "data/checkpoints/wm_rich_fidele_sym_jepa/wm_best.pt",
+      "code": "data/checkpoints/wm_objcentric_s1/wm_best.pt",
       "live_field": null,
       "depends_on": ["perception_slot"]
     },
     {
       "id": "transport_slot",
-      "etat": "echafaudage",
-      "titre": "Transport du slot",
-      "couche": "planner",
-      "quoi": "Transporte la position de l'objet à la main (trigo) au fil du rêve",
-      "role": "Sa fonction est de maintenir « où est l'objet » pendant que l'entité IMAGINE bouger — autrement dit, l'object-permanence à l'intérieur d'un plan. Quand le planner déroule une manœuvre de 160 pas dans le rêve, il faut bien que la cible reste localisée à chaque pas pour pouvoir mesurer si on s'en rapproche. C'est ce module qui s'en charge.",
-      "comment": "Et c'est ici qu'est la BÉQUILLE du système, à voir de ses propres yeux. L'objet est figé comme une coordonnée (x, z) à l'instant t=0 (perçue par le slot). Ensuite, une simple boucle de trigonométrie (sin/cos) dans le code du planner déplace l'AGENT par dead-reckoning du déplacement prédit par le WM, et recalcule à chaque pas la distance entre l'agent (qui bouge) et l'objet (resté fixe dans un repère monde). Le point capital : le World Model n'est JAMAIS interrogé sur « où est l'objet maintenant ». L'object-permanence ne vit pas dans le latent du WM — elle vit dans ~6 lignes de Python à côté. Ça marche, mais c'est de l'échafaudage : un support codé à la main, pas l'architecture finale.",
-      "apporte": "Pragmatiquement, c'est ce qui fait MARCHER le foraging : l'entité garde le cap vers la cible pendant toute la durée d'un plan, et engage même partiellement une cible située derrière elle. Sans ce transport, le plan « perdrait » l'objet dès le premier pas imaginé.",
-      "etat_detail": "ÉCHAFAUDAGE, et c'est le CHANTIER COURANT (le focus de la carte). La moitié « perception » est devenue pure (le slot appris), mais la moitié « persistance/transport » est encore une boucle analytique HORS du WM. Le bon geste, déjà identifié et prouvé faisable, est d'INTERNALISER ce slot DANS le latent du WM : l'objet deviendrait une entité que le WM transporte lui-même par l'ego-motion qu'il prédit. Ça résoudrait d'un seul coup trois choses — la pureté (plus de béquille), la mémoire spatiale (un slot non-perçu persiste = permanence) et le substrat d'incertitude.",
-      "limites": "Parce que l'objet vit hors du latent, le rêve open-loop du WM « corrompt » l'objet quand l'entité tourne beaucoup → une cible derrière n'est engagée que 3 fois sur 4. La vraie correction n'est pas un patch du transport, c'est l'internalisation (cf. World Model). Une tentative purement latente (lire la valeur de l'objet directement dans le latent, sans coordonnée) a été essayée et s'est révélée LOSSY (+0.30 : le latent monolithique perdait l'objet) — c'est précisément pour ça que la béquille explicite a été gardée en attendant la refonte.",
+      "etat": "pur",
+      "titre": "Slot object-centric (dans le WM)",
+      "couche": "wm",
+      "quoi": "Le slot (position ego de l'objet) vit DANS le WM (out['slot']), transporté par sa propre ego-motion",
+      "role": "Maintenir « où est l'objet » pendant que l'entité IMAGINE bouger — l'object-permanence à l'intérieur d'un plan. C'est ce qui permet de mesurer, à chaque pas du rêve, si on se rapproche de la cible.",
+      "comment": "INTERNALISÉ (2026-06-25) : le slot est désormais un COMPOSANT du World Model. Le WM perçoit l'objet via son slot_encoder (perception label-free slot_head, dans le WM) et le transporte le long du rêve par la displacement-head qu'il prédit déjà — équivariant par construction. `rollout_open_loop` renvoie `out['slot']` (coordonnée ego par pas). Le planner ne fait plus que LIRE `out['slot']` : la boucle de trigo codée-main (l'ancienne béquille de ~6 lignes) est DISSOUTE.",
+      "apporte": "L'object-permanence appartient maintenant au WM, plus au planner. C'est la clé de voûte rendue PURE — et le substrat direct de la MÉMOIRE SPATIALE (persister un slot non-perçu) et de l'incertitude (canal uncertainty-ready).",
+      "etat_detail": "PUR & PROMU. Internalisé en gelant le WM (risque nul) : slot_encoder = slot_head (perception prouvée), transport = convention GÉOMÉTRIQUE FIXE. PIÈGE INSTRUCTIF résolu en chemin : avoir APPRIS la calibration du transport sur food_rel0 donnait (0.31,−0.30,−0.93) → translations 3× trop petites → le slot ORBITAIT (bearing OK +0.89 mais distance constante → coût plat → 0 engagement closed-loop, 7/16). Diagnostic GRATUIT (perception OK, décision par-frame OK, mais min_dist=dist initiale sur cibles loin) → la calib est une GÉOMÉTRIE, pas une quantité à fitter. Fixée à (1,−1,−1) = inverse exact du transport-agent codé-main.",
+      "limites": "Le transport reste la transformation rigide d'une ego-motion apprise (design pur, équivariant par construction). Le slot est point-estimate (uncertainty-ready mais pas encore stochastique → la curiosité viendra plus tard).",
       "preuves": [
-        "la béquille = python/sylvan/control/planning/command_planner.py:204-218 (6 lignes de trigo)",
-        "lecture purement latente (sans béquille) = lossy +0.30, l'objet se perd",
-        "slot explicite = +0.65 (le transport explicite récupère l'objet)",
-        "F-pure-3 : un slot dead-reckoné tient l'objet à +0.95 à travers une réorientation > 60° → permanence prouvée faisable"
+        "engagement closed-loop 15/16 (rear 3/4) > échafaudage codé-main 14/16 (rear 2/4), même harness",
+        "foraging survie médiane 860 (repas 18) = bande de l'échafaudage (parité)",
+        "WM gelé = displacement identique au bit (smoke) → eff_rank/pos intacts",
+        "le slot = python/sylvan/models/command_wm.py (SlotChannel) ; lu par command_planner.py (branche plan_wm_slot)",
+        "leçon orbite : calib apprise (0.31,−0.30,−0.93) = 7/16 ; (1,1,1) mauvais signes = 0/16 ; (1,−1,−1) = 13-15/16"
       ],
-      "code": "python/sylvan/control/planning/command_planner.py:204-218",
+      "code": "python/sylvan/models/command_wm.py",
       "live_field": "min_dist",
       "depends_on": ["world_model", "perception_slot"]
     },
@@ -174,9 +175,9 @@
       "couche": "manquant",
       "quoi": "Se souvenir où est un objet quand on ne le voit plus (permanence)",
       "role": "La mémoire spatiale court-terme de l'architecture LeCun : garder en tête la position des objets QUI NE SONT PLUS dans le champ de vision. Aujourd'hui l'entité est « aveugle » dès qu'une ressource sort de sa rétine ; ce module lui donnerait un monde qui persiste hors-champ.",
-      "comment": "N'existe pas encore — mais le chemin est tracé et prouvé faisable. Elle tomberait GRATUITEMENT une fois le slot internalisé dans le World Model : un slot non-perçu PERSISTERAIT en étant mis à jour par dead-reckoning de l'auto-mouvement (l'entité « sait » de combien elle a tourné/avancé, donc où l'objet invisible se trouve maintenant). C'est exactement la propriété de permanence d'objet.",
-      "apporte": "(à venir) L'entité pourrait se détourner d'une ressource, contourner un obstacle, puis y revenir en « sachant » qu'elle est toujours là — le premier vrai modèle du monde hors-champ. C'est aussi ce qui réglerait définitivement la faiblesse « cible derrière » du forager actuel.",
-      "etat_detail": "MANQUANT. Ce n'est pas un module à développer isolément : il est débloqué par la refonte object-centric (internaliser le « Transport du slot » dans le WM). C'est l'un des arguments forts pour faire cette refonte — un seul geste livre la pureté ET la mémoire.",
+      "comment": "Le prérequis est désormais EN PLACE : le slot est internalisé dans le WM (out['slot'], transporté par l'ego-motion). La mémoire = PERSISTER ce slot quand l'objet sort du champ : continuer à le dead-reckoner (au lieu de le ré-encoder depuis une perception vide) tant qu'il n'est pas re-perçu. Reste à câbler cette persistance + re-grounding et à mesurer la dérive.",
+      "apporte": "(à venir) L'entité pourra se détourner d'une ressource, contourner un obstacle, puis y revenir en « sachant » qu'elle est toujours là — le premier vrai modèle du monde hors-champ. C'est le sens de la vision en CÔNE (perception devant, mémoire pour le reste).",
+      "etat_detail": "FOCUS COURANT (manquant mais débloqué). Le slot internalisé (cf module « Slot object-centric », promu 2026-06-25) est exactement le substrat requis. Prochain chantier : persister le slot hors-champ + re-grounding, puis (option) rétrécir le champ de vision à un cône pour que la mémoire ait un rôle légitime.",
       "limites": null,
       "preuves": [
         "permanence prouvée GRATUITEMENT (gate F-pure-3) : un slot dead-reckoné tient l'objet à +0.95 à travers une réorientation > 60°, contre +0.30 pour le rêve figé du WM monolithique"
