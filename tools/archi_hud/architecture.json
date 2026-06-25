@@ -1,5 +1,5 @@
 {
-  "focus": "memoire_spatiale",
+  "focus": "drives",
   "modules": [
     {
       "id": "perception_slot",
