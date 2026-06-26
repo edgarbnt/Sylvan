@@ -26,8 +26,13 @@ def load_wm():
     wm.load_state_dict(ck["model"]); wm.eval(); return wm, m
 
 
+FEAT = os.environ.get("FEAT", "rollout")  # 'rollout' = latent rêvé (ce que le critique voit) ; 'encoder' = perception directe
+
+
 @torch.no_grad()
 def latents_batch(wm, obs, cmd):
+    if FEAT == "encoder":
+        return wm.encoder(obs)  # [B, enc_dim] : perception directe d'un état RÉEL (borne « le signal est-il dans la perception ? »)
     out = wm.rollout_open_loop(obs, cmd.unsqueeze(1))  # [B,obs_dim],[B,1,2]
     return out["predicted_latents"][:, 0, :]  # [B, latent]
 
