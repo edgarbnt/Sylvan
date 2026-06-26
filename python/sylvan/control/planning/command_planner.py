@@ -86,9 +86,11 @@ class CommandPlanConfig:
     resource_drain: float = 0.0016         # drain normalisé/pas (≈ homeostasis passive_drain 0.15 / max 100)
     resource_restore: float = 0.5          # refill normalisé au contact (≈ energy_per_food 40-50 / 100)
     resource_reach: float = 1.0            # mètres : distance de capture imaginée (≈ eat/drink_radius)
-    survival_weight: float = 0.0           # FORESIGHT de survie consciente du TRAJET (défaut 0 = inchangé). Pénalise un
-                                            # candidat si une ressource passerait SOUS zéro AVANT qu'on l'atteigne depuis
-                                            # la position imaginée en fin de rollout. Anti-myopie. Env: SYLVAN_PLANNER_SURVIVAL_W
+    survival_weight: float = 300.0         # FORESIGHT de survie consciente du TRAJET — BANKÉ (validé multi-seed : multi-pulsions
+                                            # survie médiane ~2000→~2300, 3/3 seeds positifs). N'agit QU'EN multi-pulsions (le
+                                            # single-drive plan_wm_slot/single-resource est INTACT). Pénalise un candidat si une
+                                            # ressource passerait SOUS zéro AVANT qu'on l'atteigne depuis la position imaginée en fin
+                                            # de rollout. Mettre SYLVAN_PLANNER_SURVIVAL_W=0 pour désactiver. Env: SYLVAN_PLANNER_SURVIVAL_W
     nominal_speed: float = 0.02            # m/pas d'approche imaginée (calibre temps-pour-atteindre). Env: SYLVAN_PLANNER_SPEED
 
 
