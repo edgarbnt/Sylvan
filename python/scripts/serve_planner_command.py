@@ -181,6 +181,21 @@ class _PlannerService:
         self.hud_ts = 0
         self.hud_path = os.environ.get("SYLVAN_HUD_PATH", "data/hud/live.json")
         self._last_min_dist = float("nan")
+        # ---------------------------------------------------------------------------
+        # BC LOGGER (Task 2) — OPT-IN via SYLVAN_BC_LOG=<dir>
+        # ---------------------------------------------------------------------------
+        # Quand défini : logge une ligne JSONL par pas dans <dir>/ep_XXXX.jsonl.
+        # Rotation automatique à chaque reset() → un fichier = un épisode (contrat Task 3).
+        # Quand absent : aucun code path actif — non-régression byte-identique.
+        # ---------------------------------------------------------------------------
+        _bc_dir = os.environ.get("SYLVAN_BC_LOG")
+        self._bc_log_dir: Path | None = Path(_bc_dir) if _bc_dir else None
+        self._bc_episode: int = -1          # incrémenté à chaque reset() → ep_0000, ep_0001, …
+        self._bc_file = None                # file handle ouvert ; None = pas encore d'épisode
+        if self._bc_log_dir is not None:
+            self._bc_log_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[planner-cmd] BC LOGGER actif : {self._bc_log_dir} → ep_XXXX.jsonl / épisode",
+                  flush=True)
         self.pos_alpha = float(os.environ.get("SYLVAN_RETINA_POS_ALPHA", "0.0"))  # 0 = position brute (défaut)
         # 🅑-PUR : coût-VALEUR latent (planifier DANS le latent, AUCUNE coordonnée). Quand une tête de valeur
         # est chargée, le serveur route vers planner.plan_latent — la bouffe n'existe QUE dans ce que le WM a
@@ -319,6 +334,29 @@ class _PlannerService:
                     write_live(self.hud_path, ts=self.hud_ts, episode=0, step=self._ticks, fields=fields)
                 except Exception:
                     pass
+            # BC LOGGER (Task 2) : logge (obs, cmd) en JSONL pour l'entraînement BC (Task 3).
+            # Contrat : {"obs":{"proprio":[132], "energy":float, "thirst":float},
+            #            "wm" :{"retina0":[144], "cmd":[vx, omega]}}
+            # Non-régression : quand _bc_log_dir is None → bloc absent, comportement identique.
+            if self._bc_log_dir is not None and len(retina) == RETINA_DIM:
+                if self._bc_file is None:
+                    # sécurité : premier predict avant le premier reset() (rare)
+                    self._bc_episode += 1
+                    ep_path = self._bc_log_dir / f"ep_{self._bc_episode:04d}.jsonl"
+                    self._bc_file = open(ep_path, "w", buffering=1)   # line-buffered
+                    print(f"[planner-cmd] BC → {ep_path.name} (auto-open)", flush=True)
+                line = json.dumps({
+                    "obs": {
+                        "proprio": proprio,
+                        "energy":  float(energy),
+                        "thirst":  float(thirst),
+                    },
+                    "wm": {
+                        "retina0": retina,
+                        "cmd":     [float(vx), float(om)],
+                    },
+                })
+                self._bc_file.write(line + "\n")
             vision = [float(vx), float(om)] + [0.0] * (VISION_DIM - 2)
             res_in = torch.tensor(proprio + vision, dtype=torch.float32).unsqueeze(0)
             action = self.residual.mean(res_in)[0]
@@ -377,6 +415,15 @@ class _PlannerService:
             if self.slot_memory is not None:
                 self.slot_memory.reset()
                 self._slot_belief = None
+            # BC LOGGER (Task 2) : rotation de fichier à chaque reset d'épisode.
+            # Ferme l'épisode courant et ouvre le suivant → ep_0000.jsonl, ep_0001.jsonl, …
+            if self._bc_log_dir is not None:
+                if self._bc_file is not None:
+                    self._bc_file.close()
+                self._bc_episode += 1
+                ep_path = self._bc_log_dir / f"ep_{self._bc_episode:04d}.jsonl"
+                self._bc_file = open(ep_path, "w", buffering=1)   # line-buffered
+                print(f"[planner-cmd] BC → {ep_path.name}", flush=True)
 
 
 class _Handler(socketserver.StreamRequestHandler):

@@ -83,6 +83,31 @@ func predict_observation(obs: Dictionary) -> Array[float]:
 	return []
 
 
+func send_reset() -> void:
+	# BC LOGGER (Task 2) : notifie le serveur planner du début d'épisode →
+	# le serveur ferme le fichier JSONL courant et en ouvre un nouveau.
+	# Même protocole que predict_planner (TCP line-framed JSON).
+	if not is_server_ready():
+		return
+	var payload := JSON.stringify({"reset": true})
+	var error = _socket.put_data((payload + "\n").to_utf8_buffer())
+	if error != OK:
+		return
+	var deadline := Time.get_ticks_msec() + 1000
+	while Time.get_ticks_msec() < deadline:
+		_socket.poll()
+		if _socket.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+			return
+		var available := _socket.get_available_bytes()
+		if available > 0:
+			_response_buffer += _socket.get_utf8_string(available)
+			var newline_index := _response_buffer.find("\n")
+			if newline_index != -1:
+				_response_buffer = _response_buffer.substr(newline_index + 1)
+				return  # réponse consommée
+		OS.delay_usec(1000)
+
+
 func predict_planner(obs: Dictionary) -> Dictionary:
 	# Phase 5: query the combined planner+residual server. Sends {proprio, vision=REAL radar, energy},
 	# returns {"action":[12], "command":[vx, omega]}. Same wire protocol as predict_observation, plus
