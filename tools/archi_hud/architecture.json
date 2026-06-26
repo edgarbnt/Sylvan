@@ -1,5 +1,5 @@
 {
-  "focus": "drives",
+  "focus": "mode_1",
   "modules": [
     {
       "id": "perception_slot",
@@ -231,6 +231,26 @@
       "code": null,
       "live_field": null,
       "depends_on": ["drives"]
+    },
+    {
+      "id": "mode_1",
+      "etat": "manquant",
+      "titre": "Mode-1 : politique apprise multi-pulsions",
+      "couche": "manquant",
+      "quoi": "Une politique APPRISE (RL) qui décide (vx,ω) pour survivre à plusieurs pulsions, à la place du coût designed du planner",
+      "role": "Le « cerveau rapide » de l'ALife : une politique apprise par renforcement qui, depuis sa perception et ses pulsions, choisit l'action (vx,ω) qui minimise sa propre douleur homéostatique — au lieu du coût géométrique designed du planner. C'est la voie ROBUSTE qui contourne les 2 murs de la voie apprise incrémentale (off-policy + perception courte-portée du WM).",
+      "comment": "N'existe pas encore — design FIGÉ (docs/design_mode1.md, brainstorm owner 2026-06-26). Model-free PPO dans l'env réel, sur CPG+résidu hexapod_v2 GELÉS (n'émet que (vx,ω) ; même contrat TCP que le planner → 0 changement Godot). Perception = RÉTINE apprise (rouge=bouffe/bleu=eau), PAS le slot (le mur courte-portée est dans l'encodeur-slot, pas dans les rayons). Politique DRIVE-SYMÉTRIQUE : un token branchable par pulsion (urgence, perception couleur, valence ±) + encodeur partagé + pooling invariant → ajouter une pulsion = ZÉRO retrain. Récompense = douleur universelle −Σ(1−niveau)² (zéro how-to ; manger récompensé implicitement). Warm-start par BC du planner puis RL-finetune ; exploration = BC + resets à drives randomisés (lève l'off-policy).",
+      "apporte": "(à venir) Le vrai « elle se gère elle-même » : un arbitrage multi-pulsions APPRIS et PRÉVOYANT qui bat le coût designed (plafonné ~2300), et une archi où ajouter une pulsion = brancher un token (pas de retrain). Lève les 2 murs : exploration→off-policy, end-to-end+rétine→sa propre perception.",
+      "etat_detail": "MANQUANT — design figé, AUCUN entraînement avant que les gates GRATUITS passent (CLAUDE.md §1). Décisions verrouillées (brainstorm owner 2026-06-26) : action (vx,ω) sur substrat GELÉ ; perception rétine apprise ; model-free PPO ; warm-start BC du planner ; récompense douleur universelle −Σ(1−niveau)² ; politique drive-symétrique (scalable sans retrain). GATE ÉTAGÉ (gater le cher derrière le pas-cher) : Gate-0 = sonde rétine courte-portée (≥~35% du signal-repas vs slot 14%, + vérif eau-dans-rétine) → Gate-1 = BC atteint la baseline (~2000 dans le bruit du planner ~2300 ; valide obs/réseau/déploiement) → [gate] build plumbing RL → Gate-2 = RL court montre un gradient de survie (sans divergence KL<0.03) → Gate-3 = run long bat 2300 multi-seed ≥3 → Gate-S = politique GELÉE + 3e pulsion jamais vue au test survit sans retrain (falsifie §3/§4). KILL global : si le RL ne dépasse pas la baseline malgré convergence → négatif informatif, STOP+escalade. Détail : docs/design_mode1.md.",
+      "limites": "Model-free met de côté la planification-DANS-le-WM pour la décision (réconciliable : latent auxiliaire, ou Dreamer quand le WM saura l'eat-dynamics ; le WM reste vivant pour la perception slot + foraging mono). No-retrain prouvé dans la famille « approcher-consommer » (la valence ± étend à l'évitement ; une pulsion de nature radicalement autre = extension, non survendu). Rétine courte-portée = HYPOTHÈSE à valider (Gate-0). BC hérite la myopie (matche ~2300, ne bat pas) → c'est le RL qui doit battre, sinon KILL.",
+      "preuves": [
+        "Design figé docs/design_mode1.md (brainstorm owner 2026-06-26) — 6 décisions verrouillées + critères falsifiables + gate étagé",
+        "Justifié sur 5 gates gratuits (cf critique_appris) : la voie apprise incrémentale est bloquée par 2 murs → Mode-1 = seule voie robuste qui les contourne (exploration→off-policy, end-to-end+rétine→sa propre perception)",
+        "Infra PPO rétargetable (action_dim→2, ppo/update+rollout réutilisés, symétrie OFF) ; substrat moteur CPG+résidu gelé inchangé (0 changement Godot)"
+      ],
+      "code": null,
+      "live_field": null,
+      "depends_on": ["residu_ppo", "corps_cpg", "drives"]
     }
   ]
 }
