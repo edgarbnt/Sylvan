@@ -35,7 +35,7 @@ C'est le vrai « elle se gère elle-même », explicitement différé « en dern
 | **Perception** | **rétine apprise** (36 rayons × [depth,R,G,B] ; rouge=bouffe, bleu=eau) | perception 100 % apprise, **zéro oracle** ; évite le slot (14 %) — le mur #2 est dans l'encodeur-slot, pas les rayons |
 | **Paradigme** | **model-free PPO**, env réel | l'infra PPO est rétargetable (`action_dim`→2 trivial, update/buffer réutilisés) ; le model-based (Dreamer) est **bloqué par l'aveuglement eat-dynamics du WM** (1 % de la bosse) |
 | **Warm-start** | **BC du planner** → RL-finetune | expert gratuit déterministe ; donne le **gate gratuit décisif** ; le RL n'a plus qu'à battre la myopie |
-| **Récompense** | `−Σ_pulsion f(niveau)`, `f(x)=(1−x)²` | **UNE douleur universelle** sommée sur les pulsions existantes ; zéro how-to ; manger récompensé IMPLICITEMENT |
+| **Récompense** | **survie pure** (vivre = +1/pas, mort = terminal) | le SEUL axiome = *persister* ; la **forme de la douleur n'est PAS posée — elle ÉMERGE** comme la tête de valeur APPRISE `V(état)` (critique contextuel) ; `(1−niveau)²` = simple béquille de démarrage annealable, jamais la cible |
 | **Scalabilité** | **politique drive-symétrique** | ajouter une pulsion = brancher un token, **zéro retrain** (prouvé par gate) — §3 appliqué au RL |
 
 ---
@@ -74,14 +74,25 @@ pour forcer LA compétence générale (sinon l'archi symétrique sur-apprend les
 > drive est soulagé par le rouge »), définie une fois — l'idéal §3 (lien APPRIS auto-supervisé) est un upgrade
 > de pureté ultérieur.
 
-### 2.4 Récompense — douleur universelle (zéro how-to)
-`reward_t = −Σ_d f(niveau_d)`, avec `f(x)=(1−x)²` (UNE forme convexe, **constante-corps**). Mort = **terminal**.
-Manger/boire ne sont **jamais récompensés explicitement** — c'est implicite (niveau monte → douleur baisse) ;
-le « comment » (chercher, viser, fermer la distance) est **100 % découvert**. C'est `[[sylvan-second-drive-arbitration]]`
-résolu proprement et conforme CLAUDE.md §3 (drive = corps, lien appris). La variante **mort-seule** (`+1/pas
-vivant`) est écartée (trop sparse, surtout pour l'arbitrage) au profit de la **douleur graduée** (= sens
-littéral de « minimiser la douleur » + dense). `f` est la SEULE chose « dite » — irréductible (pas de besoin =
-pas de comportement) mais **une fois**, jamais task-spécifique.
+### 2.4 Récompense — SURVIE PURE (la forme de la douleur est APPRISE, pas posée)
+**Le seul axiome = persister** (le plancher le plus minimal/neutre, quasi-tautologique pour de l'ALife : ce qui
+ne « tient » pas à durer ne dure pas). `reward_t = +1 par pas vivant`, **mort = terminal** (l'épisode s'arrête).
+Maximiser le retour = **maximiser la durée de vie** = LE but, directement. Avec plusieurs pulsions qui se vident,
+rester en vie **FORCE l'arbitrage** (laisser un drive tomber à 0 = mort = fin du +1) → **l'arbitrage émerge de la
+survie**, sans qu'on encode aucune urgence ni importance (décision owner 2026-06-26, cf `[[sylvan-second-drive-arbitration]]`).
+
+**La FORME de la douleur n'est PAS dans la récompense — elle ÉMERGE comme la tête de valeur `V(état)` du PPO**
+(elle aussi **drive-symétrique**, donc scalable) : le critic apprend « depuis cet état de manque, combien de
+survie future ? ». C'est *contextuel* (0.5-d'énergie près de bouffe ≠ 0.5 dans un désert) là où une forme figée
+`(1−niveau)²` est **aveugle au contexte** (et donc fausse). **C'est le nœud `critique_appris` réalisé** : la
+douleur apprise = la valeur apprise (LeCun). On ne dit JAMAIS « manger=bien » ni « la faim prime » : le
+« comment » et l'« importance relative » sont **100 % découverts**.
+
+**Béquille de démarrage (optionnelle, annealable)** : la survie pure est *sparse* (signal = « mort au pas N »).
+Pour amorcer l'apprentissage on PEUT ajouter un shaping `−λ·Σ_d (1−niveau_d)²` — idéalement **potential-based**
+(`Φ(s)=−Σ(1−niveau)²` → `shaping = γΦ(s')−Φ(s)`, **ne change PAS la politique optimale**) et/ou **annealé λ→0**.
+La cible finale reste donc la **survie pure**, et la forme de douleur finale est **celle qu'elle a apprise**, pas
+la nôtre. `λ` est un **cadran** (env `SYLVAN_PAIN_SHAPING_W`), pas la définition de la douleur.
 
 ### 2.5 Politique = model-free PPO
 Réutilise `ppo/update.py` + `ppo/rollout.py` **tels quels** (action-dim-agnostiques). `action_dim=2` (config),
@@ -111,7 +122,9 @@ la baseline **closed-loop** (CLAUDE.md).
 
 - **BUT mesuré** : médiane de survie multi-pulsions via `baseline_multidrive_slot.sh` (drain 0.05, eau active).
   **À BATTRE : ~2300** (le coût designed `survival_weight=300`). Mono = 3000 (cible secondaire).
-- **SUCCÈS GLOBAL** : médiane **> 2300**, **multi-seed ≥ 3**, closed-loop ; **+ no-retrain prouvé** (Gate-S).
+- **SUCCÈS GLOBAL** : médiane **> 2300**, **multi-seed ≥ 3**, closed-loop ; **+ no-retrain prouvé** (Gate-S) ;
+  **idéalement sous récompense de survie PURE** (béquille de shaping annealée → 0) — sinon on ne revendique pas
+  la « douleur émergente », la forme reste partiellement posée.
 - **KILL GLOBAL** : si, après gates, le RL **ne dépasse pas** la baseline malgré convergence (KL<0.03, std
   stable) → **négatif informatif → STOP + escalade**, pas d'enchaînement de tweaks à l'aveugle.
 
@@ -174,6 +187,10 @@ Politique **GELÉE** + une **3ᵉ pulsion jamais vue** au test → survit-elle *
 - **Rétine courte-portée** = HYPOTHÈSE (Gate-0 la teste, ne pas présumer le succès). **Eau-dans-rétine** à vérifier.
 - **BC hérite la myopie** → il **matche** la baseline (≈2300), ne la **bat** pas. BC = feasibility du chemin,
   PAS le succès. C'est le **RL** (Gate-2/3) qui doit battre — sinon KILL global.
+- **Survie pure = sparse** : le signal « mort au pas N » est dur pour le crédit → s'appuie fort sur le warm-start
+  BC + l'exploration (resets randomisés) + la béquille de shaping (annealée). HONNÊTE (§2) : on ne revendique
+  « douleur émergente » (la forme apprise = la tête de valeur) que si la politique **TIENT quand le shaping → 0**
+  (testé Gate-3) ; sinon la forme reste partiellement posée — on le dira.
 - **Pureté** : model-free met de côté la **planification-dans-le-WM** pour la décision (le WM/slot ne servent
   plus à décider). Réconciliable plus tard (latent en input auxiliaire, ou Dreamer quand le WM saura
   l'eat-dynamics). Le WM reste **vivant** (perception slot, foraging mono).

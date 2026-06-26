@@ -21,7 +21,7 @@ existants `ppo/update.py` + `ppo/rollout.py` (réutilisés tels quels), `serve_p
 - **Substrat moteur GELÉ** : CPG + résidu `data/checkpoints/hexapod_v2/policy_best.pt`, inference-only. **0 changement Godot.**
 - **Régime propre** : `SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5`.
 - **Perception = rétine apprise, ZÉRO oracle** : la politique lit `retina` (144), JAMAIS `vision`/`vision_fine`/`vision_water` (radars-oracle). Le lien couleur↔pulsion (rouge=faim, bleu=soif) = définition-corps.
-- **Récompense = douleur universelle** `−Σ_d (1−niveau_d)²` (zéro how-to). **Action bornée** `vx∈[0.55,0.75]`, `ω∈[-0.6,0.6]`.
+- **Récompense = SURVIE PURE** (`+1/pas vivant`, mort=terminal) ; la forme de la douleur ÉMERGE (tête de valeur), `(1−niveau)²` = béquille annealable seulement. **Action bornée** `vx∈[0.55,0.75]`, `ω∈[-0.6,0.6]`.
 - **Tuer un train** : `pkill -9 -f serve_mode1_collect ; pkill -9 -f train_mode1_ppo ; pkill -9 -f 'godot --path godot'` PUIS vérifier 0 restant. **Lancer en background = la commande python SEULE.**
 - **BUT mesuré** : médiane survie multi-pulsions via le harness `baseline_multidrive_slot`. **À BATTRE : ~2300.**
 - **Gater le cher derrière le pas-cher** : ne PAS construire la Phase 2 (RL) avant que Gate-1 (Phase 1, BC) passe. Un run raté = négatif informatif → STOP + escalade.
@@ -358,7 +358,7 @@ NB : Mode-1 **n'utilise PAS le WM** (perception = rétine directe). `serve_mode1
 > **Ne PAS construire avant que Gate-1 passe.** Détail step-by-step à écrire APRÈS Gate-1 (son code exact dépend
 > du résultat). Design + critères falsifiables figés ici :
 
-- **Task 6 — `survival_multi` reward** (`reward_manager.gd`) : `reward_t = −Σ_d (1−niveau_d)²` (faim+soif), terminal mort. Vérifier `max_episode_steps` ≥ 3000 en mode survie. **Aucun bonus manger/boire, aucun gradient d'approche** (douleur pure, design §2.4).
+- **Task 6 — récompense de SURVIE PURE** (`reward_manager.gd`, objectif `survival_pure`) : `reward_t = +1 par pas vivant`, **mort = terminal** → le retour = durée de vie ; l'arbitrage faim/soif émerge de la survie. La **forme de la douleur n'est PAS dans la reward** (elle émerge = tête de valeur PPO drive-symétrique, design §2.4). **Béquille optionnelle annealable** `−λ·Σ(1−niveau)²` (flag `SYLVAN_PAIN_SHAPING_W`, idéalement potential-based, annealé λ→0). Vérifier `max_episode_steps` ≥ 3000. **Aucun bonus manger/boire, aucun gradient d'approche.**
 - **Task 7 — `serve_mode1_collect.py`** : fork de `serve_mode1.py` rendu STOCHASTIQUE (échantillonne `Normal(mean, exp(log_std))` avant `map_action`), + **log des transitions au command-cadence** : `(proprio, tokens, command, reward-fenêtre, done)` en JSONL pour le buffer PPO.
 - **Task 8 — `train_mode1_ppo.py`** : réutilise `ppo/update.py` + `ppo/rollout.py` (`action_dim=2`, `sym_coef=0`, `--lr 1e-4`, GAE γ=0.99 λ=0.95) ; **warm-start depuis `mode1_bc/policy.pt`** ; exploration = **resets à drives randomisés** (randomiser `SYLVAN_INIT_ENERGY/THIRST` par épisode) + entropie.
 - **Task 9 — ⛓️ GATE-2** : run RL COURT (budget borné) depuis le warm-start BC.
@@ -369,7 +369,7 @@ NB : Mode-1 **n'utilise PAS le WM** (perception = rétine directe). `serve_mode1
 
 ## PHASE 3 — Gate-3 (run long) + Gate-S (scalabilité)  *(GATED derrière Gate-2)*
 
-- **Task 10 — ⛓️ GATE-3 (run long, le BUT)** : RL long, **multi-seed ≥ 3**. **SUCCÈS** : médiane multi-pulsions **> 2300**, closed-loop → promotion live (serveur Mode-1 remplace le planner ; planner gardé en fallback). **KILL** : ne dépasse pas 2300 malgré convergence → négatif informatif, STOP + escalade.
+- **Task 10 — ⛓️ GATE-3 (run long, le BUT)** : RL long, **multi-seed ≥ 3**, **shaping annealé λ→0** (la survie tient sous récompense PURE = douleur émergente prouvée ; sinon le dire). **SUCCÈS** : médiane multi-pulsions **> 2300**, closed-loop → promotion live (serveur Mode-1 remplace le planner ; planner gardé en fallback). **KILL** : ne dépasse pas 2300 malgré convergence → négatif informatif, STOP + escalade.
 - **Task 11 — ⛓️ GATE-S (scalabilité no-retrain, falsifie §3/§4)** : politique **GELÉE** + une **3ᵉ pulsion jamais vue** au test (un 3ᵉ token, p.ex. fatigue+repos OU une 2ᵉ ressource consommable). **SUCCÈS** : survie maintenue avec 3 pulsions **sans retrain**. (Le gate EST le test.)
 
 ---
