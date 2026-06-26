@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 
-N_RAYS = 36
+from sylvan.control.mode1.obs import N_RAYS
 TOK = 2 + N_RAYS  # niveau, valence, 36 profondeurs couleur-gatées
 
 def map_action(mean: torch.Tensor) -> torch.Tensor:
@@ -14,9 +14,10 @@ def map_action(mean: torch.Tensor) -> torch.Tensor:
 class DriveSymmetricPolicy(nn.Module):
     """proprio + N tokens-pulsion → encodeur PARTAGÉ par token → pooling invariant (mean) → tronc → (vx,ω).
     Aucun slot 'énergie'/'soif' en dur : ajouter une pulsion = un token de plus, MÊMES poids (design §2.3)."""
-    def __init__(self, proprio_dim=132, hidden=128, action_dim=2):
+    def __init__(self, proprio_dim=132, ray_dim: int = N_RAYS, hidden=128, action_dim=2):
         super().__init__()
-        self.token_enc = nn.Sequential(nn.Linear(TOK, hidden), nn.SiLU(), nn.Linear(hidden, hidden), nn.SiLU())
+        tok_dim = 2 + ray_dim
+        self.token_enc = nn.Sequential(nn.Linear(tok_dim, hidden), nn.SiLU(), nn.Linear(hidden, hidden), nn.SiLU())
         self.proprio_enc = nn.Sequential(nn.Linear(proprio_dim, hidden), nn.SiLU())
         self.trunk = nn.Sequential(nn.Linear(2 * hidden, hidden), nn.SiLU(), nn.Linear(hidden, action_dim))
         self.log_std = nn.Parameter(torch.full((action_dim,), -0.5))  # utilisé au RL (Phase 2)
