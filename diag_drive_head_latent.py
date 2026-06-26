@@ -26,19 +26,32 @@ def load_wm():
     wm.load_state_dict(ck["model"]); wm.eval(); return wm, m
 
 
-FEAT = os.environ.get("FEAT", "rollout")  # 'rollout' = latent rêvé (ce que le critique voit) ; 'encoder' = perception directe
+FEAT = os.environ.get("FEAT", "rollout")  # 'rollout' = latent rêvé ; 'encoder' = perception directe ; 'retina' = rayons BRUTS (Gate-0 Mode-1)
+PROPRIO_DIM = 132  # écrasé depuis le meta du WM dans main()
 
 
 @torch.no_grad()
 def latents_batch(wm, obs, cmd):
     if FEAT == "encoder":
         return wm.encoder(obs)  # [B, enc_dim] : perception directe d'un état RÉEL (borne « le signal est-il dans la perception ? »)
+    if FEAT == "retina":
+        return obs[:, PROPRIO_DIM:PROPRIO_DIM + 144]  # rayons rétine BRUTS (Gate-0 Mode-1) : la perception apprise (PAS le slot) porte-t-elle la distance courte-portée ?
+    if FEAT == "retina_red":
+        # scalaire = profondeur du rayon ROUGE (bouffe) le plus proche, extrait À LA MAIN des rayons
+        # (teste si l'info courte-portée est DANS les rayons, isolé de la capacité du MLP à l'extraire)
+        ret = obs[:, PROPRIO_DIM:PROPRIO_DIM + 144].reshape(obs.shape[0], 36, 4)
+        d, R, G, B = ret[..., 0], ret[..., 1], ret[..., 2], ret[..., 3]
+        is_red = (R > G) & (R > B) & (R > 0.3) & (d < 0.999)
+        nearest = torch.where(is_red, d, torch.ones_like(d)).min(dim=1, keepdim=True).values  # [B,1] (1.0 si pas de rouge)
+        return nearest
     out = wm.rollout_open_loop(obs, cmd.unsqueeze(1))  # [B,obs_dim],[B,1,2]
     return out["predicted_latents"][:, 0, :]  # [B, latent]
 
 
 def main():
     wm, m = load_wm()
+    global PROPRIO_DIM
+    PROPRIO_DIM = m["proprio_dim"]
     torch.manual_seed(0)
     # collecte (wm_obs, cmd, ΔE, eat, ep)
     obs_l, cmd_l, dy_l, eat_l, ep_l = [], [], [], [], []
@@ -79,7 +92,7 @@ def main():
     ete = eat[te]
     er = dy[te][ete].float().mean().item(); ep_ = pte[ete].mean().item(); npd = pte[~ete].mean().item()
     cap = ep_ / er if er else float("nan"); discrim = ep_ - npd
-    print(f"[latent] held-out repas n={int(ete.sum())} | ΔE réel={er:+.1f}  ΔE prédit={ep_:+.2f}  capté={100*cap:.0f}%  discrim={discrim:+.2f}")
+    print(f"[FEAT={FEAT}] held-out repas n={int(ete.sum())} | ΔE réel={er:+.1f}  ΔE prédit={ep_:+.2f}  capté={100*cap:.0f}%  discrim={discrim:+.2f}")
     ok = cap > 0.40 and discrim > 8.0
     print(f"\n>>> VERDICT (tête sur LATENT) : capté={100*cap:.0f}%(>40%?) discrim={discrim:+.1f}(>8?) → "
           f"{'PASS — le latent porte le signal repas → tête drive-dynamics FAISABLE' if ok else 'PARTIEL/FAIL — le latent ne suffit pas non plus → repenser la représentation au contact'}")
