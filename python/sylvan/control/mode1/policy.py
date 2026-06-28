@@ -6,9 +6,13 @@ from sylvan.control.mode1.obs import N_RAYS
 TOK = 2 + N_RAYS  # niveau, valence, 36 profondeurs couleur-gatées
 
 def map_action(mean: torch.Tensor) -> torch.Tensor:
-    """mean[...,0]→vx∈[0.55,0.75] ; mean[...,1]→ω∈[-0.6,0.6] (régime propre, design §2.5)."""
-    vx = 0.55 + 0.10 * torch.sigmoid(mean[..., 0:1])
-    om = 0.6 * torch.tanh(mean[..., 1:2])
+    """mean[...,0]→vx∈[0.55,0.75] ; mean[...,1]→ω∈[-0.6,0.6] (régime propre, design §2.5).
+    Mapping LINÉAIRE + clamp : les bornes (vx=0.75, ω=±0.6) sont ATTEIGNABLES à sortie finie
+    (vx=0.75 à mean=+1 ; ω=±0.6 à mean=±1) — contrairement à sigmoid/tanh qui ne touchent jamais
+    leurs asymptotes (le planner sature à ±0.6 / vx>0.7, que le BC ne pouvait pas reproduire).
+    Clamp = cohérent avec le bornage d'action de l'infra PPO existante."""
+    vx = (0.65 + 0.10 * mean[..., 0:1]).clamp(0.55, 0.75)
+    om = (0.6 * mean[..., 1:2]).clamp(-0.6, 0.6)
     return torch.cat([vx, om], dim=-1)
 
 class DriveSymmetricPolicy(nn.Module):
