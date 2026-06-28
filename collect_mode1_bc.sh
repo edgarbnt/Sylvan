@@ -12,7 +12,7 @@
 # Usage: bash collect_mode1_bc.sh [prefix=mode1_bc_a] [episodes=40] [seed=1]
 # Tuer : pkill -9 -f serve_planner_command ; pkill -9 -f 'godot --path godot'
 
-set +e   # pkill renvoie 1 si rien à tuer — ne pas interrompre le script
+set -uo pipefail  # Échecs réels (Godot absent, checkpoint manquant, crash serveur) remontent.
 
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 export PYTHONPATH=python
@@ -24,9 +24,9 @@ PORT=6075
 WM="${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}"
 BC_DIR="data/replay_buffer/${PREFIX}"
 
-# Tuer toute instance précédente
-pkill -9 -f serve_planner_command 2>/dev/null
-pkill -9 -f 'godot --path godot'   2>/dev/null
+# Tuer toute instance précédente (|| true : pkill renvoie 1 si rien à tuer)
+pkill -9 -f serve_planner_command 2>/dev/null || true
+pkill -9 -f 'godot --path godot'   2>/dev/null || true
 sleep 1
 
 mkdir -p "$BC_DIR"
@@ -67,7 +67,7 @@ SYLVAN_WM_USE_RETINA=1               \
 SYLVAN_EAT_RADIUS=1.0                \
 SYLVAN_DRINK_RADIUS=1.0              \
 SYLVAN_FOOD_COUNT=5                  \
-SYLVAN_WATER_COUNT=8                 \
+SYLVAN_WATER_COUNT=5                 \
 SYLVAN_ENERGY_DRAIN=0.05             \
 SYLVAN_THIRST_DRAIN=0.05             \
 SYLVAN_COLLECT=1                     \
@@ -84,7 +84,7 @@ SYLVAN_ASSIST_RATIO=0                \
 SYLVAN_RUN_DIR="data/replay_buffer/${PREFIX}_run" \
 "$GODOT_BIN" --path godot --headless > /tmp/bc_godot.log 2>&1
 
-kill -9 $SRV 2>/dev/null
+kill -9 $SRV 2>/dev/null || true
 
 # ── Compte et résumé ─────────────────────────────────────────────────────────
 echo "=== TRANSITIONS BC COLLECTÉES ==="

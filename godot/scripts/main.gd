@@ -643,7 +643,8 @@ func _start_episode() -> void:
 	# BC LOGGER (Task 2) : signaler au serveur planner le début d'épisode → rotation de fichier JSONL.
 	# Seulement quand _cpg_planner est actif (vrai dès le 2ème épisode, après _update_heading).
 	# Le 1er épisode (avant _update_heading) est couvert par l'auto-open dans serve_planner_command.py.
-	if _cpg_planner and policy_player.is_server_ready():
+	# Gaté sur SYLVAN_BC_LOG : évite de resetter l'EMA du serveur dans les runs normaux (non-régression).
+	if _cpg_planner and policy_player.is_server_ready() and OS.get_environment("SYLVAN_BC_LOG") != "":
 		policy_player.send_reset()
 
 
