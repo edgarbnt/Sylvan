@@ -524,6 +524,7 @@ func _physics_process(delta: float) -> void:
 	var _rmetrics: Dictionary = agent_instance.get_locomotion_metrics()
 	_rmetrics["action_rate"] = _action_rate_pen        # inject the anti-jitter penalties (computed above)
 	_rmetrics["action_smooth2"] = _action_smooth2_pen  # so the reward (incl. locomotion_omni_v1) can use them
+	_rmetrics["thirst"] = homeostasis.thirst           # survival_pure pain-shaping uses thirst level (100=full, no penalty)
 	accumulated_reward += reward_manager.compute_reward(_rmetrics, homeostasis.energy, homeostasis.health, done)
 
 	if current_action_repeat_step >= action_repeat or done:

@@ -102,6 +102,8 @@ func compute_reward(metrics: Dictionary, energy: float, health: float, done: boo
 			return _reward_survival_quad_v1(metrics, energy, done)
 		"survival_quad_directed":
 			return _reward_survival_quad_directed(metrics, energy, done)
+		"survival_pure":
+			return _reward_survival_pure(metrics, energy, done)
 		"heading_quad_v1":
 			return _reward_heading_quad_v1(metrics, done)
 		"heading_quad_v2":
@@ -690,6 +692,26 @@ func _reward_survival_v1(metrics: Dictionary, energy: float, done: bool) -> floa
 	var comfort = 0.7 * energy_frac * height_gate   # high energy + upright = comfortable
 	var reward = alive + comfort + eat_bonus
 	return clampf(reward, -1.0, 5.0)
+
+
+# PURE SURVIVAL — Mode-1 (2026-06-28). The ONLY axiom is "stay alive": +1 per step.
+# Death (is_critical → done=true) removes all future +1, so maximising lifespan is the
+# unique optimum — no explicit death penalty needed (GAE bootstraps terminal with 0).
+# OPTIONAL bootstrap crutch: SYLVAN_PAIN_SHAPING_W (default 0.0) adds an annealable
+# (1−level)² discomfort term so early training has a dense gradient toward full drives.
+# Thirst is injected into metrics["thirst"] by main.gd; if absent (water disabled or old
+# code), defaults to 100.0 → penalty = 0 → backward-compatible, no surprise penalty.
+# Set w→0 as the policy matures; at w=0 the reward is the pure +1/step axiom.
+func _reward_survival_pure(metrics: Dictionary, energy: float, _done: bool) -> float:
+	var reward := 1.0
+	var w_env := OS.get_environment("SYLVAN_PAIN_SHAPING_W")
+	var w := float(w_env) if w_env != "" else 0.0
+	if w > 0.0:
+		var e := clampf(energy / 100.0, 0.0, 1.0)
+		var t_raw := float(metrics.get("thirst", 100.0))
+		var t := clampf(t_raw / 100.0, 0.0, 1.0)
+		reward -= w * ((1.0 - e) * (1.0 - e) + (1.0 - t) * (1.0 - t))
+	return reward
 
 
 # J2 FULL-BODY walk — PHASE-CLOCK PERIODIC REWARD (Siekmann et al., ICRA 2021, the Cassie
