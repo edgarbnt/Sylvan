@@ -179,6 +179,10 @@ var _retina_planner := false # SYLVAN_RETINA_PLANNER=1 → envoie la rétine liv
 var _autopilot_k := 1.5
 var _autopilot_wmax := 0.8
 var _dbg_bearing := 0.0  # last bearing-to-food (deg) for autopilot diagnosis
+# Mode-1 collecte RL : raison de fin de l'épisode PRÉCÉDENT ("death"/"truncated"), reportée au serveur
+# SUR LE 1er TICK du nouvel épisode (predict_planner est appelé AVANT que `done` soit connu → on ne peut
+# pas taguer le tick terminal ; on tague le 1er tick post-respawn, aligné sur le reset de episode_step).
+var _prev_term := "none"
 # Phase 2b: per-episode command sampler — vary omega so the residual learns to PROPEL while TURNING
 # (the Phase-2 residual was straight-only). The command also enters the obs (vision) so it knows the turn.
 var _cpg_sample_cmd := false
@@ -457,8 +461,15 @@ func _physics_process(delta: float) -> void:
 				if _water_enabled:
 					latest_obs["vision_water"] = PERCEPTION_SCRIPT.food_radar(_ptorso2.global_position, _ptorso2.global_transform.basis.z, water_manager.get_positions(), 36)
 					latest_obs["thirst"] = homeostasis.thirst
+			# Mode-1 collecte RL : signal EXPLICITE de frontière d'épisode. episode_step = index de pas
+			# DANS l'épisode (episode_manager.current_step_id, remis à 0 par start_episode au respawn) ;
+			# le serveur détecte une frontière quand episode_step CHUTE. prev_term porte la raison de la
+			# fin précédente (posée par _finish_episode), lue au 1er tick puis remise à "none".
+			latest_obs["episode_step"] = episode_manager.current_step_id
+			latest_obs["prev_term"] = _prev_term
 			# Phase 5: the WM planner server returns BOTH the residual action and the chosen command.
 			var resp: Dictionary = policy_player.predict_planner(latest_obs)
+			_prev_term = "none"  # la raison n'est reportée qu'une fois (au 1er tick post-respawn)
 			var cmd: Array = resp.get("command", [])
 			if cmd.size() == 2:
 				agent_instance.set_cpg_command(float(cmd[0]), float(cmd[1]))
@@ -644,6 +655,9 @@ func _start_episode() -> void:
 
 
 func _finish_episode(reason: String) -> void:
+	# Mémorise la raison pour le serveur Mode-1 (reason ∈ {"done","truncated"} ; "done" = mort via
+	# is_critical/chute). Lue au 1er tick du nouvel épisode par predict_planner (voir _prev_term).
+	_prev_term = "death" if reason == "done" else "truncated"
 	episode_manager.finish_episode(reason)
 	rollout_writer.end_episode()
 	completed_episodes += 1

@@ -97,6 +97,11 @@ func predict_planner(obs: Dictionary) -> Dictionary:
 		"vision_water": obs.get("vision_water", []), # 2ᵉ pulsion: fine WATER radar (planner-only, hors WM)
 		"thirst": obs.get("thirst", 0.0),            # 2ᵉ pulsion: niveau de soif 0..100 (planner-only)
 		"retina": obs.get("retina", []),             # RÉTINE étage 1: rayons couleur bruts → localisation apprise
+		# Signal EXPLICITE de frontière d'épisode (Mode-1 collecte RL) : additif, ignoré par les autres
+		# serveurs. episode_step = index de pas DANS l'épisode (remis à 0 au respawn) ; prev_term = raison
+		# de fin de l'épisode PRÉCÉDENT, lisible au 1er tick du nouvel épisode ("death"/"truncated"/"none").
+		"episode_step": obs.get("episode_step", -1),
+		"prev_term": obs.get("prev_term", "none"),
 	})
 	var error = _socket.put_data((payload + "\n").to_utf8_buffer())
 	if error != OK:

@@ -1,9 +1,18 @@
 # python/sylvan/control/mode1/policy.py
+import math
+
 import torch
 import torch.nn as nn
+from torch.distributions import Normal
 
 from sylvan.control.mode1.obs import N_RAYS
 TOK = 2 + N_RAYS  # niveau, valence, 36 profondeurs couleur-gatées
+
+# Bornes de log_std (MÊME convention que sylvan/control/ppo/policy.py) : plancher = anti-collapse
+# d'exploration ("agent gelé"), plafond = anti-bruit-fou en début de RL. Définies ici pour garder
+# ce module autonome (DriveSymmetricPolicy ne dépend pas de l'infra PPO).
+LOG_STD_FLOOR = math.log(0.05)
+LOG_STD_CEIL = math.log(2.0)
 
 def map_action(mean: torch.Tensor) -> torch.Tensor:
     """mean[...,0]→vx∈[0.55,0.75] ; mean[...,1]→ω∈[-0.6,0.6] (régime propre, design §2.5).
@@ -35,3 +44,19 @@ class DriveSymmetricPolicy(nn.Module):
     @torch.no_grad()
     def act(self, proprio, tokens):
         return map_action(self.forward(proprio, tokens))
+
+    @torch.no_grad()
+    def sample(self, proprio, tokens, generator=None):
+        """Échantillonne la commande RAW z ~ Normal(mean, std) (Phase 2 RL, collecte on-policy).
+
+        La distribution de la politique porte sur z = sortie BRUTE de forward() (PRÉ-map_action) ;
+        map_action est l'ACTIONNEUR déterministe appliqué APRÈS le tirage (commande actionnée =
+        map_action(z)). On ne clampe PAS z ici : le bornage (vx∈[0.55,0.75], ω∈[±0.6]) est fait en
+        aval par map_action. Renvoie (z[...,2], logprob[...]). Mêmes maths que ppo.policy.sample →
+        le ratio PPO vaut exactement 1 au premier pas de chaque itération."""
+        mean = self.forward(proprio, tokens)                       # z-mean BRUT (non borné)
+        std = self.log_std.clamp(LOG_STD_FLOOR, LOG_STD_CEIL).exp()
+        eps = torch.randn(mean.shape, generator=generator, device=mean.device, dtype=mean.dtype)
+        z = mean + std * eps
+        logprob = Normal(mean, std).log_prob(z).sum(-1)
+        return z, logprob

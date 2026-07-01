@@ -29,10 +29,9 @@ import torch
 from sylvan.config import SylvanConfig
 from sylvan.control.mode1.policy import DriveSymmetricPolicy, map_action  # noqa: F401 (map_action exported)
 from sylvan.control.mode1.obs import build_tokens
+from sylvan.control.mode1.residual import residual_action
 from sylvan.control.ppo.policy import GaussianActorCritic
 from sylvan.training.checkpointing import load_checkpoint
-
-VISION_DIM = 12  # même que serve_planner_command.py : [vx, omega, 0×10]
 
 # Commande neutre par défaut (centre du régime propre hexapode)
 _DEFAULT_CMD: tuple[float, float] = (0.65, 0.0)
@@ -103,17 +102,10 @@ class _Mode1Service:
 
             self._ticks += 1
             vx, om = self._cmd
+            # Obs-résidu PARTAGÉE (helper unique — byte-identique à serve_mode1_collect / planner).
+            action = residual_action(self.residual, proprio, vx, om)
 
-            # ---------------------------------------------------------------- #
-            # Construction de l'obs-résidu : commande injectée dans la vision   #
-            # COPIE VERBATIM de serve_planner_command.py (lignes 360-362)       #
-            # ---------------------------------------------------------------- #
-            vision = [float(vx), float(om)] + [0.0] * (VISION_DIM - 2)
-            res_in = torch.tensor(proprio + vision, dtype=torch.float32).unsqueeze(0)
-            action = self.residual.mean(res_in)[0]
-
-        action = torch.nan_to_num(action, nan=0.0, posinf=1.0, neginf=-1.0).clamp(-1.0, 1.0)
-        return {"action": [float(v) for v in action.tolist()], "command": [float(vx), float(om)]}
+        return {"action": action, "command": [float(vx), float(om)]}
 
     def reset(self) -> None:
         with self._lock:
