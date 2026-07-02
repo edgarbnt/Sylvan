@@ -21,7 +21,7 @@ from sylvan.control.planning.command_planner import _survival_extension
 DRAIN, RESTORE, SPD, CAP, MARGIN_W = 0.0005, 0.4, 0.02, 3000.0, 200.0
 
 
-def ext(df, dw, e, t, dist_fw=5.0, steps_p1=None, alive=None):
+def ext(df, dw, e, t, dist_fw=5.0, steps_p1=None, alive=None, turn_f=None, turn_w=None):
     n = len(df)
     z = lambda v: torch.tensor(v, dtype=torch.float32)
     return _survival_extension(
@@ -29,6 +29,8 @@ def ext(df, dw, e, t, dist_fw=5.0, steps_p1=None, alive=None):
         torch.ones(n) if alive is None else z(alive),
         torch.zeros(n) if steps_p1 is None else z(steps_p1),
         dist_fw, DRAIN, RESTORE, SPD, CAP, MARGIN_W,
+        turn_f=None if turn_f is None else z(turn_f),
+        turn_w=None if turn_w is None else z(turn_w),
     )
 
 
@@ -59,7 +61,21 @@ def main() -> None:
     s = ext(df=[1.0], dw=[1.0], e=[0.5], t=[0.5], steps_p1=[42.0], alive=[0.0])
     assert abs(float(s[0]) - 42.0) < 1e-4, f"D: temps figé attendu 42, {s.tolist()}"
 
-    print("[sanity] OK — arbitrage (A/A'), committment-marge (B), myopie punie (C), mort phase-1 (D)")
+    # E. TEMPS DE VIRAGE (fix post-KILL) : mêmes distances, mais le candidat 2 finit DOS à la bouffe
+    #    (π/0.015 ≈ 209 pas de virage) → celui qui s'est déjà tourné doit gagner.
+    s = ext(df=[2.0, 2.0], dw=[6.0, 6.0], e=[0.30, 0.30], t=[0.9, 0.9],
+            turn_f=[0.0, 209.0], turn_w=[0.0, 0.0])
+    assert s[0] > s[1], f"E: le candidat déjà tourné doit gagner, {s.tolist()}"
+
+    # F. ANTI-PLAT (fix post-KILL, std=0.000 à distance) : drive URGENT (e=0.25) + bouffe LOIN :
+    #    l'ordre eau-d'abord meurt (9 m entre ressources) → le max = bouffe-d'abord, dont la marge de
+    #    1ʳᵉ arrivée doit maintenant DIFFÉRENCIER deux fins d'arc distantes de 1 m (plus d'absorption).
+    s = ext(df=[4.5, 5.5], dw=[4.0, 4.0], e=[0.25, 0.25], t=[0.85, 0.85], dist_fw=9.0)
+    assert float((s[0] - s[1]).abs()) > 1.0, f"F: le score ne doit plus être plat à distance, {s.tolist()}"
+    assert s[0] > s[1], f"F: la fin d'arc plus proche de la bouffe urgente doit gagner, {s.tolist()}"
+
+    print("[sanity] OK — arbitrage (A/A'), committment-marge (B), myopie punie (C), mort phase-1 (D), "
+          "virage (E), anti-plat (F)")
 
     if args.smoke:
         os.environ["SYLVAN_PLANNER_DRAIN"] = str(DRAIN)

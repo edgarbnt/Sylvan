@@ -104,6 +104,8 @@ class CommandPlanConfig:
     cost_mode: str = "designed"            # "survival" active le coût ci-dessus (multi-ressource seulement)
     surv_horizon: float = 3000.0           # cap de la simulation (pas planner ≈ pas Godot ≈ cap épisode)
     surv_margin_weight: float = 200.0      # poids du tie-break marge (unités: pas). Env: SYLVAN_PLANNER_SURV_MARGIN_W
+    surv_turn_rate: float = 0.015          # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ≈ 0.015-0.03
+                                            # rad/pas à 30 Hz — prendre le bas = prudent). Env: SYLVAN_PLANNER_TURN_RATE
 
 
 def food_xz_from_radar(radar: list[float] | torch.Tensor) -> tuple[float, float] | None:
@@ -143,34 +145,47 @@ def _survival_extension(
     spd: float,
     cap: float,
     margin_w: float,
+    turn_f: torch.Tensor | None = None,
+    turn_w: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Phase 2 du coût survie : depuis la FIN du rollout WM de chaque candidat (distances df/dw aux
     ressources, niveaux e/t, masque vivant, pas déjà vécus), simule analytiquement la suite « aller à
     une ressource → refill → alterner » jusqu'à mort ou `cap` pas. Les DEUX ordres (bouffe d'abord /
-    eau d'abord) sont simulés, on garde le meilleur (= plan_rollout du gate B0). Retourne le score
-    [n] = pas-vécus simulés + margin_w × pire-niveau-à-l'arrivée (tie-break de committment quand tout
-    le monde atteint le cap). Tout est en pas-planner (≈ pas Godot) et niveaux normalisés [0,1]."""
+    eau d'abord) sont simulés, on garde le meilleur (= plan_rollout du gate B0). Score [n] =
+    pas-vécus simulés + margin_w × niveau-à-la-PREMIÈRE-arrivée.
+
+    Leçons de la sonde post-KILL (diag_survcost_omega_gradient, 2026-07-03) :
+    - la marge = PREMIÈRE arrivée SEULEMENT (le plan ne contrôle que son premier leg ; un min sur
+      toute l'alternance convergeait vers le régime permanent → score PLAT à distance, std=0.000) ;
+    - le premier leg paie le TEMPS DE VIRAGE (turn_f/turn_w = pas nécessaires pour se tourner vers
+      la ressource depuis le cap de fin d'arc — tourner coûte du temps, le temps coûte de la survie).
+    Tout est en pas-planner (≈ pas Godot) et niveaux normalisés [0,1]."""
     drain = max(drain, 1e-9)
     spd = max(spd, 1e-6)
     leg_fw = max(dist_fw, 0.0) / spd                    # pas de trajet entre les deux ressources
     max_legs = int(cap / max(leg_fw, 1.0)) + 2
+    zeros = torch.zeros_like(df_end)
+    turn_f = zeros if turn_f is None else turn_f
+    turn_w = zeros if turn_w is None else turn_w
 
     def sim(first_is_food: bool) -> torch.Tensor:
         e, t = e_end.clone(), t_end.clone()
         live = alive.clone()
         time = steps_p1.clone()
-        margin = torch.ones_like(e)
+        margin = torch.zeros_like(e)                    # niveau à la 1ʳᵉ arrivée (0 si jamais atteinte)
         dist = (df_end if first_is_food else dw_end).clone()
+        extra = (turn_f if first_is_food else turn_w).clone()   # virage du 1er leg seulement
         target_food = first_is_food
-        for _ in range(max_legs):
-            travel = dist / spd
+        for leg in range(max_legs):
+            travel = dist / spd + extra
             t_die = torch.minimum(e, t).clamp(min=0.0) / drain   # pas avant que le pire drive meure
             died = (t_die < travel) & (live > 0.5)
             time = time + live * torch.minimum(t_die, travel)
             e = (e - travel * drain).clamp(min=0.0)
             t = (t - travel * drain).clamp(min=0.0)
-            arrive = torch.minimum(e, t)                        # pire niveau à l'arrivée (pré-refill)
-            margin = torch.where(died | (live < 0.5), margin, torch.minimum(margin, arrive))
+            if leg == 0:
+                arrive = torch.minimum(e, t)                     # niveau à l'arrivée (pré-refill)
+                margin = torch.where((~died) & (live > 0.5), arrive, margin)
             live = live * (~died).float()
             if target_food:
                 e = torch.where(live > 0.5, (e + restore).clamp(max=1.0), e)
@@ -178,10 +193,11 @@ def _survival_extension(
                 t = torch.where(live > 0.5, (t + restore).clamp(max=1.0), t)
             target_food = not target_food
             dist = torch.full_like(dist, max(dist_fw, 0.0))
+            extra = zeros
             if not bool((live > 0.5).any()):
                 break
         time = time.clamp(max=cap)
-        return time + margin_w * margin * live              # marge seulement si encore vivant
+        return time + margin_w * margin
 
     return torch.maximum(sim(True), sim(False))
 
@@ -222,6 +238,9 @@ class CommandPlanner:
         _sm = os.environ.get("SYLVAN_PLANNER_SURV_MARGIN_W")
         if _sm not in (None, ""):
             self.cfg.surv_margin_weight = float(_sm)
+        _tr = os.environ.get("SYLVAN_PLANNER_TURN_RATE")
+        if _tr not in (None, ""):
+            self.cfg.surv_turn_rate = float(_tr)
         if self.cfg.cost_mode == "survival":
             print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
                   f"drain={self.cfg.resource_drain} restore={self.cfg.resource_restore} "
@@ -273,6 +292,7 @@ class CommandPlanner:
         food_override: tuple[float, float] | None = None,
         water_override: tuple[float, float] | None = None,
         slot_belief: "list[float] | None" = None,
+        debug_scores: bool = False,
     ) -> dict[str, object]:
         """obs [obs_dim] = proprio ++ radar ++ energy(normalised) (the WM's encoder input).
         radar = the REAL 12-sector food radar. water_radar/energy/thirst are the 2ᵉ-pulsion planner-only
@@ -462,14 +482,23 @@ class CommandPlanner:
             df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
             dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
             dist_fw = math.hypot(fx - wx, fz - wz)
+            # Temps de virage du 1er leg : bearing de la ressource vu du CAP DE FIN D'ARC (sonde
+            # post-KILL : sans lui, un candidat dos-à-la-cible mais 10 cm plus près battait celui
+            # qui s'était tourné vers elle — l'orientation gagnée en phase 1 était jetée).
+            bear_f = torch.atan2((fx - x) * torch.cos(yaw) - (fz - z) * torch.sin(yaw),
+                                 (fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw))
+            bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
+                                 (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
+            rate = max(cfg.surv_turn_rate, 1e-6)
             score = _survival_extension(
                 df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
                 dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                 cfg.surv_horizon, cfg.surv_margin_weight,
+                turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
             ) * (1.0 - survival_pen.clamp(0.0, 1.0))
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
-            return {
+            out_d: dict[str, object] = {
                 "command": (vx, om),
                 "food": (fx, fz),
                 "water": (wx, wz),
@@ -480,6 +509,10 @@ class CommandPlanner:
                 "pred_steps_alive": float(score[best]),
                 "reason": "plan_multi_surv",
             }
+            if debug_scores:  # sondes offline (diag_survcost_omega_gradient) : score par candidat
+                out_d["scores"] = score.tolist()
+                out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
+            return out_d
 
         discomfort = _urg(e_lvl) + _urg(t_lvl)  # predicted future discomfort at horizon end
         # Urgency-weighted proximity gradient = the VALIDATED A→B -min_dist attraction, but scaled by each
@@ -511,7 +544,7 @@ class CommandPlanner:
         )
         best = int(torch.argmax(score).item())
         vx, om = (float(v) for v in self._cmd_seqs[best, 0])
-        return {
+        out_d = {
             "command": (vx, om),
             "food": (fx, fz) if has_food else None,
             "water": (wx, wz),
@@ -521,6 +554,10 @@ class CommandPlanner:
             "pred_min_water": float(min_dw[best]),
             "reason": "plan_multi",
         }
+        if debug_scores:
+            out_d["scores"] = score.tolist()
+            out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
+        return out_d
 
     def _retina_mirror_map(self, obs_dim: int):
         """Carte miroir gauche↔droite de l'obs WM-rétine (277 = proprio132 ++ rétine144(36×4) ++ énergie1).
