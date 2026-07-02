@@ -25,3 +25,17 @@ godot/.godot/
 
 # Config Claude Code — 100% locale/personnelle (non versionnée)
 .claude/
+
+# --- Internal dev artifacts (kept local, excluded from the public repo) ---
+.superpowers/
+.claude/
+CLAUDE.md
+docs/archive/
+*.deb
+
+# --- Junk / backups / third-party assets / stale build (kept local) ---
+_archive/
+_body_backup_humanoid_20260608/
+ForestLowPolyAssets/
+Dockerfile
+docs/superpowers/

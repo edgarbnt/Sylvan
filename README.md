@@ -98,9 +98,9 @@ python/sylvan/    # the brain
   ├── models/       # world-model, retina, value/slot heads
   └── control/      # CPG+residual, PPO, the planner (Mode 2), Mode 1 policy
 diagnostics/      # the free, falsifiable probes (diag_*.py) that gate every run
-docs/             # design docs (the "why" behind each decision)
+scripts/          # run / train / evaluate scripts (a foraging episode, world-model cycle, …)
+docs/             # design docs (the "why" behind each decision) + the blueprint
 tools/archi_hud/  # a live, clickable map of the architecture's state (voir_archi.sh)
-*.sh              # run / train / evaluate scripts (a foraging episode, world-model cycle, …)
 ```
 
 ## Running it
