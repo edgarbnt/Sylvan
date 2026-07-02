@@ -65,7 +65,15 @@ def build_rollout_batch_mode1(
     gamma: float,
     lam: float,
     device: str = "cpu",
+    reward_scale: float = 1.0,
 ) -> tuple[RolloutBatch | None, dict[str, float]]:
+    """`reward_scale` : facteur CONSTANT appliqué aux récompenses (défaut 1.0 = no-op). Fix Gate-2
+    (diag_mode1_critic_fit) : les retours de survie BRUTS (~centaines, std~250) donnaient un value_loss
+    ~24k → gradient énorme → clip_grad_norm=0.5 PARTAGÉ étranglait le critique (R²=-4 → n'apprend pas ;
+    et value_coef·value_loss noyait l'acteur). Scaler par une constante (~1/250) ramène retours+valeurs
+    en O(1) → value_loss O(1), plus d'étranglement (R²=0.74 sous régime online). Scale GLOBAL et FIXE →
+    GAE reste cohérent (récompenses ET valeurs-critique dans la même échelle réduite). Les avantages étant
+    re-normalisés en aval, seule la CIBLE du critique (returns) change d'échelle — pas l'objectif."""
     lines = list(_iter_lines(Path(buffer_dir)))
     episodes = _split_episodes(lines)
 
@@ -86,6 +94,8 @@ def build_rollout_batch_mode1(
         obs = torch.stack(obs_rows).to(device=device, dtype=torch.float32)          # [T, P+D*38]
         acts = torch.tensor([tr["command_raw"] for tr in ep], dtype=torch.float32, device=device)  # z BRUT
         rews = torch.tensor([float(tr["reward"]) for tr in ep], dtype=torch.float32, device=device)
+        if reward_scale != 1.0:
+            rews = rews * reward_scale  # conditionnement du critique (voir docstring) ; scale GLOBAL fixe
         # done PAR transition : seule la dernière peut être vraie (frontière d'épisode)
         dones = torch.tensor([1.0 if bool(tr.get("done")) else 0.0 for tr in ep],
                              dtype=torch.float32, device=device)

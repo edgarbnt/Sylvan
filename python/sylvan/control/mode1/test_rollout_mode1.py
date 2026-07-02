@@ -92,6 +92,17 @@ def test_done_zeroes_bootstrap_vs_truncated(tmp_path):
     assert abs(float(b_trunc.returns[0]) - (2.0 + 0.99 * v)) < 1e-4
 
 
+def test_reward_scale_scales_done_return(tmp_path):
+    # Fix Gate-2 : sur un épisode d'UNE transition done (last_value=0), return = reward*scale
+    # EXACTEMENT (aucune dépendance au critique) → teste le plumbing reward_scale.
+    pol = DriveSymmetricPolicy()
+    _write_buffer(tmp_path, [_line(reward=2.0, done=True)])
+    b1, _ = build_rollout_batch_mode1(tmp_path, pol, gamma=0.99, lam=0.95, reward_scale=1.0)
+    assert abs(float(b1.returns[0]) - 2.0) < 1e-5   # no-op
+    b2, _ = build_rollout_batch_mode1(tmp_path, pol, gamma=0.99, lam=0.95, reward_scale=0.5)
+    assert abs(float(b2.returns[0]) - 1.0) < 1e-5   # scalé
+
+
 def test_empty_buffer_returns_none(tmp_path):
     batch, stats = build_rollout_batch_mode1(tmp_path, DriveSymmetricPolicy(), gamma=0.99, lam=0.95)
     assert batch is None

@@ -165,7 +165,9 @@ def run_iteration(
         print(f"[train-mode1] it={it} teardown: pgrep -xc godot = {n_orphan}", flush=True)
 
     # 5) buffer → batch
-    batch, stats = build_rollout_batch_mode1(buffer_dir, behavior, gamma=args.gamma, lam=args.lam)
+    batch, stats = build_rollout_batch_mode1(
+        buffer_dir, behavior, gamma=args.gamma, lam=args.lam, reward_scale=args.reward_scale
+    )
     if batch is None:
         print(f"[train-mode1] it={it} buffer VIDE ({stats}) → skip update", flush=True)
         return None
@@ -193,6 +195,10 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=1e-4, help="OBLIGATOIRE 1e-4 (3e-4 = instable)")
     ap.add_argument("--gamma", type=float, default=0.99)
     ap.add_argument("--lam", type=float, default=0.95)
+    ap.add_argument("--reward-scale", type=float, default=0.004,
+                    help="scale CONSTANT des récompenses (défaut 1/250) : conditionne le critique "
+                         "(diag_mode1_critic_fit : retours bruts ~centaines → value_loss ~24k → grad-clip "
+                         "étrangle le critique R²=-4 ; scalé → O(1), R²=0.74). GAE reste cohérent.")
     ap.add_argument("--init-log-std", type=float, default=-0.5, help="relance l'exploration au warm-start")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--base-port", type=int, default=6060)
