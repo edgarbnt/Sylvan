@@ -113,6 +113,11 @@ def run_iteration(
     it: int, policy: DriveSymmetricPolicy, optimizer, args, out_dir: Path,
 ) -> dict | None:
     """Une itération on-policy complète. Renvoie les stats du batch (ou None si buffer vide)."""
+    # Béquille pain-shaping ANNEALÉE (Gate-2, mur d'arbitrage) : w décroît linéairement start→end sur les
+    # itérations → durcit tôt le signal faim→approche (reward=1-w·((1-e)²+(1-t)²) côté serveur), puis w→0 =
+    # survie PURE. Honnête SI on vérifie que la survie persiste quand w→0 (sinon la béquille masquait, §2).
+    frac = it / max(1, args.iterations - 1)
+    pain_w = args.pain_shaping_w_start + (args.pain_shaping_w_end - args.pain_shaping_w_start) * frac
     iter_dir = out_dir / f"iter_{it:03d}"
     buffer_dir = iter_dir / "buffer"
     godot_run_dir = iter_dir / "godot_run"
@@ -138,7 +143,8 @@ def run_iteration(
              "--out", str(buffer_dir), "--seed", str(it),
              "--host", "127.0.0.1", "--port", str(port),
              "--replan-every", str(args.replan_every)],
-            cwd=str(ROOT), env={**os.environ, "PYTHONPATH": "python"},
+            cwd=str(ROOT),
+            env={**os.environ, "PYTHONPATH": "python", "SYLVAN_PAIN_SHAPING_W": f"{pain_w:.4f}"},
             stdout=srv_log, stderr=subprocess.STDOUT,
         )
         if not _wait_port("127.0.0.1", port, timeout=60.0):
@@ -180,6 +186,7 @@ def run_iteration(
     )
     up = ppo_update(policy, optimizer, batch, cfg)
     stats.update(up)
+    stats["pain_w"] = pain_w
     return stats
 
 
@@ -199,6 +206,11 @@ def main() -> None:
                     help="scale CONSTANT des récompenses (défaut 1/250) : conditionne le critique "
                          "(diag_mode1_critic_fit : retours bruts ~centaines → value_loss ~24k → grad-clip "
                          "étrangle le critique R²=-4 ; scalé → O(1), R²=0.74). GAE reste cohérent.")
+    ap.add_argument("--pain-shaping-w-start", type=float, default=1.0,
+                    help="béquille pain-shaping (Gate-2, mur arbitrage) : w initial. reward=1-w·((1-e)²+(1-t)²) "
+                         "durcit le signal faim→approche. Annealé linéairement vers --pain-shaping-w-end sur "
+                         "--iterations. Honnête : w→0 = survie pure → VÉRIFIER que la survie persiste quand w→0.")
+    ap.add_argument("--pain-shaping-w-end", type=float, default=0.0, help="w final (annealé, défaut 0 = survie pure)")
     ap.add_argument("--init-log-std", type=float, default=-0.5, help="relance l'exploration au warm-start")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--base-port", type=int, default=6060)
@@ -250,7 +262,8 @@ def main() -> None:
         print(
             f"[train-mode1] it={it} n_ep={stats['n_episodes']:.0f} mean_steps={surv:.1f} "
             f"mean_reward={stats['mean_reward']:.3f} approx_kl={stats['approx_kl']:.4f} "
-            f"value_loss={stats['value_loss']:.3f} mean_std={stats['mean_std']:.3f}{tag}",
+            f"value_loss={stats['value_loss']:.3f} mean_std={stats['mean_std']:.3f} "
+            f"w={stats.get('pain_w', 0.0):.3f}{tag}",
             flush=True,
         )
 
