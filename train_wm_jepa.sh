@@ -1,5 +1,5 @@
 #!/bin/zsh
-# JEPA-ification ÉTAPE 1 — DÉ-COLLAPSE (2026-06-18). Diag gratuit (diag_jepa.py) : la représentation
+# JEPA-ification ÉTAPE 1 — DÉ-COLLAPSE (2026-06-18). Diag gratuit (diagnostics/diag_jepa.py) : la représentation
 # est effondrée (eff_rank latent ~6/128, cible encodeur ~1.5/128) → la perte `latent` est VACANTE
 # (trivialement satisfaite par une rep quasi-constante) → on n'est PAS en JEPA, c'est un Dreamer.
 # Ce run NE déplace PAS encore les poids vers le latent (ça = étape 2). Il ne fait QU'UNE chose :

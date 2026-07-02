@@ -32,6 +32,6 @@ echo "=================== 3/4 : RÉ-ENTRAÎNER LA TÊTE DE VALEUR sur le NOUVEAU
 SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python train_value_head.py $WMOUT/wm_best.pt 2>&1 | tail -4
 
 echo "=================== 4/4 : GATE — diag_value_direct (argmax-V → bouffe ?) ==================="
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_value_direct.py \
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_value_direct.py \
   $WMOUT/wm_best.pt data/checkpoints/value_head_food/value_best.pt 2>&1 | sed -n '/e0=/,$p'
 echo "=================== PIPELINE FOOD-AWARE TERMINÉ ==================="

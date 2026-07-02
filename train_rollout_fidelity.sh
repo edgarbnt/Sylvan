@@ -35,7 +35,7 @@ SYLVAN_WM_USE_RETINA=1 \
 echo "train exit=$?"
 
 echo "############### VERDICT : WM RÉPARÉ (chantier) ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
 echo "############### BASELINE (retina_jepa_v2, riche-MAIS-cassé) pour comparaison ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_dream_disp.py data/checkpoints/wm_command_hex_retina_jepa_v2/wm_best.pt 1 2>&1 | grep -v -i warning
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_dream_disp.py data/checkpoints/wm_command_hex_retina_jepa_v2/wm_best.pt 1 2>&1 | grep -v -i warning
 echo "ROLLFIX_DONE"

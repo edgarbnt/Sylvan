@@ -23,6 +23,5 @@ godot/.godot/
 # Logs
 *.log
 
-# Config Claude Code locale/personnelle + reliquats
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+# Config Claude Code — 100% locale/personnelle (non versionnée)
+.claude/

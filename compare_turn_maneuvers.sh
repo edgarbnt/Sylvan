@@ -16,7 +16,7 @@ run() {  # name vxmin vxmax block
     ./env_pytorch_3.12/bin/python -m scripts.collect_wm_data \
     --checkpoint data/checkpoints/hexapod_v2/policy_best.pt \
     --run-prefix "$name" --episodes 2 --max-steps 600 --seed 23 2>&1 | grep -E '\[collect\] DONE|fall_rate'
-  ./env_pytorch_3.12/bin/python diag_audit_buf.py $name
+  ./env_pytorch_3.12/bin/python diagnostics/diag_audit_buf.py $name
 }
 
 echo "=== scurve_b20  vx0.65 block20 ===";  run cmp_scurve20  0.65 0.65 20

@@ -31,7 +31,7 @@ SYLVAN_WM_USE_RETINA=1 SYLVAN_EAT_SAMPLE_WEIGHT=20 \
 echo "train exit=$?"
 
 echo "############### MESURE 1 : path du rêve (le rêve avance-t-il ?) ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
 echo "############### MESURE 2 : food_auc (le latent porte-t-il la bouffe ?) ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_eat_value_probe.py $OUT/wm_best.pt 2>&1 | grep -vi warning | sed -n '/frames=/,$p'
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_eat_value_probe.py $OUT/wm_best.pt 2>&1 | grep -vi warning | sed -n '/frames=/,$p'
 echo "LOWRANK_DONE"

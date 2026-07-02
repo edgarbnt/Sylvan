@@ -35,7 +35,7 @@ SYLVAN_WM_USE_RETINA=1 \
 echo "train exit=$?"
 
 echo "############### MESURE 1 : fidélité du rêve + path + eff_rank (le rêve reste-t-il fidèle avec eat data ?) ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_dream_disp.py $OUT/wm_best.pt 1 2>&1 | grep -v -i warning
 echo "############### MESURE 2 : food_auc (le latent porte-t-il la bouffe SANS w-food ?) ###############"
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_eat_value_probe.py $OUT/wm_best.pt 2>&1 | grep -vi warning | sed -n '/frames=/,$p'
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_eat_value_probe.py $OUT/wm_best.pt 2>&1 | grep -vi warning | sed -n '/frames=/,$p'
 echo "DECOUPLED_DONE"

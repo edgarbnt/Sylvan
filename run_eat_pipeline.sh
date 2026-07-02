@@ -1,7 +1,7 @@
 #!/bin/zsh
 # A2 (vers 🅑) — collecte EAT-RICHE + retrain WM-rétine + GATE (diag). Le WM ne capte que 4% de la bosse-repas
 # (23 repas/18k) → on lui donne des centaines de repas BASSE-énergie (marge réelle) puis on re-mesure.
-# GATÉ : on ne touchera au planner QUE si diag_latent_foodaware.py remonte (eat-fidelity ≥~40% + test direct).
+# GATÉ : on ne touchera au planner QUE si diagnostics/diag_latent_foodaware.py remonte (eat-fidelity ≥~40% + test direct).
 # Lancer backgroundé : nohup zsh run_eat_pipeline.sh > /tmp/eat_pipeline.log 2>&1 &  (tuer orphelins AVANT, à part)
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
@@ -47,6 +47,6 @@ SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python -m scripts.eval_wm_command 
   --checkpoint data/checkpoints/wm_command_hex_retina_eat_v1/wm_best.pt --horizons 50 80 100 150 2>&1 | tail -20
 
 echo "=================== ÉTAPE 4/4 : GATE — diag_latent_foodaware (eat-fidelity + test direct) ==================="
-SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diag_latent_foodaware.py \
+SYLVAN_WM_USE_RETINA=1 ./env_pytorch_3.12/bin/python diagnostics/diag_latent_foodaware.py \
   data/checkpoints/wm_command_hex_retina_eat_v1/wm_best.pt 2>&1
 echo "=================== PIPELINE TERMINÉ ==================="
