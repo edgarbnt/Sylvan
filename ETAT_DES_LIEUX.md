@@ -4,6 +4,16 @@
 > et `sylvan-locomotion-rl-knowledge.md` (la saga moteur). Remplace la version du 2026-06-14
 > (antérieure au pivot HEXAPODE, à la re-validation du WM et au foraging hexapode).
 
+## ⭐ ÉTAT COURANT (2026-07-02) — lire AVANT le reste
+**Chantier actif = BASCULE Mode-1 → Mode-2.** Le foraging mono-drive marche ; le mur restant est
+l'**arbitrage multi-pulsions**. On a construit **Mode-1** (politique réflexe apprise, model-free PPO,
+branche `mode1-build`) et **mesuré** qu'une politique RÉACTIVE plafonne au niveau BC (~1900) : le mur est
+le **look-ahead** (planner look-ahead 2300 vs clone réactif 1930 ; 96% des morts = décision, corps
+réfuté). **→ Pivot : planifier dans le WM avec une VALEUR DE SURVIE APPRISE sur le latent** (remplace le
+coût codé-main du planner) = le Mode 2 JEPA-pur. **Prochain = gate GRATUIT de faisabilité** (la
+valeur-survie sépare-t-elle bon/mauvais arbitrage sur les rêves ?) avant tout retrain.
+**Lire : `docs/design_mode1_pivot_mode2.md` (le pourquoi) + `memory/sylvan-mode1-build.md` (l'arc).**
+
 ---
 
 ## 0. Le but (north star)
