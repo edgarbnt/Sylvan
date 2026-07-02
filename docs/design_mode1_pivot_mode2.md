@@ -54,6 +54,19 @@ critique drive-symétrique, diagnostics.
 depuis des états multi-drive, une valeur-survie apprise sépare-t-elle « bon arbitrage » de « myope » ?
 (rang/sonde, comme le gate close de la rétine.) Ne payer le retrain QUE si la sonde sépare.
 
+## 5b. Objectif de PURETÉ (dette JEPA identifiée — ne pas l'oublier)
+Le pivot est JEPA-pur À ~90% : **WM gelé + auto-supervisé** (jamais task-baké ; G1 confirme aucun retrain
+nécessaire), **valeur = tête rapide séparée** sur le latent (= module de coût/critique de LeCun),
+**planification À TRAVERS le WM** (Mode 2). **MAIS une pièce reste CODÉE-MAIN** : la **dynamique des
+drives** (surtout la SOIF) est **ANALYTIQUE** dans le planner (drain linéaire + refill), pas rêvée —
+parce que la soif n'est PAS une entrée du WM (le rêve est drive-aveugle côté soif ; l'énergie y est mais
+faiblement). C'est le **3ᵉ verrou** de `sylvan-second-drive-arbitration` : « l'eat/drive-dynamics doit être
+une TÊTE RAPIDE APPRISE sur le slot, pas de l'analytique ».
+**→ OBJECTIF DE PURETÉ = une TÊTE DRIVE-DYNAMICS APPRISE** (prédit l'évolution énergie/soif depuis le
+latent : « eau proche → soif remonte ») qui remplace l'analytique. G1 la rend possible (le latent porte
+l'eau). C'est l'**étape de pureté finale** du pivot, à payer quand l'owner tranche — pas un prérequis de
+G2/G3 (on avance en pragmatique-impur-flaggé d'abord, §2 : l'impureté est NOMMÉE, pas cachée).
+
 ## 6. Critère de succès = le BUT (falsifiable)
 - **Gate gratuit** : la valeur-survie sur latents rêvés classe correctement (rang) des états
   « soigne-les-deux-drives » > « myope » (séparation nette, pas au hasard). Si non → le WM/latent ne
