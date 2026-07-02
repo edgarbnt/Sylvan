@@ -92,6 +92,18 @@ class CommandPlanConfig:
                                             # ressource passerait SOUS zéro AVANT qu'on l'atteigne depuis la position imaginée en fin
                                             # de rollout. Mettre SYLVAN_PLANNER_SURVIVAL_W=0 pour désactiver. Env: SYLVAN_PLANNER_SURVIVAL_W
     nominal_speed: float = 0.02            # m/pas d'approche imaginée (calibre temps-pour-atteindre). Env: SYLVAN_PLANNER_SPEED
+    # === COÛT SURVIE refill-aware (Mode-2, gate B0 2026-07-02) — remplace le coût designed multi-ressource ===
+    # Score = PAS-VÉCUS SIMULÉS (le BUT lui-même, pas un proxy) : phase 1 = rollout WM (drain+refill au contact,
+    # mort-des-drives persistante), phase 2 = extension analytique PAR ALTERNANCE au-delà de l'horizon WM
+    # (aller à une ressource, refill, alterner ; on simule les DEUX ordres bouffe/eau-d'abord et on garde le max —
+    # exactement le plan_rollout validé par diag_slot2_value_arbitration, 0.90-0.96 sur les morts-décision).
+    # Tie-break quand tout le monde survit au cap : la MARGE d'arrivée (pire niveau à l'arrivée) → gradient lisse
+    # partout, pas de knife-edge → engagement/committment émergent (anti-hésitation H0). ÉCHAFAUDAGE FLAGGÉ :
+    # la continuation alternée + drain/refill analytiques restent codés-main (3ᵉ verrou) ; la version pure = tête
+    # drive-dynamics APPRISE. Env: SYLVAN_PLANNER_COST=survival|designed.
+    cost_mode: str = "designed"            # "survival" active le coût ci-dessus (multi-ressource seulement)
+    surv_horizon: float = 3000.0           # cap de la simulation (pas planner ≈ pas Godot ≈ cap épisode)
+    surv_margin_weight: float = 200.0      # poids du tie-break marge (unités: pas). Env: SYLVAN_PLANNER_SURV_MARGIN_W
 
 
 def food_xz_from_radar(radar: list[float] | torch.Tensor) -> tuple[float, float] | None:
@@ -118,6 +130,62 @@ def food_xz_from_radar(radar: list[float] | torch.Tensor) -> tuple[float, float]
     return (dist * math.sin(bearing), dist * math.cos(bearing))  # (x_right, z_fwd)
 
 
+def _survival_extension(
+    df_end: torch.Tensor,
+    dw_end: torch.Tensor,
+    e_end: torch.Tensor,
+    t_end: torch.Tensor,
+    alive: torch.Tensor,
+    steps_p1: torch.Tensor,
+    dist_fw: float,
+    drain: float,
+    restore: float,
+    spd: float,
+    cap: float,
+    margin_w: float,
+) -> torch.Tensor:
+    """Phase 2 du coût survie : depuis la FIN du rollout WM de chaque candidat (distances df/dw aux
+    ressources, niveaux e/t, masque vivant, pas déjà vécus), simule analytiquement la suite « aller à
+    une ressource → refill → alterner » jusqu'à mort ou `cap` pas. Les DEUX ordres (bouffe d'abord /
+    eau d'abord) sont simulés, on garde le meilleur (= plan_rollout du gate B0). Retourne le score
+    [n] = pas-vécus simulés + margin_w × pire-niveau-à-l'arrivée (tie-break de committment quand tout
+    le monde atteint le cap). Tout est en pas-planner (≈ pas Godot) et niveaux normalisés [0,1]."""
+    drain = max(drain, 1e-9)
+    spd = max(spd, 1e-6)
+    leg_fw = max(dist_fw, 0.0) / spd                    # pas de trajet entre les deux ressources
+    max_legs = int(cap / max(leg_fw, 1.0)) + 2
+
+    def sim(first_is_food: bool) -> torch.Tensor:
+        e, t = e_end.clone(), t_end.clone()
+        live = alive.clone()
+        time = steps_p1.clone()
+        margin = torch.ones_like(e)
+        dist = (df_end if first_is_food else dw_end).clone()
+        target_food = first_is_food
+        for _ in range(max_legs):
+            travel = dist / spd
+            t_die = torch.minimum(e, t).clamp(min=0.0) / drain   # pas avant que le pire drive meure
+            died = (t_die < travel) & (live > 0.5)
+            time = time + live * torch.minimum(t_die, travel)
+            e = (e - travel * drain).clamp(min=0.0)
+            t = (t - travel * drain).clamp(min=0.0)
+            arrive = torch.minimum(e, t)                        # pire niveau à l'arrivée (pré-refill)
+            margin = torch.where(died | (live < 0.5), margin, torch.minimum(margin, arrive))
+            live = live * (~died).float()
+            if target_food:
+                e = torch.where(live > 0.5, (e + restore).clamp(max=1.0), e)
+            else:
+                t = torch.where(live > 0.5, (t + restore).clamp(max=1.0), t)
+            target_food = not target_food
+            dist = torch.full_like(dist, max(dist_fw, 0.0))
+            if not bool((live > 0.5).any()):
+                break
+        time = time.clamp(max=cap)
+        return time + margin_w * margin * live              # marge seulement si encore vivant
+
+    return torch.maximum(sim(True), sim(False))
+
+
 class CommandPlanner:
     def __init__(
         self,
@@ -139,6 +207,25 @@ class CommandPlanner:
         _sp = os.environ.get("SYLVAN_PLANNER_SPEED")
         if _sp not in (None, ""):
             self.cfg.nominal_speed = float(_sp)
+        _cm = os.environ.get("SYLVAN_PLANNER_COST")  # "survival" = coût pas-vécus simulés (gate B0)
+        if _cm not in (None, ""):
+            self.cfg.cost_mode = _cm
+        _dr = os.environ.get("SYLVAN_PLANNER_DRAIN")  # drain normalisé/pas — caler sur le régime réel
+        if _dr not in (None, ""):                     # (éco de vie 0.05 → 0.0005 ; défaut historique 0.0016)
+            self.cfg.resource_drain = float(_dr)
+        _rs = os.environ.get("SYLVAN_PLANNER_RESTORE")  # refill normalisé (energy_per_food 40 → 0.4)
+        if _rs not in (None, ""):
+            self.cfg.resource_restore = float(_rs)
+        _sh = os.environ.get("SYLVAN_PLANNER_SURV_H")
+        if _sh not in (None, ""):
+            self.cfg.surv_horizon = float(_sh)
+        _sm = os.environ.get("SYLVAN_PLANNER_SURV_MARGIN_W")
+        if _sm not in (None, ""):
+            self.cfg.surv_margin_weight = float(_sm)
+        if self.cfg.cost_mode == "survival":
+            print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
+                  f"drain={self.cfg.resource_drain} restore={self.cfg.resource_restore} "
+                  f"cap={self.cfg.surv_horizon:.0f} margin_w={self.cfg.surv_margin_weight:.0f}")
         self.device = torch.device(device)
         self.world_model = world_model.to(self.device).eval()
         for p in self.world_model.parameters():
@@ -328,6 +415,11 @@ class CommandPlanner:
         has_food = food is not None
         fx, fz = food if has_food else (0.0, 0.0)
         wx, wz = water
+        # COÛT SURVIE (gate B0) : actif si demandé ET bouffe visible (sans bouffe, pas d'alternance
+        # simulable → on retombe sur le coût designed validé, qui pousse déjà vers l'eau/explore).
+        surv_mode = cfg.cost_mode == "survival" and has_food
+        drive_alive = torch.ones(n, device=self.device)     # mort-des-drives PERSISTANTE (pas de résurrection)
+        steps_alive = torch.zeros(n, device=self.device)
 
         def _urg(level: torch.Tensor) -> torch.Tensor:
             return (1.0 - level).clamp(min=0.0) ** cfg.urgency_exp
@@ -341,6 +433,9 @@ class CommandPlanner:
             # passive drain (both resources)
             e_lvl = (e_lvl - cfg.resource_drain).clamp(min=0.0)
             t_lvl = (t_lvl - cfg.resource_drain).clamp(min=0.0)
+            if surv_mode:
+                drive_alive = drive_alive * ((e_lvl > 0.0) & (t_lvl > 0.0)).float()
+                steps_alive = steps_alive + drive_alive
             if has_food:
                 df = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
                 min_df = torch.minimum(min_df, df)
@@ -358,6 +453,33 @@ class CommandPlanner:
             align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
             survival_pen = survival_pen + alive * done_prob[:, t]
             alive = alive * (1.0 - done_prob[:, t])
+
+        if surv_mode:
+            # ── COÛT SURVIE refill-aware (gate B0) : score = pas-vécus simulés (phase 1 WM + phase 2
+            #    alternance analytique), × probabilité de ne pas chuter (la chute est aussi une mort),
+            #    + marge d'arrivée en tie-break. Remplace ENTIÈREMENT le mélange designed
+            #    urgence/attract/heading/survival_weight (les poids à tuner disparaissent). ──
+            df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
+            dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+            dist_fw = math.hypot(fx - wx, fz - wz)
+            score = _survival_extension(
+                df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
+                dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
+                cfg.surv_horizon, cfg.surv_margin_weight,
+            ) * (1.0 - survival_pen.clamp(0.0, 1.0))
+            best = int(torch.argmax(score).item())
+            vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            return {
+                "command": (vx, om),
+                "food": (fx, fz),
+                "water": (wx, wz),
+                "energy0": e0,
+                "thirst0": t0,
+                "pred_min_food": float(min_df[best]),
+                "pred_min_water": float(min_dw[best]),
+                "pred_steps_alive": float(score[best]),
+                "reason": "plan_multi_surv",
+            }
 
         discomfort = _urg(e_lvl) + _urg(t_lvl)  # predicted future discomfort at horizon end
         # Urgency-weighted proximity gradient = the VALIDATED A→B -min_dist attraction, but scaled by each
