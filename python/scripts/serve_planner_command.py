@@ -86,6 +86,30 @@ from sylvan.hud.live_writer import write_live
 VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (matches training)
 
 
+def _plan_target_record(plan_res: dict) -> dict:
+    """Cible du planner pour l'instrumentation hésitation : la ressource que le meilleur plan
+    imaginé RAPPROCHE le plus (closing = dist_t0 − pred_min_imaginée). 'none' si rien de décidable
+    (mono-ressource, closings ~égaux, ou clés absentes)."""
+    out: dict = {"target": "none", "reason": str(plan_res.get("reason", ""))}
+    food = plan_res.get("food")
+    water = plan_res.get("water")
+    pmf = plan_res.get("pred_min_food")
+    pmw = plan_res.get("pred_min_water")
+    closing_f = closing_w = None
+    if food is not None and pmf is not None:
+        out["food"] = [float(food[0]), float(food[1])]
+        closing_f = math.hypot(float(food[0]), float(food[1])) - float(pmf)
+    if water is not None and pmw is not None:
+        out["water"] = [float(water[0]), float(water[1])]
+        closing_w = math.hypot(float(water[0]), float(water[1])) - float(pmw)
+    eps = 0.05
+    if closing_f is not None and (closing_w is None or closing_f > closing_w + eps) and closing_f > eps:
+        out["target"] = "food"
+    elif closing_w is not None and (closing_f is None or closing_w > closing_f + eps) and closing_w > eps:
+        out["target"] = "water"
+    return out
+
+
 class _PlannerService:
     def __init__(self, wm_ckpt: Path, residual_ckpt: Path, cfg: CommandPlanConfig, replan_every: int,
                  retina_head_ckpt: Path | None = None, value_head_ckpt: Path | None = None,
@@ -181,6 +205,11 @@ class _PlannerService:
         self.hud_ts = 0
         self.hud_path = os.environ.get("SYLVAN_HUD_PATH", "data/hud/live.json")
         self._last_min_dist = float("nan")
+        # INSTRUMENTATION CIBLE (2026-07-03, post re-A/B) : à chaque replan on retient le plan complet
+        # pour logger LA CIBLE DU PLANNER (vérité-terrain de l'hésitation — remplace l'inférence rétine
+        # de diag_forage_hesitation, confondue par le changement d'identité du plus-proche à 5+5 items).
+        self._last_plan: dict | None = None
+        self._plan_fresh = False
         # ---------------------------------------------------------------------------
         # BC LOGGER (Task 2) — OPT-IN via SYLVAN_BC_LOG=<dir>
         # ---------------------------------------------------------------------------
@@ -315,12 +344,15 @@ class _PlannerService:
                     # food LOCALISED from the fine EMA (oracle) — or plan_wm_slot when wm.with_slot=True.
                     # MÉMOIRE SPATIALE (Task 3) : passer slot_belief quand actif → override slot t0 du WM.
                     # Quand slot_memory est None → slot_belief=None → comportement byte-identique à avant.
-                    self._cmd = self.planner.plan(
+                    plan_res = self.planner.plan(
                         wm_obs, self._radar_ema,
                         water_radar=self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
                         slot_belief=self._slot_belief,
-                    )["command"]
+                    )
+                    self._cmd = plan_res["command"]
+                    self._last_plan = plan_res
+                    self._plan_fresh = True
             self._ticks += 1
             vx, om = self._cmd
             if self.hud_enable:
@@ -345,7 +377,7 @@ class _PlannerService:
                     ep_path = self._bc_log_dir / f"ep_{self._bc_episode:04d}.jsonl"
                     self._bc_file = open(ep_path, "w", buffering=1)   # line-buffered
                     print(f"[planner-cmd] BC → {ep_path.name} (auto-open)", flush=True)
-                line = json.dumps({
+                record = {
                     "obs": {
                         "proprio": proprio,
                         "energy":  float(energy),
@@ -355,8 +387,14 @@ class _PlannerService:
                         "retina0": retina,
                         "cmd":     [float(vx), float(om)],
                     },
-                })
-                self._bc_file.write(line + "\n")
+                }
+                # CIBLE DU PLANNER (clé additive, seulement au tick du replan) : la ressource que le
+                # meilleur plan imaginé RAPPROCHE le plus (closing = dist_t0 − pred_min). Lecteurs BC
+                # existants intacts (clé ignorée).
+                if self._plan_fresh and self._last_plan is not None:
+                    record["plan"] = _plan_target_record(self._last_plan)
+                    self._plan_fresh = False
+                self._bc_file.write(json.dumps(record) + "\n")
             vision = [float(vx), float(om)] + [0.0] * (VISION_DIM - 2)
             res_in = torch.tensor(proprio + vision, dtype=torch.float32).unsqueeze(0)
             action = self.residual.mean(res_in)[0]
