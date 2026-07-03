@@ -147,6 +147,12 @@ class _PlannerService:
                                slot_resources=meta.get("slot_resources", 1))
         wm.load_state_dict(payload["model"])
         wm.eval()
+        # SLOT-2 : assignation slot→ressource (label-free, calculée au train) portée par le meta.
+        wm.food_idx = meta.get("food_idx", 0)
+        wm.water_idx = meta.get("water_idx")
+        if meta.get("slot_resources", 1) > 1:
+            print(f"[planner-cmd] SLOT-2 actif : {meta['slot_resources']} slots requêtés-couleur "
+                  f"(food_idx={wm.food_idx}, water_idx={wm.water_idx}) → l'eau quitte l'oracle EMA")
         if meta.get("with_slot", False):
             print(f"[planner-cmd] WM OBJECT-CENTRIC : out['slot'] actif (slot appris dans le WM) → "
                   f"la perception+permanence vient du WM, plus de coordonnée codée-main dans le planner")

@@ -420,7 +420,16 @@ class CommandPlanner:
         # multi-ressource (positions bouffe fantômes, méd 2.3-4.3 m en 1+1) → SYLVAN_MULTI_FOOD_SLOT=0
         # débranche cet override et la bouffe retombe sur le MÊME pipeline que l'eau (EMA radar,
         # ~0.85 m). Flag de SONDE/échafaudage — le fix pur = slot multi-ressource ré-entraîné.
-        if (getattr(self.world_model, "with_slot", False) and "slot" in out
+        if "slots" in out and os.environ.get("SYLVAN_MULTI_SLOT2", "1") != "0":
+            # SLOT-2 (chantier pureté 2026-07-04) : bouffe ET eau lues du WM (slots requêtés-couleur)
+            # → l'EAU QUITTE l'oracle radar-EMA. food/water_idx = assignation label-free du ckpt slot.
+            fi = int(getattr(self.world_model, "food_idx", 0) or 0)
+            wi = getattr(self.world_model, "water_idx", None)
+            food = (float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
+            if wi is not None:
+                water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
+                wx, wz = water
+        elif (getattr(self.world_model, "with_slot", False) and "slot" in out
                 and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
 

@@ -23,15 +23,17 @@ OUT = os.environ.get("OUT", "data/checkpoints/wm_objcentric_s1")
 
 pl = torch.load(WM, map_location="cpu", weights_only=False)
 meta = pl["meta"]
+_slot_ck = torch.load(SLOT, map_location="cpu", weights_only=False)   # n_resources + food/water idx
 # modèle avec canal-slot (slot_calib = buffer fixe (1,-1,-1) défini dans CommandWorldModel)
 model = CommandWorldModel(obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
-                          predictor_arch=meta.get("predictor_arch", "shallow"), with_slot=True)
+                          predictor_arch=meta.get("predictor_arch", "shallow"), with_slot=True, slot_resources=int(_slot_ck.get("n_resources", 1)))
 model.load_state_dict(pl["model"], strict=False)               # WM gelé inchangé ; slot_* restent init
 model.slot_encoder.load_state_dict(load_slot_head(SLOT).state_dict())   # encodeur = slot_head PROUVÉ
 model.eval()
 
 os.makedirs(OUT, exist_ok=True)
-out_meta = {**meta, "with_slot": True, "slot_resources": 1,
+out_meta = {**meta, "with_slot": True, "slot_resources": int(_slot_ck.get("n_resources", 1)),
+            "food_idx": _slot_ck.get("food_idx", 0), "water_idx": _slot_ck.get("water_idx"),
             "slot_note": "encoder=slot_head (label-free) ; transport géométrique fixe (1,-1,-1) ; WM gelé"}
 torch.save({"model": model.state_dict(), "meta": out_meta}, os.path.join(OUT, "wm_best.pt"))
 print(f"slot_calib={model.slot_calib.tolist()} (fixe) ; encoder<-slot_head ; WM gelé")
