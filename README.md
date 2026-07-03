@@ -143,7 +143,7 @@ A **research prototype**, meant to *investigate* emergent embodied cognition —
 ## Honesty notes (kept deliberately visible)
 
 - **"JEPA" here is *functional*, not doctrinaire**: the world-model was de-collapsed and shifted toward latent-space prediction (VICReg + a latent loss), but it is not a strict JEPA. The property that matters — a self-supervised, frozen substrate — is preserved.
-- The current multi-drive planner still tracks the **drive levels analytically** (a hand-coded piece). The pure version — a **learned drive-dynamics head** on the latent — is a *named* debt on the roadmap, not swept under the rug.
+- The current multi-drive planner still tracks the **drive levels analytically** (a hand-coded piece). The pure version, a **learned drive-dynamics head** on the latent, is a *named* debt on the roadmap, not swept under the rug.
 
 ## Repository layout
 
