@@ -76,7 +76,8 @@ def occlude_retina(retina: list[float], fov_deg: float) -> list[float]:
 import torch
 
 from sylvan.config import SylvanConfig
-from sylvan.control.planning.command_planner import CommandPlanner, CommandPlanConfig
+from sylvan.control.planning.command_planner import CommandPlanner, CommandPlanConfig, food_xz_from_radar
+from sylvan.control.mode1.obs import RED as _RETINA_RED, _color_gated_depths as _cgd
 from sylvan.control.ppo.policy import GaussianActorCritic
 from sylvan.models.command_wm import CommandWorldModel
 from sylvan.models.perception_head import RetinaPerceptionHead, RETINA_DIM
@@ -84,6 +85,22 @@ from sylvan.training.checkpointing import load_checkpoint
 from sylvan.hud.live_writer import write_live
 
 VISION_DIM = 12  # the residual's vision slot: [vx, omega, 0*10] in CPG mode (matches training)
+
+
+_RETINA_RANGE_M = 10.0   # MAX_RANGE (perception.gd)
+
+
+def _retina_food_pos(retina: list[float]) -> tuple[float, float] | None:
+    """Position (x_right, z_fwd) du rayon ROUGE le plus proche — la source label-free de la
+    sonde-intervention SYLVAN_MULTI_FOOD_SLOT=0 (remplace le slot hors-distribution). None si
+    aucun rayon rouge ne touche."""
+    d = _cgd(retina, _RETINA_RED)
+    m = min(d)
+    if m >= 0.999:
+        return None
+    k = d.index(m)
+    b = 2.0 * math.pi * k / 36
+    return (m * _RETINA_RANGE_M * math.sin(b), m * _RETINA_RANGE_M * math.cos(b))
 
 
 def _plan_target_record(plan_res: dict) -> dict:
@@ -340,6 +357,22 @@ class _PlannerService:
                     )
                     self._cmd = plan_res["command"]
                     self._last_min_dist = float(plan_res.get("pred_min_dist", float("nan")))
+                elif (os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") == "0"
+                      and len(retina) == RETINA_DIM and self._water_ema is not None
+                      and (_frp := _retina_food_pos(retina)) is not None
+                      and (_wxz := food_xz_from_radar(self._water_ema)) is not None):
+                    # SONDE-INTERVENTION (2026-07-04, cause racine f96991c) : bouffe = RÉTINE-ARGMIN
+                    # (rayon rouge le plus proche, label-free, ~précision d'un slot sain) au lieu du
+                    # slot hors-distribution multi-ressource (positions fantômes 2-4 m). L'eau garde
+                    # son pipeline EMA. Échafaudage de sonde — fix pur = slot multi-ressource.
+                    plan_res = self.planner.plan(
+                        wm_obs, self._radar_ema,
+                        energy=energy / 100.0, thirst=thirst / 100.0,
+                        override_pos=True, food_override=_frp, water_override=_wxz,
+                    )
+                    self._cmd = plan_res["command"]
+                    self._last_plan = plan_res
+                    self._plan_fresh = True
                 else:
                     # food LOCALISED from the fine EMA (oracle) — or plan_wm_slot when wm.with_slot=True.
                     # MÉMOIRE SPATIALE (Task 3) : passer slot_belief quand actif → override slot t0 du WM.

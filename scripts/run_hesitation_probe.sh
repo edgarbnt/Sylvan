@@ -13,10 +13,10 @@ COST=${COST:-designed}
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 PORT=6074
-SUFFIX=""
+SUFFIX="${TAG_SUFFIX:-}"   # ex. TAG_SUFFIX=_noslot pour ne PAS écraser les buffers baseline
 COST_ENV=()
 if [[ "$COST" == "survival" ]]; then
-  SUFFIX="_surv"
+  SUFFIX="${SUFFIX}_surv"
   COST_ENV=(SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4)
 fi
 

@@ -416,7 +416,12 @@ class CommandPlanner:
         # via le slot APPRIS (out["slot"][:,0] = position ego perçue à t0, identique pour tous les candidats)
         # au lieu de l'oracle radar `food`. L'EAU reste planner-only (étage 1, pas dans le WM). Backward-compat :
         # WM sans slot → garde l'oracle `food`. Le single-drive (plan_wm_slot / single-resource) n'est PAS touché.
-        if getattr(self.world_model, "with_slot", False) and "slot" in out:
+        # SONDE-INTERVENTION (2026-07-04, cause racine f96991c) : le slot est HORS-DISTRIBUTION en
+        # multi-ressource (positions bouffe fantômes, méd 2.3-4.3 m en 1+1) → SYLVAN_MULTI_FOOD_SLOT=0
+        # débranche cet override et la bouffe retombe sur le MÊME pipeline que l'eau (EMA radar,
+        # ~0.85 m). Flag de SONDE/échafaudage — le fix pur = slot multi-ressource ré-entraîné.
+        if (getattr(self.world_model, "with_slot", False) and "slot" in out
+                and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
 
         e0 = float(obs[-1]) if energy is None else float(energy)
