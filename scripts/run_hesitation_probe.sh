@@ -6,19 +6,27 @@
 #   - run 1+1 (1 bouffe + 1 eau) → monde où le confound d'identité n'existe PAS par construction.
 # Analyse : diagnostics/diag_plan_target_switches.py (+ diag_forage_hesitation pour la comparaison).
 # Usage: bash scripts/run_hesitation_probe.sh [episodes=8] [max_steps=3000] [seed=1]
+#        COST=survival bash scripts/run_hesitation_probe.sh …   → coût survie (tags *_surv)
 set +e
 NEP=${1:-8}; MS=${2:-3000}; SEED=${3:-1}
+COST=${COST:-designed}
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 PORT=6074
+SUFFIX=""
+COST_ENV=()
+if [[ "$COST" == "survival" ]]; then
+  SUFFIX="_surv"
+  COST_ENV=(SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4)
+fi
 
 run_world() {  # $1 = 55|11 ; $2 = food_count ; $3 = water_count
-  local tag=$1 fc=$2 wc=$3
+  local tag=$1$SUFFIX fc=$2 wc=$3
   pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
   rm -rf "data/replay_buffer/hesit_probe_${tag}"
-  echo "=== SONDE $tag : food=$fc water=$wc episodes=$NEP max_steps=$MS seed=$SEED (coût designed) ==="
+  echo "=== SONDE $tag : food=$fc water=$wc episodes=$NEP max_steps=$MS seed=$SEED (coût $COST) ==="
   env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
-      SYLVAN_BC_LOG="data/replay_buffer/hesit_probe_${tag}" \
+      SYLVAN_BC_LOG="data/replay_buffer/hesit_probe_${tag}" "${COST_ENV[@]}" \
       PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
       --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
       --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/hesit_srv_${tag}.log 2>&1 &
@@ -40,13 +48,26 @@ run_world 11 1 1
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null
 
 echo ""
-for tag in 55 11; do
+for tag in 55$SUFFIX 11$SUFFIX; do
   echo "=== ANALYSE $tag — hésitation VRAIE (cible planner) ==="
   PYTHONPATH=python ./env_pytorch_3.12/bin/python diagnostics/diag_plan_target_switches.py \
     --files data/replay_buffer/hesit_probe_${tag}/ep_0000.jsonl
   echo "--- comparaison : inférence rétine H0 (mêmes fichiers) ---"
   PYTHONPATH=python ./env_pytorch_3.12/bin/python diagnostics/diag_forage_hesitation.py \
     --files data/replay_buffer/hesit_probe_${tag}/ep_0000.jsonl | grep -E "excess-switches|AVORTÉES"
+  echo "--- survie (log Godot) ---"
+  PYTHONPATH=python ./env_pytorch_3.12/bin/python - <<PY
+import re, statistics as st
+pat = re.compile(r'Episode (\d+) \| Step (\d+) .* Energy: ([\d.]+) \| Thirst: ([\d.]+)')
+eps = {}
+for line in open('/tmp/hesit_free_${tag}.log'):
+    m = pat.search(line)
+    if m: eps.setdefault(int(m.group(1)), []).append((int(m.group(2)), float(m.group(3)), float(m.group(4))))
+surv = [sorted(v)[-1][0] for v in eps.values()]
+meals = sum(sum(1 for i in range(1,len(sorted(v))) if sorted(v)[i][1]-sorted(v)[i-1][1] > 5) for v in eps.values())
+drinks = sum(sum(1 for i in range(1,len(sorted(v))) if sorted(v)[i][2]-sorted(v)[i-1][2] > 5) for v in eps.values())
+if surv: print(f"survie méd={st.median(surv):.0f} moy={st.mean(surv):.0f} | repas={meals} boissons={drinks} | n={len(surv)}")
+PY
   echo ""
 done
 echo "ALL_DONE_HESIT_PROBE"
