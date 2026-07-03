@@ -227,6 +227,17 @@ class CommandWorldModel(nn.Module):
                 slot = self.transport_slot(slot, disp_real[:, t])
                 slots.append(slot)
             out["slot"] = torch.stack(slots, dim=1)                # [B, T, 2] coordonnée ego de l'objet par pas
+            if getattr(self, "slot_resources", 1) > 1 and slot0 is None:
+                # MULTI-RESSOURCE (chantier pureté 2026-07-04) : TOUS les slots, même transport géométrique
+                # (le transport est une propriété de l'ESPACE — identique pour chaque objet). out["slots"]
+                # [B, T, R, 2] ; out["slot"] reste le slot 0 (compat totale avec les chemins existants).
+                retina = obs0[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
+                sl = self.slot_encoder.positions(retina)           # [B, R, 2] à t=0
+                all_slots = [sl]
+                for t in range(horizon - 1):
+                    sl = self.transport_slot(sl, disp_real[:, t].unsqueeze(-2))
+                    all_slots.append(sl)
+                out["slots"] = torch.stack(all_slots, dim=1)       # [B, T, R, 2]
         return out
 
 

@@ -41,6 +41,17 @@ class SelfSupervisedSlotHead(nn.Module):
         th = torch.tensor([k * 2.0 * math.pi / NRAY for k in range(NRAY)])
         self.register_buffer("sin", torch.sin(th))
         self.register_buffer("cos", torch.cos(th))
+        # REQUÊTES-COULEUR par slot (chantier multi-ressource 2026-07-04, design cible de la recette
+        # ajout-pulsion : « tête de lecture paramétrée par la requête-couleur » — même statut de pureté
+        # que les tokens color-gatés de Mode-1 : une requête sur SON capteur, pas un oracle ; ressource
+        # nouvelle = requête nouvelle, zéro retrain des autres slots). K=1 → None = chemin historique
+        # BYTE-IDENTIQUE (saillance color-agnostique du slot promu). L'émergence pure sans requête
+        # (compétition+répulsion seules) a été tentée et a dégénéré (slot mort) — négatif informatif.
+        if n_resources > 1:
+            q = torch.tensor([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]][:n_resources])
+            self.register_buffer("color_queries", q / q.norm(dim=-1, keepdim=True))
+        else:
+            self.color_queries = None
 
     def _attend(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Shared helper: returns (dist, sal, a_list) without allocating positions.
@@ -56,12 +67,15 @@ class SelfSupervisedSlotHead(nn.Module):
         sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
         scores = [self.score[k](r).squeeze(-1) for k in range(self.n_resources)]
         a_list = [torch.softmax(s, dim=-1) for s in scores]
-        if self.n_resources > 1:
-            # COMPÉTITION inter-slots (recette diag_fpure2 / Slot Attention) : chaque rayon est disputé
-            # entre les slots (softmax sur la dim slot) → brise la symétrie « tous sur le même objet ».
-            # n_resources=1 → comp=1 partout → chemin mono BYTE-IDENTIQUE (non-régression du slot promu).
-            comp = torch.softmax(torch.stack(scores, dim=-2), dim=-2)   # [..., K, NRAY]
-            a_list = [a_list[k] * comp[..., k, :] for k in range(self.n_resources)]
+        if self.color_queries is not None:
+            # SAILLANCE REQUÊTÉE-COULEUR : chaque slot ne « voit » que les rayons dont la teinte matche
+            # sa requête (affinité cosinus seuillée). Ancre chaque slot sur SON type d'objet → pas de
+            # slot mort ni de liage ambigu. K=1 → None → saillance agnostique historique, byte-identique.
+            rgb = r[..., 1:4]
+            rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)     # [..., NRAY, 3]
+            aff = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)  # [..., K, NRAY]
+            aff = (aff - 0.55).clamp(min=0.0)
+            a_list = [a_list[k] * aff[..., k, :] for k in range(self.n_resources)]
         return dist, sal, a_list
 
     def positions(self, retina: torch.Tensor) -> torch.Tensor:

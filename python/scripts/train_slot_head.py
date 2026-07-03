@@ -39,7 +39,10 @@ def load_pairs(runs, gap):
         for f in _buf_files(run):
             seq = []
             for line in open(f):
-                w = json.loads(line).get("wm", {})
+                try:
+                    w = json.loads(line).get("wm", {})
+                except json.JSONDecodeError:
+                    continue          # ligne à moitié écrite (collecte live) → skip
                 ret = w.get("retina0"); fr = w.get("food_rel0"); t0 = w.get("torso0")
                 wr = w.get("water_rel0") or [0.0, 0.0, 0.0]          # absent sur les runs mono → present=0
                 if not ret or not fr or not t0 or len(ret) != 144:
@@ -103,12 +106,9 @@ def main() -> None:
         cons = sum(((transport(sa[:, k], dy[bi], df[bi], dl[bi]) - sb[:, k].detach()) ** 2).sum(1).mean()
                    for k in range(K)) / K
         vv, vc = vicreg_terms(torch.cat([sa.reshape(-1, 2), sb.reshape(-1, 2)], 0), gamma=1.0)
-        loss = cons + vv + vc
-        if K > 1:                                                    # répulsion inter-slots (diag_fpure2)
-            rep = sum(torch.exp(-((sa[:, i] - sa[:, j]) ** 2).sum(1)).mean()
-                      for i in range(K) for j in range(i + 1, K))
-            loss = loss + 0.3 * rep
-        loss.backward(); opt.step(); opt.zero_grad()
+        # NB : la répulsion inter-slots (tentative émergence pure) a dégénéré en slot MORT →
+        # remplacée par la saillance requêtée-couleur DANS le head (ancrage par type, cf slot_head.py).
+        (cons + vv + vc).backward(); opt.step(); opt.zero_grad()
 
     # ÉVAL (labels food_rel0/water_rel0 utilisés ICI SEULEMENT, jamais à l'entraînement).
     # Assignation slot→ressource LABEL-FREE via la masse d'attention couleur (rouge=bouffe, bleu=eau).
