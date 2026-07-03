@@ -54,7 +54,14 @@ class SelfSupervisedSlotHead(nn.Module):
         dist = depth * RANGE + DEPTH_OFFSET                          # [..., NRAY]
         sat = torch.stack([R, G, B], -1).amax(-1) - torch.stack([R, G, B], -1).amin(-1)
         sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
-        a_list = [torch.softmax(self.score[k](r).squeeze(-1), dim=-1) for k in range(self.n_resources)]
+        scores = [self.score[k](r).squeeze(-1) for k in range(self.n_resources)]
+        a_list = [torch.softmax(s, dim=-1) for s in scores]
+        if self.n_resources > 1:
+            # COMPÉTITION inter-slots (recette diag_fpure2 / Slot Attention) : chaque rayon est disputé
+            # entre les slots (softmax sur la dim slot) → brise la symétrie « tous sur le même objet ».
+            # n_resources=1 → comp=1 partout → chemin mono BYTE-IDENTIQUE (non-régression du slot promu).
+            comp = torch.softmax(torch.stack(scores, dim=-2), dim=-2)   # [..., K, NRAY]
+            a_list = [a_list[k] * comp[..., k, :] for k in range(self.n_resources)]
         return dist, sal, a_list
 
     def positions(self, retina: torch.Tensor) -> torch.Tensor:
@@ -90,6 +97,19 @@ class SelfSupervisedSlotHead(nn.Module):
             px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
             pos_outs.append(torch.stack([px, pz], dim=-1))
         return torch.stack(pos_outs, dim=-2), torch.stack(sal_outs, dim=-1)  # ([..., n_res, 2], [..., n_res])
+
+    @torch.no_grad()
+    def color_masses(self, retina: torch.Tensor) -> torch.Tensor:
+        """[..., n_resources, 2] = masse d'attention gatée sur les rayons ROUGES vs BLEUS par slot.
+        Sert à l'ASSIGNATION label-free slot→ressource (rouge=bouffe, bleu=eau) après entraînement."""
+        r = retina.reshape(*retina.shape[:-1], NRAY, 4)
+        red = (r[..., 1] > r[..., 3]).float()                        # R > B par rayon
+        dist, sal, a_list = self._attend(retina)
+        out = []
+        for k in range(self.n_resources):
+            aw = a_list[k] * sal
+            out.append(torch.stack([(aw * red).sum(-1), (aw * (1.0 - red)).sum(-1)], dim=-1))
+        return torch.stack(out, dim=-2)
 
     @torch.no_grad()
     def locate(self, retina: torch.Tensor) -> list[list[float]]:
