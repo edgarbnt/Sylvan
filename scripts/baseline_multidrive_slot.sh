@@ -7,13 +7,14 @@
 # Usage: bash scripts/baseline_multidrive_slot.sh [episodes=10] [max_steps=3000]
 set +e
 NEP=${1:-10}; MS=${2:-3000}
-WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}
+WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s2/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 PORT=6072
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 rm -f /tmp/bmds_*.log
 echo "=== BASELINE MULTI-PULSIONS (slot) : WM=$WM  episodes=$NEP  max_steps=$MS ==="
 SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+SYLVAN_PLANNER_COST=${SYLVAN_PLANNER_COST:-survival} SYLVAN_PLANNER_DRAIN=${SYLVAN_PLANNER_DRAIN:-0.0005} SYLVAN_PLANNER_RESTORE=${SYLVAN_PLANNER_RESTORE:-0.4} \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
   --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/bmds_srv.log 2>&1 &

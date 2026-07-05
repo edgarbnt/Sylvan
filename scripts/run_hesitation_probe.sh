@@ -10,7 +10,7 @@
 set +e
 NEP=${1:-8}; MS=${2:-3000}; SEED=${3:-1}
 COST=${COST:-designed}
-WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}
+WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s2/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 PORT=6074
 SUFFIX="${TAG_SUFFIX:-}"   # ex. TAG_SUFFIX=_noslot pour ne PAS écraser les buffers baseline
