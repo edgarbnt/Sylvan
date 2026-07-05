@@ -75,7 +75,21 @@ class SelfSupervisedSlotHead(nn.Module):
             rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)     # [..., NRAY, 3]
             aff = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)  # [..., K, NRAY]
             aff = (aff - 0.55).clamp(min=0.0)
-            a_list = [a_list[k] * aff[..., k, :] for k in range(self.n_resources)]
+            # SOFTMAX MASQUÉ (K>1) : le gating saillance×affinité×proximité entre DANS le softmax
+            # comme log-prior. Leçon (slot-eau effondré, 2026-07-04) : gater APRÈS le softmax crée une
+            # région morte — le scoreur peut fuir les rayons de sa couleur (masse gatée → 0, position →
+            # origine à coût quasi nul, gradient évanoui, irrécupérable). En log-prior, la masse somme
+            # à 1 sur les rayons de MA couleur PAR CONSTRUCTION ; le scoreur ne peut que redistribuer.
+            # Proximité incluse (sémantique planner : « le plus proche de cette couleur »).
+            prox = ((1.0 - depth).clamp(min=0.0)) ** 2
+            # READOUT GÉOMÉTRIQUE PUR (K>1, décision 2026-07-04 après 7 itérations) : le scoreur APPRIS
+            # est retiré des logits — chaque variante apprise trouvait un optimum pathologique (collapse
+            # origine 1.8 m, centroïde 64-67°, distorsions 15-19°) alors que le prior géométrique seul
+            # = argmin-souple « le plus proche de ma couleur » ≈ plancher capteur (0.46-0.68 m). Même
+            # leçon que slot_calib : c'est une GÉOMÉTRIE, pas une quantité à fitter. Prior de distance
+            # −2/m = départage nearest-vs-centroïde (Δ2 m → e⁴≈55×). Zéro paramètre, zéro entraînement.
+            a_list = [torch.softmax(torch.log(sal * aff[..., k, :] * prox + 1e-8) - 4.0 * dist, dim=-1)
+                      for k in range(self.n_resources)]
         return dist, sal, a_list
 
     def positions(self, retina: torch.Tensor) -> torch.Tensor:
@@ -89,9 +103,22 @@ class SelfSupervisedSlotHead(nn.Module):
         dist, sal, a_list = self._attend(retina)
         outs = []
         for k in range(self.n_resources):
-            w = a_list[k] * sal
-            w = w / (w.sum(-1, keepdim=True) + 1e-6)
+            if self.color_queries is not None:
+                w = a_list[k]                      # softmax masqué : déjà une distribution propre
+            else:
+                w = a_list[k] * sal
+                w = w / (w.sum(-1, keepdim=True) + 1e-6)
             px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
+            if self.color_queries is not None:
+                # DÉCOUPLAGE direction/distance (K>1 ; diagnostic 2026-07-04 : bearing 1.5° parfait
+                # mais distance ÉCRASÉE 1.07 vs 2.64 m — les fuites d'attention vers d'autres items
+                # de la même couleur à d'autres azimuts s'ANNULENT vectoriellement → la norme fond).
+                # Direction = soft-argmax vectoriel (robuste) ; distance = moyenne SCALAIRE pondérée
+                # (pas d'annulation). Un seul item visible → strictement identique à l'ancien calcul.
+                vec_norm = (px ** 2 + pz ** 2 + 1e-4).sqrt()  # eps DANS le sqrt (grad de sqrt(0) = inf)
+                d_scalar = (w * dist).sum(-1)
+                px = px / vec_norm * d_scalar
+                pz = pz / vec_norm * d_scalar
             outs.append(torch.stack([px, pz], dim=-1))
         return torch.stack(outs, dim=-2)                             # [..., n_resources, 2]
 
@@ -111,6 +138,21 @@ class SelfSupervisedSlotHead(nn.Module):
             px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
             pos_outs.append(torch.stack([px, pz], dim=-1))
         return torch.stack(pos_outs, dim=-2), torch.stack(sal_outs, dim=-1)  # ([..., n_res, 2], [..., n_res])
+
+    def visibility(self, retina: torch.Tensor) -> torch.Tensor:
+        """[..., n_resources] ∈ [0,1] : max sur les rayons de saillance×affinité-couleur — « un rayon
+        de MA couleur a-t-il touché quelque chose ? ». Quasi-binaire, robuste à l'échelle des masses
+        (un seuil sur la masse d'attention brute dépend de aff×prox → fragile)."""
+        r = retina.reshape(*retina.shape[:-1], NRAY, 4)
+        depth = r[..., 0]
+        rgb = r[..., 1:4]
+        sat = rgb.amax(-1) - rgb.amin(-1)
+        sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
+        if self.color_queries is None:
+            return sal.amax(-1, keepdim=True).expand(*sal.shape[:-1], self.n_resources)
+        rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
+        aff = (torch.einsum("...nc,kc->...kn", rgbn, self.color_queries) - 0.55).clamp(min=0.0)
+        return (aff * sal.unsqueeze(-2)).amax(-1)
 
     @torch.no_grad()
     def color_masses(self, retina: torch.Tensor) -> torch.Tensor:

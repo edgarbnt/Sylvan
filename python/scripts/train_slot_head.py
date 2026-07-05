@@ -102,10 +102,18 @@ def main() -> None:
 
     for it in range(args.iters):
         bi = torch.randint(0, N, (256,))
-        sa = slots(ra[bi]); sb = slots(rb[bi])
-        cons = sum(((transport(sa[:, k], dy[bi], df[bi], dl[bi]) - sb[:, k].detach()) ** 2).sum(1).mean()
-                   for k in range(K)) / K
-        vv, vc = vicreg_terms(torch.cat([sa.reshape(-1, 2), sb.reshape(-1, 2)], 0), gamma=1.0)
+        sa = head.positions(ra[bi]); sb = head.positions(rb[bi])     # [N,K,2]
+        ma = head.visibility(ra[bi]); mb = head.visibility(rb[bi])   # [N,K] quasi-binaire
+        # consistance gatée par la masse de saillance PROPRE (stop-grad, label-free) : pas de
+        # gradient sur un slot qui ne voit RIEN (sinon la consistance s'entraîne sur du bruit —
+        # cause mesurée du slot-eau à 1.80 m vs plancher capteur 0.68 m).
+        gate = (torch.minimum(ma, mb) > 1e-3).float().detach()       # [N,K]
+        cons = sum((gate[:, k] * ((transport(sa[:, k], dy[bi], df[bi], dl[bi]) - sb[:, k].detach()) ** 2).sum(1)).sum()
+                   / (gate[:, k].sum() + 1e-6) for k in range(K)) / K
+        # VICReg PAR SLOT (cause racine du collapse-eau : sur le MÉLANGE des slots, la variance de la
+        # bouffe masquait un slot-eau effondré en constante-origine — solution à loss quasi nul).
+        vic = [vicreg_terms(torch.cat([sa[:, k], sb[:, k]], 0), gamma=1.0) for k in range(K)]
+        vv = sum(v[0] for v in vic) / K; vc = sum(v[1] for v in vic) / K
         # NB : la répulsion inter-slots (tentative émergence pure) a dégénéré en slot MORT →
         # remplacée par la saillance requêtée-couleur DANS le head (ancrage par type, cf slot_head.py).
         (cons + vv + vc).backward(); opt.step(); opt.zero_grad()
@@ -118,9 +126,11 @@ def main() -> None:
         if K > 1 and food_idx == water_idx:
             water_idx = 1 - food_idx                                 # dégénéré → forcer distinct + le signaler
             print(f"[slot] ⚠️ assignation couleur dégénérée (masses {cm.tolist()}) — slots non spécialisés ?")
-        sp = slots(t["rb"][te])
+        sp = head.positions(t["rb"][te]); sm = head.visibility(t["rb"][te])
         def mae(idx, X, Z, present=None):
             m = present.bool() if present is not None else torch.ones(len(X), dtype=torch.bool)
+            m = m & (sm[:, idx] > 1e-3)                              # équitable : comme argmin, on ne
+            # score que quand le slot VOIT (le serveur gâtera pareil via la saillance)
             if int(m.sum()) == 0:
                 return float("nan"), float("nan")
             s2 = sp[m, idx]; x, z = X[m], Z[m]
@@ -129,8 +139,10 @@ def main() -> None:
             return b, float(((s2[:, 0] - x) ** 2 + (s2[:, 1] - z) ** 2).sqrt().mean())
         bmae, pmae = mae(food_idx, t["fx"][te], t["fz"][te])
         wb, wp_mae = mae(water_idx, t["wx"][te], t["wz"][te], t["wp"][te]) if K > 1 else (float("nan"),) * 2
-    print(f"[slot] held-out : BOUFFE(slot{food_idx}) bearing {bmae:.1f}° / pos {pmae:.2f} m"
-          + (f" | EAU(slot{water_idx}) bearing {wb:.1f}° / pos {wp_mae:.2f} m" if K > 1 else ""))
+    cov_f = float((sm[:, food_idx] > 1e-3).float().mean())
+    cov_w = float((sm[:, water_idx] > 1e-3).float().mean()) if K > 1 else float("nan")
+    print(f"[slot] held-out : BOUFFE(slot{food_idx}) bearing {bmae:.1f}° / pos {pmae:.2f} m (couv {100*cov_f:.0f}%)"
+          + (f" | EAU(slot{water_idx}) bearing {wb:.1f}° / pos {wp_mae:.2f} m (couv {100*cov_w:.0f}%)" if K > 1 else ""))
 
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     ck = {"state_dict": head.state_dict(), "n_resources": K, "heldout_mae_m": pmae,
