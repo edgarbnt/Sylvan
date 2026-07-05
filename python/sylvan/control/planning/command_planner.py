@@ -200,7 +200,8 @@ def _survival_extension(
         time = time.clamp(max=cap)
         return time + margin_w * margin
 
-    return torch.maximum(sim(True), sim(False))
+    return sim(True), sim(False)          # (bouffe-d'abord, eau-d'abord) — le choix d'ordre
+                                          # appartient au caller (règle d'incumbent, committment)
 
 
 class CommandPlanner:
@@ -512,12 +513,32 @@ class CommandPlanner:
             bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
                                  (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
             rate = max(cfg.surv_turn_rate, 1e-6)
-            score = _survival_extension(
+            s_food, s_water = _survival_extension(
                 df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
                 dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                 cfg.surv_horizon, cfg.surv_margin_weight,
                 turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
-            ) * (1.0 - survival_pen.clamp(0.0, 1.0))
+            )
+            fall = 1.0 - survival_pen.clamp(0.0, 1.0)
+            s_food = s_food * fall
+            s_water = s_water * fall
+            # COMMITTMENT (chantier 2026-07-04 soir) : près des égalités, le jitter des slots
+            # (p90 0.7-1.5 m/replan) ré-ordonne les 2 plans en transit SANS changement des drives
+            # (24/27 abandons-en-vue → autre ressource, 26/27 sans croisement d'urgence) → flicker
+            # 44-46% + abandons 36-41%. Règle : le challenger ne détrône l'ordre INCUMBENT que s'il
+            # le bat de plus de δ = bruit de score induit par le jitter (~75 pas pour 1.5 m à
+            # 0.02 m/pas ; calibration initiale, jugée par le gate abandons<15% sans perte de survie).
+            best_f, best_w = float(s_food.max()), float(s_water.max())
+            delta = float(os.environ.get("SYLVAN_PLANNER_COMMIT_DELTA", "75.0"))
+            inc = getattr(self, "_incumbent_target", None)
+            if inc == "food":
+                target_first = "food" if best_f >= best_w - delta else "water"
+            elif inc == "water":
+                target_first = "water" if best_w >= best_f - delta else "food"
+            else:
+                target_first = "food" if best_f >= best_w else "water"
+            self._incumbent_target = target_first
+            score = s_food if target_first == "food" else s_water
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
             out_d: dict[str, object] = {

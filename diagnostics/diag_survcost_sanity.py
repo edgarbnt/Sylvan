@@ -24,7 +24,7 @@ DRAIN, RESTORE, SPD, CAP, MARGIN_W = 0.0005, 0.4, 0.02, 3000.0, 200.0
 def ext(df, dw, e, t, dist_fw=5.0, steps_p1=None, alive=None, turn_f=None, turn_w=None):
     n = len(df)
     z = lambda v: torch.tensor(v, dtype=torch.float32)
-    return _survival_extension(
+    sf, sw = _survival_extension(
         z(df), z(dw), z(e), z(t),
         torch.ones(n) if alive is None else z(alive),
         torch.zeros(n) if steps_p1 is None else z(steps_p1),
@@ -32,6 +32,7 @@ def ext(df, dw, e, t, dist_fw=5.0, steps_p1=None, alive=None, turn_f=None, turn_
         turn_f=None if turn_f is None else z(turn_f),
         turn_w=None if turn_w is None else z(turn_w),
     )
+    return torch.maximum(sf, sw)   # sémantique historique des scénarios (le choix d'ordre = caller)
 
 
 def main() -> None:
