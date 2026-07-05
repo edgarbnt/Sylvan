@@ -1,6 +1,6 @@
-# Sylvan: emergent survival in a learned world-model
+# Sylvan : Emergent survival in a learned world-model
 
-> An embodied agent that learns to **decide for itself**, *get hungry → look → go to food → survive*, by **planning inside a world-model it learned from its own experience**, in the spirit of Yann LeCun's blueprint for autonomous machine intelligence.
+> An embodied agent that learns to **decide for itself** : *get hungry → look → go to food → survive*, by **planning inside a world-model it learned from its own experience**, in the spirit of Yann LeCun's blueprint for autonomous machine intelligence.
 
 <p align="center">
   <img src="assets/forage_sim.gif" width="640" alt="The 3D agent foraging in the simulation: perceiving food/water and juggling hunger & thirst to survive."/>
@@ -69,7 +69,7 @@ flowchart TB
 - **Perception** turns observations into a world-state estimate.
 - The **World Model** predicts how that state evolves under *imagined* actions.
 - The **Cost module** = an immutable **Intrinsic Cost** (the agent's built-in drives / "motivations") plus a **trainable Critic** that predicts future cost. *Behavior is driven by intrinsic motivation, not an external reward.*
-- The **Actor** produces actions in two modes: **Mode 1**, a fast **reactive** policy; **Mode 2**, **deliberation**, by optimizing an action sequence *through the world-model* to minimize predicted future cost.
+- The **Actor** produces actions in two modes: **Mode 1** : a fast **reactive** policy; **Mode 2** : **deliberation**, by optimizing an action sequence *through the world-model* to minimize predicted future cost.
 - The **Configurator** orchestrates the rest for the task at hand.
 
 A key detail: the world-model stays **self-supervised** and reward-free, it's the general substrate. Reward/cost only ever touches the *fast* modules (critic, actor). And a good agent keeps **both** Mode 1 and Mode 2: the reflex for speed, deliberation for the hard cases, and, over a lifetime, **the reflex is trained to imitate the deliberation** (amortized inference).
