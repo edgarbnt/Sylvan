@@ -105,6 +105,13 @@ class CommandPlanConfig:
     cost_mode: str = "designed"            # "survival" active le coût ci-dessus (multi-ressource seulement)
     surv_horizon: float = 3000.0           # cap de la simulation (pas planner ≈ pas Godot ≈ cap épisode)
     surv_margin_weight: float = 200.0      # poids du tie-break marge (unités: pas). Env: SYLVAN_PLANNER_SURV_MARGIN_W
+    surv_discount: float = 0.0             # ⚠️ NE PAS ACTIVER — négatif informatif (2026-07-04) : la survie
+                                            # escomptée Σγ^t TÉLESCOPE à 1/(1−γ) pour tout plan immortel (vérifié :
+                                            # 3 candidats → 2000.0 exact) → aveugle entre plans sûrs, ne résout PAS
+                                            # la saturation (67-90% des replans ont les 2 ordres au cap, écarts 1-6
+                                            # pts = bruit). Le vrai fix = RISQUE sous bruit MESURÉ : mort DOUCE par
+                                            # leg (p_death = f(marge d'arrivée / σ_jitter)) → Π(1−p) discrimine les
+                                            # plans sûrs par leurs marges, principiel. À designer à tête reposée.
     surv_turn_rate: float = 0.015          # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ≈ 0.015-0.03
                                             # rad/pas à 30 Hz — prendre le bas = prudent). Env: SYLVAN_PLANNER_TURN_RATE
 
@@ -148,6 +155,7 @@ def _survival_extension(
     margin_w: float,
     turn_f: torch.Tensor | None = None,
     turn_w: torch.Tensor | None = None,
+    gamma: float = 0.0,
 ) -> torch.Tensor:
     """Phase 2 du coût survie : depuis la FIN du rollout WM de chaque candidat (distances df/dw aux
     ressources, niveaux e/t, masque vivant, pas déjà vécus), simule analytiquement la suite « aller à
@@ -174,6 +182,12 @@ def _survival_extension(
         live = alive.clone()
         time = steps_p1.clone()
         margin = torch.zeros_like(e)                    # niveau à la 1ʳᵉ arrivée (0 si jamais atteinte)
+        # MODE ESCOMPTÉ (gamma>0) : valeur = Σ γ^t·vivant — jamais saturée (arriver tôt vaut
+        # toujours plus), queue infinie γ^t/(1−γ) pour qui tient l'alternance → le CAP et la MARGE
+        # deviennent inutiles (2 boutons en moins). Phase 1 ≈ vécue d'un bloc depuis t=0.
+        if gamma > 0.0:
+            val = (1.0 - gamma ** steps_p1.clamp(min=0.0)) / (1.0 - gamma) * alive.clamp(max=1.0)
+            val = val + steps_p1 * (1.0 - alive)        # morts phase 1 : approx linéaire (négligeable)
         dist = (df_end if first_is_food else dw_end).clone()
         extra = (turn_f if first_is_food else turn_w).clone()   # virage du 1er leg seulement
         target_food = first_is_food
@@ -181,7 +195,10 @@ def _survival_extension(
             travel = dist / spd + extra
             t_die = torch.minimum(e, t).clamp(min=0.0) / drain   # pas avant que le pire drive meure
             died = (t_die < travel) & (live > 0.5)
-            time = time + live * torch.minimum(t_die, travel)
+            lived = torch.minimum(t_die, travel)
+            if gamma > 0.0:
+                val = val + live * (gamma ** time) * (1.0 - gamma ** lived.clamp(min=0.0)) / (1.0 - gamma)
+            time = time + live * lived
             e = (e - travel * drain).clamp(min=0.0)
             t = (t - travel * drain).clamp(min=0.0)
             if leg == 0:
@@ -197,6 +214,8 @@ def _survival_extension(
             extra = zeros
             if not bool((live > 0.5).any()):
                 break
+        if gamma > 0.0:
+            return val + live * (gamma ** time) / (1.0 - gamma)  # queue infinie des survivants
         time = time.clamp(max=cap)
         return time + margin_w * margin
 
@@ -237,6 +256,9 @@ class CommandPlanner:
         _sh = os.environ.get("SYLVAN_PLANNER_SURV_H")
         if _sh not in (None, ""):
             self.cfg.surv_horizon = float(_sh)
+        _sd = os.environ.get("SYLVAN_PLANNER_SURV_DISCOUNT")
+        if _sd not in (None, ""):
+            self.cfg.surv_discount = float(_sd)
         _sm = os.environ.get("SYLVAN_PLANNER_SURV_MARGIN_W")
         if _sm not in (None, ""):
             self.cfg.surv_margin_weight = float(_sm)
@@ -535,6 +557,7 @@ class CommandPlanner:
                 dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                 cfg.surv_horizon, cfg.surv_margin_weight,
                 turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
+                gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
             )
             fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             s_food = s_food * fall
