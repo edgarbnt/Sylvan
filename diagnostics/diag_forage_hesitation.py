@@ -3,7 +3,7 @@ et coûteuse, ou un artefact visuel ?
 
 CONTEXTE (2026-07-03). Owner : « il hésite énormément entre eau et bouffe, en plus de ne pas
 toujours faire le bon choix ». Avant de payer le fix (planner rollout-de-survie), on OBJECTIVE
-l'impression (CLAUDE.md §1) sur les buffers BC déjà sur disque — collectés avec LE PLANNER
+l'impression (principe de travail n°1) sur les buffers BC déjà sur disque — collectés avec LE PLANNER
 (coût designed + survival_weight) aux commandes dans le monde multi-drive
 (`data/replay_buffer/mode1_bc_{a,b}/ep_0000.jsonl` : obs{proprio,energy,thirst} + wm{retina0,cmd}).
 Ces chiffres = BASELINE d'hésitation contre laquelle juger le futur planner refill-aware.

@@ -9,7 +9,7 @@ Données = le vécu déjà loggé (buffers hesit_probe_* : plan.food/water crus 
 Labels = pipeline G2/B0 : G = 1−γ^(replans restants) + surv (mort ≤10 replans). AUCUN oracle :
 positions = ce que le planner CROYAIT (slots), issues = ce qui est réellement arrivé.
 
-Gates offline pré-enregistrés (avant run, CLAUDE.md §1) :
+Gates offline pré-enregistrés (avant run, principe de travail n°1) :
   1. AUC(V, surv) held-out ≥ 0.85 (référence G2 : 0.88)
   2. NON-SATURATION (le décisif) : sur les replans où les 2 ordres analytiques étaient SATURÉS
      (sf,sw ≥ 2999, écarts 1-6 pts = la racine de l'errance-du-repu), le critique garde ≥ 50%

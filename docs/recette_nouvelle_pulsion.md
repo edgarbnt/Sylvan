@@ -1,6 +1,6 @@
 # Recette : ajouter une pulsion (quoi toucher, quoi ne JAMAIS toucher)
 
-_2026-07-03. Consolide ce qui était éparpillé (CLAUDE.md §3, `design_mode1.md`,
+_2026-07-03. Consolide ce qui était éparpillé (principe de travail n°3, `design_mode1.md`,
 `design_wm_factorise.md`, mémoire). C'est le **contrat de scalabilité** de l'archi : si ajouter
 une pulsion exige plus que ce qui est listé ici, c'est un signal d'alerte §3 (mauvais étage)._
 
@@ -10,7 +10,7 @@ jamais une refonte. Le test falsifiable de ce contrat = **Gate-S** (`design_mode
 politique/planner GELÉS + pulsion jamais vue → l'entité la gère sans retrain des étages généraux.
 
 ## 2. À lire d'abord
-- `CLAUDE.md` §3 (substrat lent vs pulsions rapides — le principe).
+- `les règles du projet` §3 (substrat lent vs pulsions rapides — le principe).
 - `python/sylvan/control/mode1/obs.py:20` (`build_tokens` : le token-pulsion concret).
 - `python/sylvan/control/planning/command_planner.py` (`_survival_extension` + branche multi-ressource).
 

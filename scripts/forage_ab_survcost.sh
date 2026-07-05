@@ -6,7 +6,7 @@
 # Chaque bras logge aussi les paires (obs,cmd) via SYLVAN_BC_LOG → re-mesure de l'HÉSITATION (gate H0)
 # avec diagnostics/diag_forage_hesitation.py --files <bras>/ep_0000.jsonl.
 #
-# CRITÈRES PRÉ-ENREGISTRÉS (avant le run, CLAUDE.md §1 ; baseline H0 : avortées 87%, excess méd 2.5) :
+# CRITÈRES PRÉ-ENREGISTRÉS (avant le run, principe de travail n°1 ; baseline H0 : avortées 87%, excess méd 2.5) :
 #   SUCCÈS : survie médiane ON >= OFF + 200   ET   hésitation ON < OFF (avortées ET excess médian).
 #   KILL   : survie médiane ON <  OFF - 200  → négatif informatif, STOP + rediscuter (pas de tweak à l'aveugle).
 #   PARTIEL sinon → lire les sous-scores (survie vs hésitation) avant toute suite.

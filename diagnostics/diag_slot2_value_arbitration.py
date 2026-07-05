@@ -11,7 +11,7 @@ de la rétine des buffers gate2/2b/2c déjà sur disque. Ces features = exacteme
 appris fournirait. Labels = mêmes que G2 (G = 1-γ^(restant), surv100 depuis le flag de fin
 d'épisode). NB gate2c a un reward pain-shapé : sans effet ici (on ne lit ni reward ni command).
 
-CRITÈRES PRÉ-ENREGISTRÉS (écrits AVANT le run, CLAUDE.md §1 ; référence = G2 latent brut) :
+CRITÈRES PRÉ-ENREGISTRÉS (écrits AVANT le run, principe de travail n°1 ; référence = G2 latent brut) :
   1. Prédiction  : AUC(V, surv100) held-out  PASS >= 0.85 | KILL < 0.75   (G2 : 0.88, à matcher)
   2. Équilibre   : ΔV contrefactuel NÉGATIF pour CHAQUE drive bas, ratio sensibilités >= 0.5
                    (G2 : corr soif 0.30 vs énergie 0.65, Δbas-soif -0.04 = biais énergie)

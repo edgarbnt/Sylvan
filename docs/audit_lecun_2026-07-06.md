@@ -9,14 +9,14 @@
 
 ## Méthode
 
-- **Gratuit d'abord (CLAUDE.md §1).** Vérif orphelins (0), disque OK, arbre propre. Verdict
+- **Gratuit d'abord (principe de travail n°1).** Vérif orphelins (0), disque OK, arbre propre. Verdict
   critique repêché depuis les **logs serveur** (source de vérité `[planner-cmd]`), pas les
   en-têtes de sonde (buggés). Deux sweeps de code parallèles (rétine/WM/mémoire ;
   coût/planner/drives/Mode-1), chaque écart vérifié **dans le code, pas dans les commentaires**.
-- **Distinguer CORPS et impureté (CLAUDE.md §3).** CPG/moteur, drives câblés, et le coût
+- **Distinguer CORPS et impureté (principe de travail n°3).** CPG/moteur, drives câblés, et le coût
   intrinsèque homéostatique (« mourir = mal ») = le CORPS, **voulu**. Impuretés = oracles dans
   la boucle vive, poids-décision tunés tenant lieu de valeur apprise, échafaudages flaggés.
-- **Ne pas masquer (CLAUDE.md §2).** Un écart qui arrange la carte est signalé, pas enterré.
+- **Ne pas masquer (principe de travail n°2).** Un écart qui arrange la carte est signalé, pas enterré.
 
 ## Verdict du fil critique (l'item ouvert de la session précédente)
 
