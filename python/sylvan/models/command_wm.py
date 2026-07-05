@@ -184,6 +184,7 @@ class CommandWorldModel(nn.Module):
         obs0: torch.Tensor,
         commands: torch.Tensor,
         slot0: "torch.Tensor | None" = None,
+        slots0: "torch.Tensor | None" = None,
     ) -> dict[str, torch.Tensor]:
         """Dream forward from a single real observation under a command sequence.
 
@@ -231,8 +232,14 @@ class CommandWorldModel(nn.Module):
                 # MULTI-RESSOURCE (chantier pureté 2026-07-04) : TOUS les slots, même transport géométrique
                 # (le transport est une propriété de l'ESPACE — identique pour chaque objet). out["slots"]
                 # [B, T, R, 2] ; out["slot"] reste le slot 0 (compat totale avec les chemins existants).
-                retina = obs0[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
-                sl = self.slot_encoder.positions(retina)           # [B, R, 2] à t=0
+                # slots0 [R, 2] (fix v3, 2026-07-05) : t0 override par ressource — les SOUVENIRS d'une
+                # ressource éclipsée deviennent le point de départ du rêve et sont TRANSPORTÉS par
+                # candidat exactement comme la perception fraîche (v2 les figeait → gradient mort).
+                if slots0 is not None:
+                    sl = slots0.to(obs0.device).reshape(1, -1, 2).expand(batch_size, -1, -1).contiguous()
+                else:
+                    retina = obs0[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
+                    sl = self.slot_encoder.positions(retina)       # [B, R, 2] à t=0
                 all_slots = [sl]
                 for t in range(horizon - 1):
                     sl = self.transport_slot(sl, disp_real[:, t].unsqueeze(-2))

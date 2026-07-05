@@ -448,7 +448,24 @@ class CommandPlanner:
         # toward each resource (engages the turn toward whatever is URGENT), - fall penalty. The priority
         # (go to food vs water) EMERGES from the convex urgency + geometry — no fixed preference.
         obs0 = obs.to(self.device).reshape(1, -1).expand(n, -1).contiguous()
-        out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs)
+        # FIX v3 (2026-07-05) : les SOUVENIRS d'une ressource éclipsée deviennent le SLOT INITIAL du
+        # rêve (slots0) → transportés PAR CANDIDAT comme la perception fraîche. (v1 = fantômes hors-vue ;
+        # v2 = souvenir statique identique pour tous les candidats → gradient mort, sans-cible 76%.)
+        _slots0 = None
+        _vis = None
+        if (getattr(self.world_model, "slot_resources", 1) > 1
+                and os.environ.get("SYLVAN_MULTI_SLOT2", "1") != "0"):
+            _ret0 = obs[self.world_model.proprio_dim:self.world_model.proprio_dim + RETINA_DIM].to(self.device)
+            with torch.no_grad():
+                _vis = self.world_model.slot_encoder.visibility(_ret0)
+                _pos0 = self.world_model.slot_encoder.positions(_ret0)      # [R, 2]
+            _slots0 = _pos0.clone()
+            if slots_belief is not None:
+                for _k in range(_slots0.shape[0]):
+                    if float(_vis[_k]) <= 1e-3 and _k < len(slots_belief) and slots_belief[_k] is not None:
+                        _slots0[_k, 0] = float(slots_belief[_k][0])
+                        _slots0[_k, 1] = float(slots_belief[_k][1])
+        out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs, slots0=_slots0)
         disp = out["predicted_displacement"] / DISPLACEMENT_SCALE
         done_prob = torch.sigmoid(out["predicted_done_logits"])
 
@@ -469,8 +486,7 @@ class CommandPlanner:
             # flaggé — le vrai comportement « ressource hors de vue » = CHERCHER, prochaine feature).
             fi = int(getattr(self.world_model, "food_idx", 0) or 0)
             wi = getattr(self.world_model, "water_idx", None)
-            _ret = obs[self.world_model.proprio_dim:self.world_model.proprio_dim + RETINA_DIM]
-            vis = self.world_model.slot_encoder.visibility(_ret.to(self.device))
+            vis = _vis
             # Gate 3 états (mémoire spatiale 2026-07-04) : VISIBLE = lecture fraîche ;
             # ÉCLIPSÉE = souvenir dead-reckoné (MultiSlotMemory, ego-motion apprise — l'objet-
             # permanence ENTRE les replans, « retourner où j'ai vu » émerge du coût existant) ;
@@ -479,19 +495,13 @@ class CommandPlanner:
                 if slots_belief is not None and k < len(slots_belief) and slots_belief[k] is not None:
                     return (float(slots_belief[k][0]), float(slots_belief[k][1]))
                 return None
-            if float(vis[fi]) > 1e-3:
+            if float(vis[fi]) > 1e-3 or _bel(fi) is not None:
                 food = (float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
             else:
-                food = _bel(fi)                     # souvenir, ou None (jamais vue → absente)
-            if wi is not None:
-                if float(vis[int(wi)]) > 1e-3:
-                    water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
-                    wx, wz = water
-                else:
-                    b = _bel(int(wi))
-                    if b is not None:
-                        water = b
-                        wx, wz = water
+                food = None                          # jamais vue → absente (pas hallucinée)
+            if wi is not None and (float(vis[int(wi)]) > 1e-3 or _bel(int(wi)) is not None):
+                water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
+                wx, wz = water
         elif (getattr(self.world_model, "with_slot", False) and "slot" in out
                 and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
@@ -572,14 +582,9 @@ class CommandPlanner:
             # JAMAIS-VUE → token « connu=0 » — le critique s'est ENTRAÎNÉ avec ce cas.
             known = torch.zeros(pos.shape[0], pos.shape[1], 2, device=pos.device)
             for j, k in enumerate((fi, wi_)):
-                if float(vis[k]) > 1e-3:
-                    known[:, :, j] = 1.0
-                else:
-                    b = _bel(k)
-                    if b is not None:
-                        pos[:, :, j, 0] = b[0]
-                        pos[:, :, j, 1] = b[1]
-                        known[:, :, j] = 1.0
+                if float(vis[k]) > 1e-3 or _bel(k) is not None:
+                    known[:, :, j] = 1.0            # visible OU souvenir : coords déjà dans les slots
+                                                    # (t0=souvenir via slots0, transporté par candidat)
             d = pos.norm(dim=-1).clamp(min=1e-6)                    # [n, h, 2]
             toks = torch.stack([lv, torch.where(known > 0.5, d.clamp(max=10.0) / 10.0, torch.ones_like(d)),
                                 pos[..., 0] / d * known, pos[..., 1] / d * known,
