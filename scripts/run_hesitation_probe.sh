@@ -12,7 +12,8 @@ NEP=${1:-8}; MS=${2:-3000}; SEED=${3:-1}
 COST=${COST:-designed}
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s2/wm_best.pt}
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
-PORT=6074
+PORT=${PORT:-6074}
+WORLDS=${WORLDS:-"55 11"}   # ex. WORLDS=11 = un seul monde (parallélisation multi-instances)
 SUFFIX="${TAG_SUFFIX:-}"   # ex. TAG_SUFFIX=_noslot pour ne PAS écraser les buffers baseline
 COST_ENV=()
 if [[ "$COST" == "survival" ]]; then
@@ -22,7 +23,7 @@ fi
 
 run_world() {  # $1 = 55|11 ; $2 = food_count ; $3 = water_count
   local tag=$1$SUFFIX fc=$2 wc=$3
-  pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
+  [[ -z "$PARALLEL" ]] && { pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1; }
   rm -rf "data/replay_buffer/hesit_probe_${tag}"
   echo "=== SONDE $tag : food=$fc water=$wc episodes=$NEP max_steps=$MS seed=$SEED (coût $COST) ==="
   env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
@@ -43,12 +44,17 @@ run_world() {  # $1 = 55|11 ; $2 = food_count ; $3 = water_count
   kill -9 $SRV 2>/dev/null
 }
 
-run_world 55 5 5
-run_world 11 1 1
-pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null
+for wtag in $WORLDS; do
+  case $wtag in
+    55) run_world 55 5 5 ;;
+    11) run_world 11 1 1 ;;
+  esac
+done
+[[ -z "$PARALLEL" ]] && { pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; }
 
 echo ""
-for tag in 55$SUFFIX 11$SUFFIX; do
+for wtag in $WORLDS; do
+  tag=$wtag$SUFFIX
   echo "=== ANALYSE $tag — hésitation VRAIE (cible planner) ==="
   PYTHONPATH=python ./env_pytorch_3.12/bin/python diagnostics/diag_plan_target_switches.py \
     --files data/replay_buffer/hesit_probe_${tag}/ep_0000.jsonl
