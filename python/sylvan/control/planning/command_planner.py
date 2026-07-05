@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 import torch
 
 from ...models.command_wm import DISPLACEMENT_SCALE, CommandWorldModel
+from ...models.perception_head import RETINA_DIM
 
 NUM_SECTORS = 12
 RADAR_MAX_RANGE = 10.0
@@ -423,10 +424,17 @@ class CommandPlanner:
         if "slots" in out and os.environ.get("SYLVAN_MULTI_SLOT2", "1") != "0":
             # SLOT-2 (chantier pureté 2026-07-04) : bouffe ET eau lues du WM (slots requêtés-couleur)
             # → l'EAU QUITTE l'oracle radar-EMA. food/water_idx = assignation label-free du ckpt slot.
+            # GATE DE VISIBILITÉ (leçon 1+1 : ressource hors de vue → le readout géométrique sortait un
+            # fantôme ~10 m direction-bruit → replans poubelle). Invisible = ABSENTE (pas hallucinée) :
+            # bouffe → None (le coût gère has_food=False) ; eau → garde l'EMA de CE replan (transitoire
+            # flaggé — le vrai comportement « ressource hors de vue » = CHERCHER, prochaine feature).
             fi = int(getattr(self.world_model, "food_idx", 0) or 0)
             wi = getattr(self.world_model, "water_idx", None)
-            food = (float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
-            if wi is not None:
+            _ret = obs[self.world_model.proprio_dim:self.world_model.proprio_dim + RETINA_DIM]
+            vis = self.world_model.slot_encoder.visibility(_ret.to(self.device))
+            food = ((float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
+                    if float(vis[fi]) > 1e-3 else None)
+            if wi is not None and float(vis[int(wi)]) > 1e-3:
                 water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
                 wx, wz = water
         elif (getattr(self.world_model, "with_slot", False) and "slot" in out
