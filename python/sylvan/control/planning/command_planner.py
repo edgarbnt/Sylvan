@@ -294,6 +294,7 @@ class CommandPlanner:
         food_override: tuple[float, float] | None = None,
         water_override: tuple[float, float] | None = None,
         slot_belief: "list[float] | None" = None,
+        slots_belief: "list[list[float] | None] | None" = None,
         debug_scores: bool = False,
     ) -> dict[str, object]:
         """obs [obs_dim] = proprio ++ radar ++ energy(normalised) (the WM's encoder input).
@@ -433,11 +434,27 @@ class CommandPlanner:
             wi = getattr(self.world_model, "water_idx", None)
             _ret = obs[self.world_model.proprio_dim:self.world_model.proprio_dim + RETINA_DIM]
             vis = self.world_model.slot_encoder.visibility(_ret.to(self.device))
-            food = ((float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
-                    if float(vis[fi]) > 1e-3 else None)
-            if wi is not None and float(vis[int(wi)]) > 1e-3:
-                water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
-                wx, wz = water
+            # Gate 3 états (mémoire spatiale 2026-07-04) : VISIBLE = lecture fraîche ;
+            # ÉCLIPSÉE = souvenir dead-reckoné (MultiSlotMemory, ego-motion apprise — l'objet-
+            # permanence ENTRE les replans, « retourner où j'ai vu » émerge du coût existant) ;
+            # JAMAIS-VUE = absente (bouffe) / EMA du replan (eau, fenêtre ~2% flaggée).
+            def _bel(k: int) -> tuple[float, float] | None:
+                if slots_belief is not None and k < len(slots_belief) and slots_belief[k] is not None:
+                    return (float(slots_belief[k][0]), float(slots_belief[k][1]))
+                return None
+            if float(vis[fi]) > 1e-3:
+                food = (float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
+            else:
+                food = _bel(fi)                     # souvenir, ou None (jamais vue → absente)
+            if wi is not None:
+                if float(vis[int(wi)]) > 1e-3:
+                    water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
+                    wx, wz = water
+                else:
+                    b = _bel(int(wi))
+                    if b is not None:
+                        water = b
+                        wx, wz = water
         elif (getattr(self.world_model, "with_slot", False) and "slot" in out
                 and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))

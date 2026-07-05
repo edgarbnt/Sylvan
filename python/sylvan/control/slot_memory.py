@@ -115,6 +115,64 @@ class SlotMemory:
         return list(self.belief)
 
 
+class MultiSlotMemory:
+    """Mémoire spatiale PAR RESSOURCE (K slots requêtés-couleur) — chantier 2026-07-04.
+
+    Résout le monde épars SANS comportement codé (sonde éclipse : 98-100% des replans aveugles
+    concernent une ressource DÉJÀ VUE dans l'épisode) : « retourner où j'ai vu » ÉMERGE de
+    mémoire + coût de survie existant. Pureté :
+    - re-ground quand visibility_k > eps (le slot voit SA couleur — perception propre) ;
+    - sinon dead-reckon par l'EgomotionHead (ego-motion APPRISE du proprio, gate F2 : +0.98/+1.00/+0.99) ;
+    - ÂGE par ressource, expire à max_age_steps — plafond GÉOMÉTRIQUE, pas tuné : dérive du
+      dead-reckoning ~0.2 m/100 pas (WM open-loop mesuré) vs rayon de capture 1.0 m → ~500 pas ;
+    - invalidate(k) à la CONSOMMATION (intéroception : le serveur voit SON drive sauter) —
+      l'item consommé respawn ailleurs, le souvenir est périmé.
+    """
+
+    def __init__(self, egomotion_head: "EgomotionHead", slot_encoder: "SelfSupervisedSlotHead",
+                 vis_eps: float = 1e-3, max_age_steps: int = 500) -> None:
+        self.egomotion_head = egomotion_head
+        self.slot_encoder = slot_encoder
+        self.vis_eps = vis_eps
+        self.max_age_steps = max_age_steps
+        self.n = int(getattr(slot_encoder, "n_resources", 1))
+        self.beliefs: list[list[float] | None] = [None] * self.n
+        self.ages: list[int] = [0] * self.n
+        self._prev_proprio: list[float] | None = None
+
+    def reset(self) -> None:
+        self.beliefs = [None] * self.n
+        self.ages = [0] * self.n
+        self._prev_proprio = None
+
+    def invalidate(self, k: int) -> None:
+        """Consommation de la ressource k (intéroception) → le souvenir est périmé (respawn)."""
+        if 0 <= k < self.n:
+            self.beliefs[k] = None
+            self.ages[k] = 0
+
+    @torch.no_grad()
+    def update(self, proprio: list[float], retina: list[float]) -> list[list[float] | None]:
+        """Un appel par tick Godot. Retourne [K] beliefs ego ([x_right, z_fwd] ou None)."""
+        if self._prev_proprio is not None:
+            dyaw, dfwd, dlat = self.egomotion_head.predict(self._prev_proprio)
+            for k in range(self.n):
+                if self.beliefs[k] is not None:
+                    self.beliefs[k] = transport_geom(self.beliefs[k], dyaw, dfwd, dlat)
+                    self.ages[k] += 1
+                    if self.ages[k] > self.max_age_steps:
+                        self.beliefs[k] = None          # dérive > rayon de capture → oublier
+        retina_t = torch.tensor(retina, dtype=torch.float32).reshape(-1)
+        vis = self.slot_encoder.visibility(retina_t)     # [K]
+        pos = self.slot_encoder.positions(retina_t)      # [K, 2]
+        for k in range(self.n):
+            if float(vis[k]) > self.vis_eps:
+                self.beliefs[k] = [float(pos[k, 0]), float(pos[k, 1])]
+                self.ages[k] = 0
+        self._prev_proprio = list(proprio)
+        return [list(b) if b is not None else None for b in self.beliefs]
+
+
 # ---------------------------------------------------------------------------
 # Self-check (TDD, pure Python, no Godot)
 # ---------------------------------------------------------------------------
@@ -221,6 +279,36 @@ def _run_selfcheck() -> None:
         print(f"  PASS : byte-identique sur toutes les clés {list(out_ref.keys())}")
     except ImportError as e:
         print(f"  SKIP (import WM indisponible : {e})")
+
+    # ── MultiSlotMemory (K=2) ──
+    print("[selfcheck] MultiSlotMemory (K=2)...")
+
+    class _FakeEnc2:
+        n_resources = 2
+        def __init__(self):
+            self.vis = [1.0, 1.0]
+        def visibility(self, retina):
+            return torch.tensor(self.vis)
+        def positions(self, retina):
+            return torch.tensor([[1.0, 2.0], [-3.0, 4.0]])
+
+    enc2 = _FakeEnc2()
+    mm = MultiSlotMemory(_FakeEgoHead(), enc2, max_age_steps=10)
+    b = mm.update(PROPRIO_FAKE, [0.0] * 144)
+    assert b[0] == [1.0, 2.0] and b[1] == [-3.0, 4.0], b            # (i) les 2 visibles → re-ground
+    enc2.vis = [1.0, 0.0]                                            # (ii) eau occluse
+    b1_prev = list(b[1])
+    b = mm.update(PROPRIO_FAKE, [0.0] * 144)
+    assert b[0] == [1.0, 2.0] and b[1] is not None and b[1] != b1_prev, b   # eau dead-reckonée
+    mm.invalidate(0)                                                 # (iii) consommation bouffe
+    assert mm.beliefs[0] is None
+    b = mm.update(PROPRIO_FAKE, [0.0] * 144)
+    assert b[0] == [1.0, 2.0], b                                     # re-seed dès re-visible
+    for _ in range(12):                                              # (iv) expiration d'âge
+        b = mm.update(PROPRIO_FAKE, [0.0] * 144)
+    assert b[1] is None, f"belief eau devrait avoir expiré (age>10), {b}"
+    assert b[0] == [1.0, 2.0]
+    print("  PASS : re-ground/dead-reckon par ressource, invalidate, expiration d'âge")
 
     print("\n[selfcheck] TOUS LES CAS PASSENT. SlotMemory opérationnel.")
 

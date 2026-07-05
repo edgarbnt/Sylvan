@@ -227,6 +227,23 @@ class _PlannerService:
             print("[planner-cmd] AVERTISSEMENT : --slot-memory demandé mais ignoré "
                   f"(egomotion_head={'OK' if egomotion_head_ckpt else 'MANQUANT'}, "
                   f"wm.with_slot={wm.with_slot})")
+        # MÉMOIRE SPATIALE MULTI-RESSOURCE (2026-07-04) — objet-permanence ENTRE les replans, PAR
+        # ressource. Émergent : « retourner où j'ai vu l'eau » = mémoire + coût existant, zéro
+        # comportement codé (sonde éclipse : 98-100% des replans aveugles = ressource déjà vue).
+        # Env SYLVAN_SLOT_MEMORY2=1 (A/B) ; requiert WM slot-2 + EgomotionHead (appris, pur, F2).
+        self.multi_memory = None
+        self._slots_belief: list[list[float] | None] | None = None
+        self._prev_drives: tuple[float, float] | None = None
+        if (os.environ.get("SYLVAN_SLOT_MEMORY2", "0") == "1"
+                and meta.get("slot_resources", 1) > 1):
+            from sylvan.models.egomotion_head import load_egomotion_head
+            from sylvan.control.slot_memory import MultiSlotMemory
+            _ego_path = egomotion_head_ckpt or Path("data/checkpoints/egomotion_head/best.pt")
+            self.multi_memory = MultiSlotMemory(load_egomotion_head(str(_ego_path)),
+                                                self.planner.world_model.slot_encoder)
+            print(f"[planner-cmd] MÉMOIRE SPATIALE MULTI (K={self.multi_memory.n}) active : "
+                  f"egomotion={Path(_ego_path).name}, max_age={self.multi_memory.max_age_steps} pas "
+                  f"(dérive dead-reckon ≈ rayon de capture)")
         self.hud_enable = os.environ.get("SYLVAN_HUD") == "1"
         self.hud_ts = 0
         self.hud_path = os.environ.get("SYLVAN_HUD_PATH", "data/hud/live.json")
@@ -314,6 +331,25 @@ class _PlannerService:
             # Quand slot_memory est None (défaut) : cette section est absente → non-régression totale.
             if self.slot_memory is not None and len(retina) > 0:
                 self._slot_belief = self.slot_memory.update(proprio, retina)
+            # MÉMOIRE MULTI-RESSOURCE : dead-reckon/re-ground par tick + INVALIDATION par
+            # INTÉROCEPTION — son propre drive qui SAUTE = il vient de consommer → l'item respawn
+            # ailleurs, le souvenir est périmé. Les deux qui sautent ensemble = respawn d'épisode.
+            if self.multi_memory is not None and len(retina) == RETINA_DIM:
+                energy_now = float(payload.get("energy", 100.0))
+                if self._prev_drives is not None:
+                    de = energy_now - self._prev_drives[0]
+                    dt_ = thirst - self._prev_drives[1]
+                    if de > 30.0 and dt_ > 30.0:
+                        self.multi_memory.reset()               # respawn (les 2 remontent d'un coup)
+                    else:
+                        if 5.0 < de < 45.0:
+                            self.multi_memory.invalidate(int(getattr(self.planner.world_model, "food_idx", 0) or 0))
+                        if 5.0 < dt_ < 45.0:
+                            wi = getattr(self.planner.world_model, "water_idx", None)
+                            if wi is not None:
+                                self.multi_memory.invalidate(int(wi))
+                self._prev_drives = (energy_now, thirst)
+                self._slots_belief = self.multi_memory.update(proprio, retina)
             # A1: localise food from the FINER radar when Godot sends it (±5° vs ±15°); the WM still
             # encodes the trained 12-sector radar. Smooth whichever radar drives localisation.
             loc = fine if fine else radar
@@ -391,6 +427,7 @@ class _PlannerService:
                         water_radar=self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
                         slot_belief=self._slot_belief,
+                        slots_belief=self._slots_belief,
                     )
                     self._cmd = plan_res["command"]
                     self._last_plan = plan_res
@@ -495,6 +532,10 @@ class _PlannerService:
             if self.slot_memory is not None:
                 self.slot_memory.reset()
                 self._slot_belief = None
+                if self.multi_memory is not None:
+                    self.multi_memory.reset()
+                    self._slots_belief = None
+                    self._prev_drives = None
             # BC LOGGER (Task 2) : rotation de fichier à chaque reset d'épisode.
             # Ferme l'épisode courant et ouvre le suivant → ep_0000.jsonl, ep_0001.jsonl, …
             if self._bc_log_dir is not None:
