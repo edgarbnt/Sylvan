@@ -269,6 +269,21 @@ class CommandPlanner:
             print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
                   f"drain={self.cfg.resource_drain} restore={self.cfg.resource_restore} "
                   f"cap={self.cfg.surv_horizon:.0f} margin_w={self.cfg.surv_margin_weight:.0f}")
+        # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
+        # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
+        # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
+        self._critic = None
+        _cp = os.environ.get("SYLVAN_PLANNER_CRITIC", "data/checkpoints/survival_critic/critic_best.pt")
+        if self.cfg.cost_mode == "critic":
+            from scripts.train_survival_critic import SurvivalCritic
+            _ck = torch.load(_cp, map_location="cpu", weights_only=False)
+            self._critic = SurvivalCritic()
+            self._critic.load_state_dict(_ck["state_dict"])
+            self._critic.eval()
+            for prm in self._critic.parameters():
+                prm.requires_grad_(False)
+            print(f"[planner-cmd] CRITIQUE APPRIS actif : {_cp} (AUC {_ck.get('auc'):.3f}, "
+                  f"non-sat {_ck.get('nonsat_ratio'):.2f}, swap {_ck.get('swap'):.2f}) — queue analytique remplacée")
         self.device = torch.device(device)
         self.world_model = world_model.to(self.device).eval()
         for p in self.world_model.parameters():
@@ -499,7 +514,9 @@ class CommandPlanner:
         wx, wz = water
         # COÛT SURVIE (gate B0) : actif si demandé ET bouffe visible (sans bouffe, pas d'alternance
         # simulable → on retombe sur le coût designed validé, qui pousse déjà vers l'eau/explore).
-        surv_mode = cfg.cost_mode == "survival" and has_food
+        surv_mode = cfg.cost_mode in ("survival", "critic") and has_food
+        critic_mode = cfg.cost_mode == "critic" and self._critic is not None and "slots" in out
+        lvl_traj: list[torch.Tensor] = []
         drive_alive = torch.ones(n, device=self.device)     # mort-des-drives PERSISTANTE (pas de résurrection)
         steps_alive = torch.zeros(n, device=self.device)
 
@@ -518,6 +535,8 @@ class CommandPlanner:
             if surv_mode:
                 drive_alive = drive_alive * ((e_lvl > 0.0) & (t_lvl > 0.0)).float()
                 steps_alive = steps_alive + drive_alive
+                if critic_mode:
+                    lvl_traj.append(torch.stack([e_lvl, t_lvl], dim=-1))   # [n, 2] par pas
             if has_food:
                 df = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
                 min_df = torch.minimum(min_df, df)
@@ -535,6 +554,33 @@ class CommandPlanner:
             align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
             survival_pen = survival_pen + alive * done_prob[:, t]
             alive = alive * (1.0 - done_prob[:, t])
+
+        if critic_mode and lvl_traj:
+            # ── CRITIQUE APPRIS (Phase B) : score = moyenne sur l'horizon de V(état rêvé), où
+            #    l'état rêvé = [niveaux simulés (drain/refill phase-1, dette analytique restante),
+            #    coords slots TRANSPORTÉES par le WM]. La queue alternance+drain codée-main DISPARAÎT
+            #    — le risque long-terme est ce que le critique a APPRIS de ses morts vécues.
+            lv = torch.stack(lvl_traj, dim=1)                       # [n, h, 2]
+            sl = out["slots"]                                       # [n, h, R, 2]
+            fi = int(getattr(self.world_model, "food_idx", 0) or 0)
+            wi_ = getattr(self.world_model, "water_idx", None)
+            wi_ = int(wi_) if wi_ is not None else fi
+            pos = torch.stack([sl[:, :, fi, :], sl[:, :, wi_, :]], dim=2)   # [n, h, 2, 2]
+            d = pos.norm(dim=-1).clamp(min=1e-6)                    # [n, h, 2]
+            toks = torch.stack([lv, (d.clamp(max=10.0)) / 10.0,
+                                pos[..., 0] / d, pos[..., 1] / d,
+                                torch.ones_like(d)], dim=-1)        # [n, h, 2, TOK=5]
+            with torch.no_grad():
+                vmap = self._critic.value(toks.reshape(-1, 2, toks.shape[-1])).reshape(lv.shape[0], lv.shape[1])
+            score = vmap.mean(dim=1) * (1.0 - survival_pen.clamp(0.0, 1.0))
+            best = int(torch.argmax(score).item())
+            vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            return {
+                "command": (vx, om), "food": (fx, fz), "water": (wx, wz),
+                "energy0": e0, "thirst0": t0,
+                "pred_min_food": float(min_df[best]), "pred_min_water": float(min_dw[best]),
+                "reason": "plan_multi_critic",
+            }
 
         if surv_mode:
             # ── COÛT SURVIE refill-aware (gate B0) : score = pas-vécus simulés (phase 1 WM + phase 2
