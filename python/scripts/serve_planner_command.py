@@ -108,6 +108,9 @@ def _plan_target_record(plan_res: dict) -> dict:
     imaginé RAPPROCHE le plus (closing = dist_t0 − pred_min_imaginée). 'none' si rien de décidable
     (mono-ressource, closings ~égaux, ou clés absentes)."""
     out: dict = {"target": "none", "reason": str(plan_res.get("reason", ""))}
+    if "order_scores" in plan_res:               # instrumentation committment (écarts d'ordre)
+        out["sf"], out["sw"] = (round(float(v), 1) for v in plan_res["order_scores"])
+        out["first"] = plan_res.get("first_target")
     food = plan_res.get("food")
     water = plan_res.get("water")
     pmf = plan_res.get("pred_min_food")

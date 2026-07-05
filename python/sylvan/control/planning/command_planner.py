@@ -551,6 +551,11 @@ class CommandPlanner:
                 "pred_min_water": float(min_dw[best]),
                 "pred_steps_alive": float(score[best]),
                 "reason": "plan_multi_surv",
+                # INSTRUMENTATION COMMITTMENT (2026-07-04, post-KILL incumbent) : les 2 scores
+                # d'ordre + le choix, loggés par le serveur → mesurer la VRAIE distribution des
+                # écarts/bruit près des égalités avant tout nouveau fix (le δ=75 était deviné).
+                "order_scores": [best_f, best_w],
+                "first_target": target_first,
             }
             if debug_scores:  # sondes offline (diag_survcost_omega_gradient) : score par candidat
                 out_d["scores"] = score.tolist()
