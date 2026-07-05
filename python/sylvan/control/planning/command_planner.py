@@ -566,10 +566,24 @@ class CommandPlanner:
             wi_ = getattr(self.world_model, "water_idx", None)
             wi_ = int(wi_) if wi_ is not None else fi
             pos = torch.stack([sl[:, :, fi, :], sl[:, :, wi_, :]], dim=2)   # [n, h, 2, 2]
+            # MÊME GATE 3-ÉTATS que la lecture slot-2 (bug v1 = trajectoires BRUTES → en épars,
+            # ressource hors-vue = fantôme ~10 m → le critique évaluait des états imaginaires →
+            # 0 repas/8 vies). VISIBLE → trajectoire rêvée ; ÉCLIPSÉE → souvenir (statique, approx) ;
+            # JAMAIS-VUE → token « connu=0 » — le critique s'est ENTRAÎNÉ avec ce cas.
+            known = torch.zeros(pos.shape[0], pos.shape[1], 2, device=pos.device)
+            for j, k in enumerate((fi, wi_)):
+                if float(vis[k]) > 1e-3:
+                    known[:, :, j] = 1.0
+                else:
+                    b = _bel(k)
+                    if b is not None:
+                        pos[:, :, j, 0] = b[0]
+                        pos[:, :, j, 1] = b[1]
+                        known[:, :, j] = 1.0
             d = pos.norm(dim=-1).clamp(min=1e-6)                    # [n, h, 2]
-            toks = torch.stack([lv, (d.clamp(max=10.0)) / 10.0,
-                                pos[..., 0] / d, pos[..., 1] / d,
-                                torch.ones_like(d)], dim=-1)        # [n, h, 2, TOK=5]
+            toks = torch.stack([lv, torch.where(known > 0.5, d.clamp(max=10.0) / 10.0, torch.ones_like(d)),
+                                pos[..., 0] / d * known, pos[..., 1] / d * known,
+                                known], dim=-1)                     # [n, h, 2, TOK=5]
             with torch.no_grad():
                 vmap = self._critic.value(toks.reshape(-1, 2, toks.shape[-1])).reshape(lv.shape[0], lv.shape[1])
             score = vmap.mean(dim=1) * (1.0 - survival_pen.clamp(0.0, 1.0))
