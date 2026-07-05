@@ -529,7 +529,7 @@ class CommandPlanner:
             # le bat de plus de δ = bruit de score induit par le jitter (~75 pas pour 1.5 m à
             # 0.02 m/pas ; calibration initiale, jugée par le gate abandons<15% sans perte de survie).
             best_f, best_w = float(s_food.max()), float(s_water.max())
-            delta = float(os.environ.get("SYLVAN_PLANNER_COMMIT_DELTA", "75.0"))
+            delta = float(os.environ.get("SYLVAN_PLANNER_COMMIT_DELTA", "0.0"))
             inc = getattr(self, "_incumbent_target", None)
             if inc == "food":
                 target_first = "food" if best_f >= best_w - delta else "water"
