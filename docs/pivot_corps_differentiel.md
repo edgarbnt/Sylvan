@@ -94,3 +94,21 @@ Smoke OK (compile, obéit : fwd_v = kin_speed×vx constant, glisse droit).
 **Verdict : pivot VALIDÉ** (le mur de portée far-food est cassé). Suite : (a) recollecte WM sur la dynamique
 cinématique (retire le décalage ~2.7× → devrait passer >60 % franc + fiabiliser) ; (b) brancher le loup
 (visuel) ; (c) reprendre la recette échafaudage→critique pour retirer le hint de la boucle finale.
+
+## 10. Recollecte WM sur dynamique cinématique (2026-07-06) — pipeline validé, recollecte NEUTRE
+Fait : collecte cinématique (`scripts/collect_wm_kinematic.sh`, kin_speed=0.5 kin_turn=1.5, 2×150 ép,
+fall_rate 0 %, dynamiques PROPRES : fwd linéaire en vx, yaw linéaire en ω, side-slip ~0) → train base WM
+(recette JEPA-pur `train_wm_jepa_pur.sh`, warm-start `wm_rich_fidele_sym_jepa`, 10 ép, val 0.810,
+displacement 0.0005 = appris nickel, eff_rank 15) → `build_slot_channel.py` (slot `slot_head_multi` réutilisé
+tel quel, la rétine est inchangée) → **`data/checkpoints/wm_objcentric_kin`** (obs 277, slot-2, food/water 0/1).
+
+**Re-gate far-food (énergie 80, 5-8 m, 12 ép, kin_speed=0.5 kin_turn=1.5) :**
+- matché + échafaudage = **6/12 (50 %)** ; matché SANS échafaudage = **0/12** (orbite → scaffold toujours requis).
+- vs WM décalé + échafaudage = 7/12 (58 %). **50 % ≈ 58 % = BRUIT (n=12).**
+
+**Conclusion honnête : la recollecte est NEUTRE.** Le décalage WM n'était PAS le facteur limitant (le WM matché
+navigue aussi bien, pas mieux). Le pipeline complet est validé de bout en bout. Le plafond ~50-58 % = la QUEUE
+LOINTAINE (7-8 m) au bord de l'enveloppe vitesse/énergie (kin_speed=0.5 → portée ~7 m) : les réussites sont
+≤6 m nettes, les 7-8 m ratent par portée. **Levier pour >60 % = corps PLUS RAPIDE (kin_speed↑ + recollecte),
+pas le WM.** Le gain-pivot cœur (far-food 0 %→~55 % à 5-8 m) tient. Checkpoints `wm_kin_base` +
+`wm_objcentric_kin` sur disque (NON promus vivants ; hexapode s2 reste le défaut).
