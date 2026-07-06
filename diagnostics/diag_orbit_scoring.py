@@ -72,7 +72,10 @@ def main() -> None:
     wm.eval()
     wm.food_idx = 0
     wm.water_idx = 1
-    planner = CommandPlanner(wm, CommandPlanConfig(horizon=80, cost_mode="survival"))
+    _H = int(os.environ.get("SYLVAN_DIAG_HORIZON", "80"))
+    planner = CommandPlanner(wm, CommandPlanConfig(horizon=_H, cost_mode="survival"))
+    print(f"[diag] horizon={_H} far_align={os.environ.get('SYLVAN_PLANNER_FAR_ALIGN','0')} "
+          f"gain={os.environ.get('SYLVAN_PLANNER_ALIGN_GAIN','?')} pivot={os.environ.get('SYLVAN_PLANNER_PIVOT','0')}")
 
     # VRAI proprio+retine (le reve du WM est irrealiste depuis une obs a zero) : on prend un etat
     # reel d'un buffer de foraging, on n'override QUE la position bouffe (le point qu'on teste).
@@ -94,8 +97,8 @@ def main() -> None:
     water = [0.0] * 36
     water[9] = 0.7            # eau ~2 m a droite
 
-    print(f"{'dist bouffe':>12}{'bearing':>9}{'omega choisi':>14}{'spread min_df':>15}"
-          f"{'corr(score,-min_df)':>21}{'corr(om1,vers-bouffe)':>22}")
+    print(f"{'dist bouffe':>12}{'bearing':>9}{'vx choisi':>11}{'omega choisi':>14}{'spread min_df':>15}"
+          f"{'mindf_best':>12}{'dfend_best':>12}{'corr(sc,-mdf)':>15}{'corr(om,food)':>15}")
     for dist in (3.0, 5.0, 7.0):
         for bearing_deg in (30.0, 90.0):      # bouffe a 30 deg (front-lat) et 90 deg (plein cote)
             b = math.radians(bearing_deg)
@@ -116,9 +119,13 @@ def main() -> None:
             spread = max(mindf) - min(mindf)
             c_score = _corr(scores, [-d for d in mindf])
             c_om = _corr(scores, toward)     # le score prefere-t-il tourner vers la bouffe ?
-            om_best = out["command"][1]
-            print(f"{dist:>12.1f}{bearing_deg:>9.0f}{om_best:>14.2f}{spread:>15.2f}"
-                  f"{c_score:>21.2f}{c_om:>22.2f}")
+            vx_best, om_best = out["command"][0], out["command"][1]
+            best_i = max(range(len(scores)), key=lambda i: scores[i])
+            dfend = out.get("df_end")
+            mindf_best = mindf[best_i]
+            dfend_best = dfend[best_i] if dfend else float("nan")
+            print(f"{dist:>12.1f}{bearing_deg:>9.0f}{vx_best:>11.2f}{om_best:>14.2f}{spread:>15.2f}"
+                  f"{mindf_best:>12.2f}{dfend_best:>12.2f}{c_score:>15.2f}{c_om:>15.2f}")
 
     print("\n(a) spread min_df ~0 a distance loin -> aucun candidat n'approche (horizon/candidats) ;")
     print("(b) spread grand mais corr(score,-min_df) faible -> agregation du score cassee a distance.")
