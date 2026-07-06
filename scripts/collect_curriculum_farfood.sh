@@ -25,8 +25,12 @@ OUT="data/replay_buffer/curric_${TARGET}_${TAG}"
 
 # pulsion DOMINANTE (loin + basse) vs NEUTRE (proche + rassasiee)
 if [[ "$TARGET" == "food" ]]; then
-  DRIVE_ENV=(SYLVAN_INIT_ENERGY=35 SYLVAN_INIT_THIRST=95 \
-             SYLVAN_FOOD_MIN_RADIUS=5.0 SYLVAN_FOOD_SPAWN_RADIUS=8.0 SYLVAN_FOOD_RESPAWN_MIN=5.0 SYLVAN_FOOD_RESPAWN_MAX=8.0 \
+  # INIT_ENERGY/FAR_MIN/FAR_SPAWN parametrables (defauts = curriculum d'origine). NOTE 2026-07-06 :
+  # le corps avance ~0.0043 m/pas (verite-terrain buffer WM) -> energie 35 (=~700 pas) plafonne la
+  # PORTEE a ~3 m -> bouffe a 5-8 m INATTEIGNABLE meme parfaite (test rigge). Budget equitable =
+  # INIT_ENERGY=80 (valeur monde reel) -> ~1600 pas -> portee ~7 m.
+  DRIVE_ENV=(SYLVAN_INIT_ENERGY=${INIT_ENERGY:-35} SYLVAN_INIT_THIRST=95 \
+             SYLVAN_FOOD_MIN_RADIUS=${FAR_MIN:-5.0} SYLVAN_FOOD_SPAWN_RADIUS=${FAR_SPAWN:-8.0} SYLVAN_FOOD_RESPAWN_MIN=${FAR_MIN:-5.0} SYLVAN_FOOD_RESPAWN_MAX=${FAR_SPAWN:-8.0} \
              SYLVAN_WATER_MIN_RADIUS=1.0 SYLVAN_WATER_SPAWN_RADIUS=2.5 SYLVAN_WATER_RESPAWN_MIN=1.0 SYLVAN_WATER_RESPAWN_MAX=2.5)
   EATCOL="Energy: ([\d.]+)"
 else
