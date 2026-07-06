@@ -662,9 +662,11 @@ class CommandPlanner:
                 "order_scores": [best_f, best_w],
                 "first_target": target_first,
             }
-            if debug_scores:  # sondes offline (diag_survcost_omega_gradient) : score par candidat
+            if debug_scores:  # sondes offline (diag_survcost_omega_gradient, diag_orbit_scoring) : par candidat
                 out_d["scores"] = score.tolist()
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
+                out_d["min_df"] = min_df.tolist()   # distance MIN a la bouffe atteinte dans le reve
+                out_d["df_end"] = df_end.tolist()   # distance a la bouffe en FIN de reve
             return out_d
 
         discomfort = _urg(e_lvl) + _urg(t_lvl)  # predicted future discomfort at horizon end
