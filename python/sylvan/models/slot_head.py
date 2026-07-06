@@ -93,11 +93,16 @@ class SelfSupervisedSlotHead(nn.Module):
             # BLEU (eau) PROCHE battait un rayon ROUGE (bouffe) LOIN via le prior −4/m·dist → le
             # slot-bouffe lisait la position de l'EAU (1.1 m au lieu de 6.0 m) → planner orbite un
             # fantôme en monde épars (bouffe-loin+eau-proche). Dense (bouffe proche) non affecté.
+            # Toggle SYLVAN_SLOT_HARD_MASK (défaut 1=fix) : 0 reproduit l'ancien masque MOU pour l'A/B
+            # de non-régression dense (le fix change aussi le dense multi-objet).
+            import os as _os
+            _hard = _os.environ.get("SYLVAN_SLOT_HARD_MASK", "1") != "0"
             NEG = -1e9
             a_list = []
             for k in range(self.n_resources):
                 logit = torch.log(sal * aff[..., k, :] * prox + 1e-8) - 4.0 * dist
-                logit = torch.where(aff[..., k, :] > 0.0, logit, torch.full_like(logit, NEG))
+                if _hard:
+                    logit = torch.where(aff[..., k, :] > 0.0, logit, torch.full_like(logit, NEG))
                 a_list.append(torch.softmax(logit, dim=-1))
         return dist, sal, a_list
 
