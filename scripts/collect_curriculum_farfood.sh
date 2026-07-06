@@ -46,7 +46,7 @@ echo "=== CURRICULUM TARGET=$TARGET tag=$TAG : ep=$NEP seed=$SEED port=$PORT (pu
 
 env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=${COST:-survival} SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_FAR_ALIGN=${FAR_ALIGN:-0} SYLVAN_PLANNER_ALIGN_GAIN=${ALIGN_GAIN:-1.0} \
+    SYLVAN_PLANNER_FAR_ALIGN=${FAR_ALIGN:-0} SYLVAN_PLANNER_ALIGN_GAIN=${ALIGN_GAIN:-1.0} SYLVAN_PLANNER_ALIGN_MODE=${ALIGN_MODE:-mean} \
     SYLVAN_BC_LOG="$OUT" \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \

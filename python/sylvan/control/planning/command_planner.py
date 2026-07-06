@@ -125,6 +125,11 @@ class CommandPlanConfig:
     # omega-injection retiré le 2026-07-06). SCAFFOLD : amorce le corpus de poursuites lointaines pour le
     # critique appris, puis RETIRÉ (SYLVAN_PLANNER_FAR_ALIGN=0). Env: SYLVAN_PLANNER_FAR_ALIGN, SYLVAN_PLANNER_ALIGN_GAIN.
     far_align: bool = False                # échafaudage OFF par défaut (boucle finale = pure)
+    # MODE du terme de cap (peaufinage efficacité 2026-07-06) : "mean" = cos-bearing MOYEN sur l'horizon
+    # (récompense « rester pointé » → SPIRALE de tracking, l'agent re-vise à chaque replan) ; "end" = cap
+    # moyen sur le DERNIER QUART de l'horizon (récompense « finir aligné+avancé » → favorise « tourne tôt puis
+    # COMMIT droit » vs la spirale). Env: SYLVAN_PLANNER_ALIGN_MODE=mean|end.
+    align_mode: str = "mean"
     align_gain: float = 60.0               # poids du terme de cap dans le score survie (unités ≈ pas ;
                                             # align_sum ∈ [−h, h], survie ∈ [0, cap] → ~60 tranche les ex-aequo far)
     # Candidats PIVOT (pur, élargit la recherche — doc §6) : virage SERRÉ court (vx=min bande, ω max) puis
@@ -290,6 +295,9 @@ class CommandPlanner:
         _ag = os.environ.get("SYLVAN_PLANNER_ALIGN_GAIN")
         if _ag not in (None, ""):
             self.cfg.align_gain = float(_ag)
+        _am = os.environ.get("SYLVAN_PLANNER_ALIGN_MODE")  # mean (défaut) | end (anti-spirale)
+        if _am not in (None, ""):
+            self.cfg.align_mode = _am
         _pv = os.environ.get("SYLVAN_PLANNER_PIVOT")  # candidats pivot in-band (pur)
         if _pv not in (None, ""):
             self.cfg.pivot = _pv not in ("0", "false", "False")
@@ -554,6 +562,9 @@ class CommandPlanner:
         align_sum = torch.zeros(n, device=self.device)
         align_f = torch.zeros(n, device=self.device)   # cap-vers-bouffe (échafaudage far-target, branche survie)
         align_w = torch.zeros(n, device=self.device)   # cap-vers-eau
+        align_f_late = torch.zeros(n, device=self.device)  # cap sur le DERNIER QUART (mode "end", anti-spirale)
+        align_w_late = torch.zeros(n, device=self.device)
+        late0 = int(0.75 * h)                            # seuil du dernier quart de l'horizon
         alive = torch.ones(n, device=self.device)
         survival_pen = torch.zeros(n, device=self.device)
         min_df = torch.full((n,), float("inf"), device=self.device)
@@ -595,6 +606,8 @@ class CommandPlanner:
                 gate_f = (df / cfg.heading_far_gate).clamp(max=1.0)
                 align_sum = align_sum + _urg(e_lvl) * cos_f * gate_f
                 align_f = align_f + _urg(e_lvl) * cos_f * gate_f
+                if t >= late0:
+                    align_f_late = align_f_late + _urg(e_lvl) * cos_f * gate_f
             dw = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
             min_dw = torch.minimum(min_dw, dw)
             reached_w = (dw < cfg.resource_reach).float()
@@ -603,6 +616,8 @@ class CommandPlanner:
             gate_w = (dw / cfg.heading_far_gate).clamp(max=1.0)
             align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
             align_w = align_w + _urg(t_lvl) * cos_w * gate_w
+            if t >= late0:
+                align_w_late = align_w_late + _urg(t_lvl) * cos_w * gate_w
             survival_pen = survival_pen + alive * done_prob[:, t]
             alive = alive * (1.0 - done_prob[:, t])
 
@@ -674,8 +689,17 @@ class CommandPlanner:
                 # ressource urgente (align_f/align_w = cos-bearing moyen, urgency-weighted, near-faded ∈ [−h,h]).
                 # Restaure un cap consistant hors-horizon → la replanification glissante accumule le beeline.
                 # Récompense l'OUTCOME (pointe-vers-bouffe), PAS l'ω brut. RETIRER (far_align=False) → boucle pure.
-                s_food = s_food + cfg.align_gain * align_f
-                s_water = s_water + cfg.align_gain * align_w
+                # MODE "end" (anti-spirale) : cap sur le DERNIER QUART seulement, re-échelonné (×h/n_late ≈ 4) pour
+                # garder la même plage que le sum-sur-l'horizon → favorise « tourne tôt puis COMMIT droit » (finit
+                # aligné+avancé) plutôt que la spirale de tracking que récompense le cap MOYEN.
+                if cfg.align_mode == "end":
+                    n_late = max(h - late0, 1)
+                    af = align_f_late * (h / n_late)
+                    aw = align_w_late * (h / n_late)
+                else:
+                    af, aw = align_f, align_w
+                s_food = s_food + cfg.align_gain * af
+                s_water = s_water + cfg.align_gain * aw
             # COMMITTMENT (chantier 2026-07-04 soir) : près des égalités, le jitter des slots
             # (p90 0.7-1.5 m/replan) ré-ordonne les 2 plans en transit SANS changement des drives
             # (24/27 abandons-en-vue → autre ressource, 26/27 sans croisement d'urgence) → flicker

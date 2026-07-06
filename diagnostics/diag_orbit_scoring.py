@@ -98,7 +98,7 @@ def main() -> None:
     water[9] = 0.7            # eau ~2 m a droite
 
     print(f"{'dist bouffe':>12}{'bearing':>9}{'vx choisi':>11}{'omega choisi':>14}{'spread min_df':>15}"
-          f"{'mindf_best':>12}{'dfend_best':>12}{'corr(sc,-mdf)':>15}{'corr(om,food)':>15}")
+          f"{'mindf_best':>12}{'dfend_best':>12}{'straight20':>11}{'corr(om,f)':>12}")
     for dist in (3.0, 5.0, 7.0):
         for bearing_deg in (30.0, 90.0):      # bouffe a 30 deg (front-lat) et 90 deg (plein cote)
             b = math.radians(bearing_deg)
@@ -124,8 +124,12 @@ def main() -> None:
             dfend = out.get("df_end")
             mindf_best = mindf[best_i]
             dfend_best = dfend[best_i] if dfend else float("nan")
+            # COMMIT vs SPIRALE : fraction de pas DROITS (|om|<0.2) du candidat choisi, sur les 20 premiers
+            # pas (ce qui sera EXÉCUTÉ avant le prochain replan) — commit droit = fraction haute, spirale = 0.
+            seq = planner._cmd_seqs[best_i]
+            straight20 = float((seq[:20, 1].abs() < 0.2).float().mean())
             print(f"{dist:>12.1f}{bearing_deg:>9.0f}{vx_best:>11.2f}{om_best:>14.2f}{spread:>15.2f}"
-                  f"{mindf_best:>12.2f}{dfend_best:>12.2f}{c_score:>15.2f}{c_om:>15.2f}")
+                  f"{mindf_best:>12.2f}{dfend_best:>12.2f}{straight20:>11.2f}{c_om:>12.2f}")
 
     print("\n(a) spread min_df ~0 a distance loin -> aucun candidat n'approche (horizon/candidats) ;")
     print("(b) spread grand mais corr(score,-min_df) faible -> agregation du score cassee a distance.")
