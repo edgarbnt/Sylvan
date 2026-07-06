@@ -112,3 +112,14 @@ LOINTAINE (7-8 m) au bord de l'enveloppe vitesse/énergie (kin_speed=0.5 → por
 ≤6 m nettes, les 7-8 m ratent par portée. **Levier pour >60 % = corps PLUS RAPIDE (kin_speed↑ + recollecte),
 pas le WM.** Le gain-pivot cœur (far-food 0 %→~55 % à 5-8 m) tient. Checkpoints `wm_kin_base` +
 `wm_objcentric_kin` sur disque (NON promus vivants ; hexapode s2 reste le défaut).
+
+## 11. CORPS PLUS RAPIDE — gate CASSÉ (2026-07-07), pivot COMPLET
+Levier vitesse testé (cheaper-first : gate direct avant recollecte, car le décalage WM est tolérable).
+Far-food 5-8 m énergie 80, 12 ép : **kin_speed=0.5 → 50 % ; 0.8 → 83 % ; 1.2 → 67 %** (trop rapide =
+dépassements). **`kin_speed=0.8` = sweet-spot.** Finalisé proprement : recollecte + retrain WM à 0.8
+(`wm_kin_base`/`wm_objcentric_kin` régénérés, val 0.809, displacement 0.0005) → re-gate MATCHÉ (WM 0.8 +
+corps 0.8) = **9/12 (75 %)**, survie 2400, 9 repas nets (les 3 ratés = queue 7-8 m). **GATE far-food ≥ 60 %
+CASSÉ. Pivot corps différentiel COMPLET** : far-food 0 % (hexapode) → **75 % (cinématique 0.8)** à 5-8 m.
+Constante du corps fixée : `kin_speed=0.8` (défaut sylvan_agent.gd + collect_wm_kinematic.sh), `kin_turn=1.5`.
+Reste (NON bloquant) : (b) brancher le loup ; (c) échafaudage→critique pour retirer le hint ; promotion
+multi-seed + non-régression dense avant de faire de `wm_objcentric_kin`+corps cinématique le DÉFAUT vivant.

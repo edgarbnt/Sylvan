@@ -97,7 +97,8 @@ var cpg_command := Vector2.ZERO   # (vx, omega) command, set per episode/segment
 # Locomotion = prérequis DONNÉ (pas apprise). Gate SYLVAN_KINEMATIC ; vitesse/rotation tunables.
 var kinematic_mode := false
 var kin_yaw := 0.0                 # cap intégré (rad)
-var kin_speed := 0.5               # m/s par unité vx (SYLVAN_KIN_SPEED ; ~régime hexapode à vx≈1)
+var kin_speed := 0.8               # m/s par unité vx (SYLVAN_KIN_SPEED ; sweet-spot far-food 83% à 5-8m,
+                                   # vs 0.5=50% / 1.2=67% overshoot). ~0.6 m/s à vx max = trot-run de loup.
 var kin_turn := 1.5                # rad/s par unité omega (SYLVAN_KIN_TURN ; ~86°/s à omega≈1)
 # Voluntary gait MODULATION (the body is NOT a prison): dynamic multipliers the brain (env now, the JEPA
 # planner / a policy later) sets to take big/small steps, run, or change knee bend — like an animal that
