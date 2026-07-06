@@ -265,6 +265,14 @@ func _update_heading() -> void:
 			var _res_gain := OS.get_environment("SYLVAN_RESIDUAL_GAIN").to_float()
 			agent_instance.enable_cpg(true, _res_gain)
 			agent_instance.set_cpg_command(_cmd_vx, _cmd_omega)
+			# KINEMATIC body (pivot corps différentiel, 2026-07-06): garde toute la plomberie commande/obs/WM
+			# (set_cpg_command, planner, samplers inchangés) mais remplace le moteur à pattes par un glissement
+			# cinématique (vx, omega). Locomotion = prérequis DONNÉ. Tunable SYLVAN_KIN_SPEED / SYLVAN_KIN_TURN.
+			if OS.get_environment("SYLVAN_KINEMATIC") == "1":
+				var _ks := OS.get_environment("SYLVAN_KIN_SPEED").to_float()
+				var _kt := OS.get_environment("SYLVAN_KIN_TURN").to_float()
+				agent_instance.enable_kinematic(true, _ks, _kt)
+				print("[Godot] KINEMATIC BODY | (vx,omega) glide, legs cosmetic | speed=%.2f turn=%.2f" % [agent_instance.kin_speed, agent_instance.kin_turn])
 			# FULLY-LEARNED mode (2026-06-14): bypass the CPG motor (policy outputs the 12 targets
 			# directly), but KEEP cpg_enabled=true so the command plumbing (sampling, obs, reward cmd)
 			# all keeps working. Only step_agent's motor application changes.

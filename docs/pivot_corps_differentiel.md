@@ -75,3 +75,22 @@ n'intéresse personne). Les revendications qui comptent (JEPA, planification, pu
   échouaient par plafond de vitesse) → le pivot dissout l'orbite.
 - Gate final : monde ÉPARS 1+1 survie médiane **> 1800** ; non-régression dense **≥ ~2735**.
 - Multi-seed avant toute promotion (dette de rigueur du projet).
+
+## 9. Gate mécanique PASSÉ (2026-07-06) — coeur cinématique implémenté + testé
+Implémenté : flag `SYLVAN_KINEMATIC` (2 fichiers, `sylvan_agent.gd` `_kinematic_step` + `main.gd` gate,
+défaut OFF = zéro régression). Le corps GLISSE l'assemblage entier rigidement à (vx, omega) via
+`PhysicsServer3D.body_set_state` (réutilise le placement de `reset_agent`), pattes gelées KINEMATIC en pose
+neutre → proprio 132 cohérente. Tunables `SYLVAN_KIN_SPEED` (m/s par vx) / `SYLVAN_KIN_TURN` (rad/s par omega).
+Smoke OK (compile, obéit : fwd_v = kin_speed×vx constant, glisse droit).
+
+**Gate far-food (énergie 80, bouffe 5-8 m — la plage qui échouait, 12 ep, kin_speed=0.5 kin_turn=0.53) :**
+- **KIN seul (sans échafaudage) = 0/12** → le corps SEUL ne dissout PAS l'orbite (c'est le SCORING du
+  planner, pas que le corps). L'échafaudage de cap reste nécessaire (→ remplacé par le critique, plan intact).
+- **KIN + échafaudage = 7/12 (58 %)**, survie 1900, repas NETS (min food_d 1.00-1.03 m). vs hexapode+échaf
+  qui plafonnait (3/10 à 5 m, **0/12 à 6 m**). Le corps rapide+obéissant apporte la **PORTÉE** far-food,
+  SANS recollecte WM (le WM hexapode décalé ~2.7× navigue quand même : l'échafaudage donne la direction,
+  le corps couvre le terrain). 58 % ≈ seuil 60 % (au bruit près, avant recollecte).
+
+**Verdict : pivot VALIDÉ** (le mur de portée far-food est cassé). Suite : (a) recollecte WM sur la dynamique
+cinématique (retire le décalage ~2.7× → devrait passer >60 % franc + fiabiliser) ; (b) brancher le loup
+(visuel) ; (c) reprendre la recette échafaudage→critique pour retirer le hint de la boucle finale.

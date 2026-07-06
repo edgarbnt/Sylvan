@@ -90,6 +90,15 @@ var latest_applied_action: Array[float] = []
 var gait_imitation := 1.0
 const GAIT_IMIT_SIGMA := 0.1
 var cpg_command := Vector2.ZERO   # (vx, omega) command, set per episode/segment by main.gd
+
+# KINEMATIC body (pivot corps différentiel, 2026-07-06) — court-circuite le CPG/pattes : le corps GLISSE
+# rigidement à (vx, omega) (roues invisibles). Les pattes restent gelées en pose neutre (statue qui glisse)
+# → proprio 132 cohérente (angles neutres, vitesses jointes nulles), tout le contrat obs/WM/torso préservé.
+# Locomotion = prérequis DONNÉ (pas apprise). Gate SYLVAN_KINEMATIC ; vitesse/rotation tunables.
+var kinematic_mode := false
+var kin_yaw := 0.0                 # cap intégré (rad)
+var kin_speed := 0.5               # m/s par unité vx (SYLVAN_KIN_SPEED ; ~régime hexapode à vx≈1)
+var kin_turn := 1.5                # rad/s par unité omega (SYLVAN_KIN_TURN ; ~86°/s à omega≈1)
 # Voluntary gait MODULATION (the body is NOT a prison): dynamic multipliers the brain (env now, the JEPA
 # planner / a policy later) sets to take big/small steps, run, or change knee bend — like an animal that
 # modulates its CPG, not a fixed clip. Steering-by-construction is INVARIANT to these (it lives in the
@@ -551,6 +560,15 @@ func reset_agent(position: Vector3, yaw: float = 0.0, impulse: Vector3 = Vector3
 		var body: RigidBody3D = bodies[b_name]
 		body.freeze = false
 
+	# KINEMATIC : re-geler tout le rig en mode KINEMATIC (piloté par transform, pas par la physique) →
+	# les pattes ne tombent plus / ne traînent plus, l'assemblage suit le glissement (vx, omega) du corps.
+	if kinematic_mode:
+		kin_yaw = yaw
+		for b_name in bodies:
+			var body: RigidBody3D = bodies[b_name]
+			body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+			body.freeze = true
+
 	if impulse.length_squared() > 0.0:
 		var torso: RigidBody3D = bodies["torso"]
 		torso.apply_central_impulse(impulse)
@@ -563,6 +581,13 @@ func apply_action(action: Array[float]) -> void:
 func enable_cpg(enabled: bool, res_gain: float) -> void:
 	cpg_enabled = enabled
 	residual_gain = clampf(res_gain, 0.0, 1.0)
+
+func enable_kinematic(enabled: bool, speed: float, turn: float) -> void:
+	kinematic_mode = enabled
+	if speed > 0.0:
+		kin_speed = speed
+	if turn > 0.0:
+		kin_turn = turn
 
 func set_cpg_command(vx: float, omega: float) -> void:
 	cpg_command = Vector2(vx, omega)
@@ -637,10 +662,59 @@ func _com_metrics() -> Vector2:
 	heading = heading.normalized()
 	return Vector2(com_vel.dot(heading), 0.5 * (tf.angular_velocity.y + tb.angular_velocity.y))
 
+func _kinematic_step(delta: float) -> void:
+	# Glisse l'assemblage entier rigidement à (vx, omega) — réutilise le placement de reset_agent
+	# (PhysicsServer3D.body_set_state + initial_transforms). Poses relatives FIGÉES (pose neutre) → la
+	# proprio 132 reste cohérente (angles neutres, vitesses jointes nulles), le WM voit une créature qui glisse.
+	var moving := reset_timer <= 0.0
+	if not moving:
+		reset_timer -= delta
+	else:
+		kin_yaw += kin_turn * cpg_command.y * delta
+	var yaw_basis := Basis(Vector3.UP, kin_yaw)
+	var forward := (yaw_basis * Vector3(0.0, 0.0, 1.0)).normalized()
+	var vel := (forward * (kin_speed * cpg_command.x)) if moving else Vector3.ZERO
+	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
+	if moving:
+		global_position += vel * delta
+	for b_name in bodies:
+		var body: RigidBody3D = bodies[b_name]
+		var base_transform: Transform3D = initial_transforms[body]
+		var t := Transform3D(yaw_basis * base_transform.basis, yaw_basis * base_transform.origin + global_position)
+		var rid = body.get_rid()
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, vel)
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, angvel)
+		body.global_transform = t
+		body.linear_velocity = vel
+		body.angular_velocity = angvel
+	# Bookkeeping (corps droit, toujours debout — pas de chute possible).
+	forward_velocity = kin_speed * cpg_command.x
+	center_height = bodies["torso"].global_position.y - global_position.y
+	uprightness_metric = 1.0
+	torso_tilt_metric = 0.0
+	forward_lean = 0.0
+	horizontal_speed_metric = Vector2(vel.x, vel.z).length()
+	ground_contact_ratio = 1.0
+	has_fallen = false
+	# Horloge de démarche COSMÉTIQUE (pilote l'anim du loup + les 2 dims proprio gait).
+	if moving:
+		var _cad := cpg_cadence_scale
+		if cpg_speed_cadence_k > 0.0:
+			_cad *= maxf(0.4, 1.0 + cpg_speed_cadence_k * (cpg_command.x / maxf(0.01, cpg_vx_ref) - 1.0))
+		gait_phase = fmod(gait_phase + delta * _cad / maxf(0.01, gait_cycle_period), 1.0)
+	_rebuild_proprioception()
+
 func step_agent(delta: float) -> void:
 	if filtered_action.size() != action_dim:
 		filtered_action.resize(action_dim)
 		filtered_action.fill(0.0)
+
+	# CORPS CINÉMATIQUE : court-circuite entièrement le CPG + PD + pattes. Le corps obéit exactement
+	# à (vx, omega). Le CPG (cpg_reference), le mix résidu et la boucle PD ci-dessous ne sont jamais atteints.
+	if kinematic_mode:
+		_kinematic_step(delta)
+		return
 
 	# Effective joint command: pure policy action, OR (CPG mode) the analytic CPG reference plus a small
 	# bounded policy residual. Either way it flows through the SAME LPF + compliant-PD law below.
