@@ -114,6 +114,30 @@ class CommandPlanConfig:
                                             # plans sûrs par leurs marges, principiel. À designer à tête reposée.
     surv_turn_rate: float = 0.015          # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ≈ 0.015-0.03
                                             # rad/pas à 30 Hz — prendre le bas = prudent). Env: SYLVAN_PLANNER_TURN_RATE
+    # === ÉCHAFAUDAGE DE DONNÉES far-target (2026-07-06, RETIRABLE — cf docs/orbite_far_target_pur.md) ===
+    # PROBLÈME : cible >5 m au-delà de l'horizon WM → dans le coût survie, tous les candidats survivent
+    # (score saturé au cap) → argmax pique ω MAX → pivote sans translater → ORBITE (mesuré diag_orbit_scoring :
+    # spread min_df <0.5 m, cause (a) : aucun candidat n'approche). FIX = ré-injecter dans le score survie le
+    # terme de CAP `align_sum` (DÉJÀ calculé mais inutilisé ici) : récompense la trajectoire RÊVÉE qui POINTE
+    # vers la ressource urgente (cos-bearing moyen, urgency-weighted, near-faded) → le candidat qui reoriente
+    # gagne, la replanification glissante accumule le beeline (doc §5). MÊME mécanisme que heading_weight
+    # (branche designed, validé A→B) — récompense l'OUTCOME (pointe-vers-bouffe), PAS l'ω brut (≠ le hack
+    # omega-injection retiré le 2026-07-06). SCAFFOLD : amorce le corpus de poursuites lointaines pour le
+    # critique appris, puis RETIRÉ (SYLVAN_PLANNER_FAR_ALIGN=0). Env: SYLVAN_PLANNER_FAR_ALIGN, SYLVAN_PLANNER_ALIGN_GAIN.
+    far_align: bool = False                # échafaudage OFF par défaut (boucle finale = pure)
+    # MODE du terme de cap (peaufinage efficacité 2026-07-06) : "mean" = cos-bearing MOYEN sur l'horizon
+    # (récompense « rester pointé » → SPIRALE de tracking, l'agent re-vise à chaque replan) ; "end" = cap
+    # moyen sur le DERNIER QUART de l'horizon (récompense « finir aligné+avancé » → favorise « tourne tôt puis
+    # COMMIT droit » vs la spirale). Env: SYLVAN_PLANNER_ALIGN_MODE=mean|end.
+    align_mode: str = "mean"
+    align_gain: float = 60.0               # poids du terme de cap dans le score survie (unités ≈ pas ;
+                                            # align_sum ∈ [−h, h], survie ∈ [0, cap] → ~60 tranche les ex-aequo far)
+    # Candidats PIVOT (pur, élargit la recherche — doc §6) : virage SERRÉ court (vx=min bande, ω max) puis
+    # cruise droit → reorient bref sans arc large, in-distribution (vx≈0 vrai-pivot serait HORS bande WM
+    # 0.55-0.75 → rêve non fiable, hors scope). Env: SYLVAN_PLANNER_PIVOT.
+    pivot: bool = False
+    pivot_splits: tuple[int, ...] = (15, 25)   # longueurs du segment de reorient bref
+    pivot_vx: float = 0.55                     # min de la bande babbling WM (le plus lent in-distribution)
 
 
 def food_xz_from_radar(radar: list[float] | torch.Tensor) -> tuple[float, float] | None:
@@ -265,6 +289,18 @@ class CommandPlanner:
         _tr = os.environ.get("SYLVAN_PLANNER_TURN_RATE")
         if _tr not in (None, ""):
             self.cfg.surv_turn_rate = float(_tr)
+        _fa = os.environ.get("SYLVAN_PLANNER_FAR_ALIGN")  # échafaudage de cap far-target (RETIRABLE)
+        if _fa not in (None, ""):
+            self.cfg.far_align = _fa not in ("0", "false", "False")
+        _ag = os.environ.get("SYLVAN_PLANNER_ALIGN_GAIN")
+        if _ag not in (None, ""):
+            self.cfg.align_gain = float(_ag)
+        _am = os.environ.get("SYLVAN_PLANNER_ALIGN_MODE")  # mean (défaut) | end (anti-spirale)
+        if _am not in (None, ""):
+            self.cfg.align_mode = _am
+        _pv = os.environ.get("SYLVAN_PLANNER_PIVOT")  # candidats pivot in-band (pur)
+        if _pv not in (None, ""):
+            self.cfg.pivot = _pv not in ("0", "false", "False")
         if self.cfg.cost_mode == "survival":
             print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
                   f"drain={self.cfg.resource_drain} restore={self.cfg.resource_restore} "
@@ -317,6 +353,15 @@ class CommandPlanner:
                                 continue
                             seen.add(key)
                             seqs.append([[vx1, om1]] * split + [[vx2, om2]] * (h - split))
+        # (c) PIVOT candidates (pur, doc §6) : virage SERRÉ court (vx=min bande, ω extrême) puis cruise
+        #     droit. Laisse la reorient s'exprimer à coût-translation minimal in-distribution → le beeline
+        #     émerge via la replanification glissante. Actif seulement si cfg.pivot (élargit la recherche).
+        if cfg.pivot:
+            for plen in cfg.pivot_splits:
+                if plen <= 0 or plen >= h:
+                    continue
+                for om1 in (-0.6, -0.45, 0.45, 0.6):
+                    seqs.append([[cfg.pivot_vx, om1]] * plen + [[0.7, 0.0]] * (h - plen))
         return torch.tensor(seqs, dtype=torch.float32, device=self.device)  # [N, H, 2]
 
     @torch.no_grad()
@@ -515,6 +560,11 @@ class CommandPlanner:
         z = torch.zeros(n, device=self.device)
         yaw = torch.zeros(n, device=self.device)
         align_sum = torch.zeros(n, device=self.device)
+        align_f = torch.zeros(n, device=self.device)   # cap-vers-bouffe (échafaudage far-target, branche survie)
+        align_w = torch.zeros(n, device=self.device)   # cap-vers-eau
+        align_f_late = torch.zeros(n, device=self.device)  # cap sur le DERNIER QUART (mode "end", anti-spirale)
+        align_w_late = torch.zeros(n, device=self.device)
+        late0 = int(0.75 * h)                            # seuil du dernier quart de l'horizon
         alive = torch.ones(n, device=self.device)
         survival_pen = torch.zeros(n, device=self.device)
         min_df = torch.full((n,), float("inf"), device=self.device)
@@ -555,6 +605,9 @@ class CommandPlanner:
                 cos_f = ((fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw)) / (df + 1e-6)
                 gate_f = (df / cfg.heading_far_gate).clamp(max=1.0)
                 align_sum = align_sum + _urg(e_lvl) * cos_f * gate_f
+                align_f = align_f + _urg(e_lvl) * cos_f * gate_f
+                if t >= late0:
+                    align_f_late = align_f_late + _urg(e_lvl) * cos_f * gate_f
             dw = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
             min_dw = torch.minimum(min_dw, dw)
             reached_w = (dw < cfg.resource_reach).float()
@@ -562,6 +615,9 @@ class CommandPlanner:
             cos_w = ((wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw)) / (dw + 1e-6)
             gate_w = (dw / cfg.heading_far_gate).clamp(max=1.0)
             align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
+            align_w = align_w + _urg(t_lvl) * cos_w * gate_w
+            if t >= late0:
+                align_w_late = align_w_late + _urg(t_lvl) * cos_w * gate_w
             survival_pen = survival_pen + alive * done_prob[:, t]
             alive = alive * (1.0 - done_prob[:, t])
 
@@ -627,6 +683,23 @@ class CommandPlanner:
             fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             s_food = s_food * fall
             s_water = s_water * fall
+            if cfg.far_align:
+                # ÉCHAFAUDAGE far-target (RETIRABLE, doc §5/§7) : quand la cible est LOIN, tous les candidats
+                # survivent (score saturé au cap) → départage vers celui dont la trajectoire RÊVÉE pointe la
+                # ressource urgente (align_f/align_w = cos-bearing moyen, urgency-weighted, near-faded ∈ [−h,h]).
+                # Restaure un cap consistant hors-horizon → la replanification glissante accumule le beeline.
+                # Récompense l'OUTCOME (pointe-vers-bouffe), PAS l'ω brut. RETIRER (far_align=False) → boucle pure.
+                # MODE "end" (anti-spirale) : cap sur le DERNIER QUART seulement, re-échelonné (×h/n_late ≈ 4) pour
+                # garder la même plage que le sum-sur-l'horizon → favorise « tourne tôt puis COMMIT droit » (finit
+                # aligné+avancé) plutôt que la spirale de tracking que récompense le cap MOYEN.
+                if cfg.align_mode == "end":
+                    n_late = max(h - late0, 1)
+                    af = align_f_late * (h / n_late)
+                    aw = align_w_late * (h / n_late)
+                else:
+                    af, aw = align_f, align_w
+                s_food = s_food + cfg.align_gain * af
+                s_water = s_water + cfg.align_gain * aw
             # COMMITTMENT (chantier 2026-07-04 soir) : près des égalités, le jitter des slots
             # (p90 0.7-1.5 m/replan) ré-ordonne les 2 plans en transit SANS changement des drives
             # (24/27 abandons-en-vue → autre ressource, 26/27 sans croisement d'urgence) → flicker
@@ -662,9 +735,11 @@ class CommandPlanner:
                 "order_scores": [best_f, best_w],
                 "first_target": target_first,
             }
-            if debug_scores:  # sondes offline (diag_survcost_omega_gradient) : score par candidat
+            if debug_scores:  # sondes offline (diag_survcost_omega_gradient, diag_orbit_scoring) : par candidat
                 out_d["scores"] = score.tolist()
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
+                out_d["min_df"] = min_df.tolist()   # distance MIN a la bouffe atteinte dans le reve
+                out_d["df_end"] = df_end.tolist()   # distance a la bouffe en FIN de reve
             return out_d
 
         discomfort = _urg(e_lvl) + _urg(t_lvl)  # predicted future discomfort at horizon end

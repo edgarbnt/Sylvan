@@ -90,6 +90,22 @@ var latest_applied_action: Array[float] = []
 var gait_imitation := 1.0
 const GAIT_IMIT_SIGMA := 0.1
 var cpg_command := Vector2.ZERO   # (vx, omega) command, set per episode/segment by main.gd
+
+# KINEMATIC body (pivot corps différentiel, 2026-07-06) — court-circuite le CPG/pattes : le corps GLISSE
+# rigidement à (vx, omega) (roues invisibles). Les pattes restent gelées en pose neutre (statue qui glisse)
+# → proprio 132 cohérente (angles neutres, vitesses jointes nulles), tout le contrat obs/WM/torso préservé.
+# Locomotion = prérequis DONNÉ (pas apprise). Gate SYLVAN_KINEMATIC ; vitesse/rotation tunables.
+var kinematic_mode := false
+var kin_yaw := 0.0                 # cap intégré (rad)
+var kin_speed := 0.8               # m/s par unité vx (SYLVAN_KIN_SPEED ; sweet-spot far-food 83% à 5-8m,
+                                   # vs 0.5=50% / 1.2=67% overshoot). ~0.6 m/s à vx max = trot-run de loup.
+var kin_turn := 1.5                # rad/s par unité omega (SYLVAN_KIN_TURN ; ~86°/s à omega≈1)
+# LOUP COSMÉTIQUE (SYLVAN_WOLF=1) : maillage GLB (Quaternius CC0) par-dessus le corps cinématique, animé
+# par la vitesse (Walk/Gallop ∝ vx, Idle à l'arrêt). Purement visuel — la locomotion reste le prérequis
+# cinématique DONNÉ dessous. Échelle/orientation via SYLVAN_WOLF_SCALE / _YAW / _Y. Off en headless.
+var wolf_loaded := false
+var wolf_anim: AnimationPlayer = null
+var wolf_cur_anim := ""
 # Voluntary gait MODULATION (the body is NOT a prison): dynamic multipliers the brain (env now, the JEPA
 # planner / a policy later) sets to take big/small steps, run, or change knee bend — like an animal that
 # modulates its CPG, not a fixed clip. Steering-by-construction is INVARIANT to these (it lives in the
@@ -551,6 +567,15 @@ func reset_agent(position: Vector3, yaw: float = 0.0, impulse: Vector3 = Vector3
 		var body: RigidBody3D = bodies[b_name]
 		body.freeze = false
 
+	# KINEMATIC : re-geler tout le rig en mode KINEMATIC (piloté par transform, pas par la physique) →
+	# les pattes ne tombent plus / ne traînent plus, l'assemblage suit le glissement (vx, omega) du corps.
+	if kinematic_mode:
+		kin_yaw = yaw
+		for b_name in bodies:
+			var body: RigidBody3D = bodies[b_name]
+			body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+			body.freeze = true
+
 	if impulse.length_squared() > 0.0:
 		var torso: RigidBody3D = bodies["torso"]
 		torso.apply_central_impulse(impulse)
@@ -563,6 +588,13 @@ func apply_action(action: Array[float]) -> void:
 func enable_cpg(enabled: bool, res_gain: float) -> void:
 	cpg_enabled = enabled
 	residual_gain = clampf(res_gain, 0.0, 1.0)
+
+func enable_kinematic(enabled: bool, speed: float, turn: float) -> void:
+	kinematic_mode = enabled
+	if speed > 0.0:
+		kin_speed = speed
+	if turn > 0.0:
+		kin_turn = turn
 
 func set_cpg_command(vx: float, omega: float) -> void:
 	cpg_command = Vector2(vx, omega)
@@ -637,10 +669,132 @@ func _com_metrics() -> Vector2:
 	heading = heading.normalized()
 	return Vector2(com_vel.dot(heading), 0.5 * (tf.angular_velocity.y + tb.angular_velocity.y))
 
+func _kinematic_step(delta: float) -> void:
+	# Glisse l'assemblage entier rigidement à (vx, omega) — réutilise le placement de reset_agent
+	# (PhysicsServer3D.body_set_state + initial_transforms). Poses relatives FIGÉES (pose neutre) → la
+	# proprio 132 reste cohérente (angles neutres, vitesses jointes nulles), le WM voit une créature qui glisse.
+	if not wolf_loaded and OS.get_environment("SYLVAN_WOLF") == "1":
+		_setup_wolf()
+	var moving := reset_timer <= 0.0
+	if not moving:
+		reset_timer -= delta
+	else:
+		kin_yaw += kin_turn * cpg_command.y * delta
+	var yaw_basis := Basis(Vector3.UP, kin_yaw)
+	var forward := (yaw_basis * Vector3(0.0, 0.0, 1.0)).normalized()
+	var vel := (forward * (kin_speed * cpg_command.x)) if moving else Vector3.ZERO
+	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
+	if moving:
+		global_position += vel * delta
+	for b_name in bodies:
+		var body: RigidBody3D = bodies[b_name]
+		var base_transform: Transform3D = initial_transforms[body]
+		var t := Transform3D(yaw_basis * base_transform.basis, yaw_basis * base_transform.origin + global_position)
+		var rid = body.get_rid()
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, vel)
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, angvel)
+		body.global_transform = t
+		body.linear_velocity = vel
+		body.angular_velocity = angvel
+	# Bookkeeping (corps droit, toujours debout — pas de chute possible).
+	forward_velocity = kin_speed * cpg_command.x
+	center_height = bodies["torso"].global_position.y - global_position.y
+	uprightness_metric = 1.0
+	torso_tilt_metric = 0.0
+	forward_lean = 0.0
+	horizontal_speed_metric = Vector2(vel.x, vel.z).length()
+	ground_contact_ratio = 1.0
+	has_fallen = false
+	# Horloge de démarche COSMÉTIQUE (pilote l'anim du loup + les 2 dims proprio gait).
+	if moving:
+		var _cad := cpg_cadence_scale
+		if cpg_speed_cadence_k > 0.0:
+			_cad *= maxf(0.4, 1.0 + cpg_speed_cadence_k * (cpg_command.x / maxf(0.01, cpg_vx_ref) - 1.0))
+		gait_phase = fmod(gait_phase + delta * _cad / maxf(0.01, gait_cycle_period), 1.0)
+	if wolf_anim != null:
+		_drive_wolf_anim(forward_velocity, moving)
+	_rebuild_proprioception()
+
+func _wolf_find_anim(kw: String) -> String:
+	# Trouve le nom d'anim contenant le mot-clé (le GLB expose "Walk" ET "AnimalArmature|Walk"…).
+	if wolf_anim == null:
+		return ""
+	for a in wolf_anim.get_animation_list():
+		if kw.to_lower() in String(a).to_lower():
+			return a
+	return ""
+
+func _setup_wolf() -> void:
+	wolf_loaded = true
+	if not bodies.has("torso"):
+		return
+	var scene = load("res://assets/wolf/wolf.glb")
+	if scene == null:
+		push_warning("[wolf] res://assets/wolf/wolf.glb introuvable / non importé")
+		return
+	var wolf: Node3D = scene.instantiate()
+	# Masque le maillage hexapode primitif (torse + pattes) — le loup le remplace visuellement.
+	for b_name in bodies:
+		for child in bodies[b_name].get_children():
+			if child is MeshInstance3D:
+				child.visible = false
+	# Attache le loup au TORSE → suit position + cap du corps cinématique automatiquement.
+	var torso: RigidBody3D = bodies["torso"]
+	var _s := OS.get_environment("SYLVAN_WOLF_SCALE"); var sc := _s.to_float() if _s != "" else 0.4
+	var _y := OS.get_environment("SYLVAN_WOLF_YAW");   var yw := _y.to_float() if _y != "" else 0.0
+	var _v := OS.get_environment("SYLVAN_WOLF_Y");     var yo := _v.to_float() if _v != "" else -0.30
+	var b := Basis(Vector3.UP, yw).scaled(Vector3(sc, sc, sc))
+	wolf.transform = Transform3D(b, Vector3(0.0, yo, 0.0))
+	torso.add_child(wolf)
+	# ÉCLAIRCIR le loup : teinte chaque matériau vers le blanc (SYLVAN_WOLF_LIGHTEN, 0=inchangé, 1=blanc).
+	# On duplique le matériau (pour ne pas modifier la ressource partagée) et on l'assigne en override.
+	var _li := OS.get_environment("SYLVAN_WOLF_LIGHTEN"); var lighten := _li.to_float() if _li != "" else 0.35
+	if lighten > 0.0:
+		for mi in wolf.find_children("*", "MeshInstance3D", true, false):
+			var mesh_res: Mesh = (mi as MeshInstance3D).mesh
+			if mesh_res == null:
+				continue
+			for si in range(mesh_res.get_surface_count()):
+				var mat = (mi as MeshInstance3D).get_active_material(si)
+				if mat is StandardMaterial3D:
+					var m2: StandardMaterial3D = mat.duplicate()
+					m2.albedo_color = (mat as StandardMaterial3D).albedo_color.lerp(Color.WHITE, lighten)
+					(mi as MeshInstance3D).set_surface_override_material(si, m2)
+	wolf_anim = wolf.find_child("AnimationPlayer", true, false)
+	if wolf_anim != null:
+		# Les anims glTF importées sont en loop=OFF par défaut → Walk jouait une fois puis se figeait.
+		# On boucle les anims CYCLIQUES (idle/walk/gallop) ; les one-shots (eat/death/attack) restent off.
+		for a in wolf_anim.get_animation_list():
+			var al := String(a).to_lower()
+			if "walk" in al or "gallop" in al or "idle" in al:
+				var anim := wolf_anim.get_animation(a)
+				if anim != null:
+					anim.loop_mode = Animation.LOOP_LINEAR
+		var idle := _wolf_find_anim("idle")
+		if idle != "":
+			wolf_anim.play(idle); wolf_cur_anim = idle
+	print("[wolf] chargé (scale=%.2f yaw=%.2f y=%.2f) | anims=%d" % [sc, yw, yo, wolf_anim.get_animation_list().size() if wolf_anim else 0])
+
+func _drive_wolf_anim(speed: float, moving: bool) -> void:
+	# Idle à l'arrêt, sinon Walk avec vitesse d'anim ∝ vitesse du corps (le pas suit l'allure).
+	var want := _wolf_find_anim("idle") if (not moving or absf(speed) < 0.05) else _wolf_find_anim("walk")
+	if want == "":
+		return
+	if want != wolf_cur_anim:
+		wolf_anim.play(want); wolf_cur_anim = want
+	wolf_anim.speed_scale = 1.0 if want.to_lower().contains("idle") else clampf(absf(speed) / 0.4, 0.6, 2.0)
+
 func step_agent(delta: float) -> void:
 	if filtered_action.size() != action_dim:
 		filtered_action.resize(action_dim)
 		filtered_action.fill(0.0)
+
+	# CORPS CINÉMATIQUE : court-circuite entièrement le CPG + PD + pattes. Le corps obéit exactement
+	# à (vx, omega). Le CPG (cpg_reference), le mix résidu et la boucle PD ci-dessous ne sont jamais atteints.
+	if kinematic_mode:
+		_kinematic_step(delta)
+		return
 
 	# Effective joint command: pure policy action, OR (CPG mode) the analytic CPG reference plus a small
 	# bounded policy residual. Either way it flows through the SAME LPF + compliant-PD law below.

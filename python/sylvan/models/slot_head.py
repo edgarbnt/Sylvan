@@ -88,8 +88,22 @@ class SelfSupervisedSlotHead(nn.Module):
             # = argmin-souple « le plus proche de ma couleur » ≈ plancher capteur (0.46-0.68 m). Même
             # leçon que slot_calib : c'est une GÉOMÉTRIE, pas une quantité à fitter. Prior de distance
             # −2/m = départage nearest-vs-centroïde (Δ2 m → e⁴≈55×). Zéro paramètre, zéro entraînement.
-            a_list = [torch.softmax(torch.log(sal * aff[..., k, :] * prox + 1e-8) - 4.0 * dist, dim=-1)
-                      for k in range(self.n_resources)]
+            # MASQUE COULEUR DUR (fix 2026-07-06) : les rayons de MAUVAISE couleur (aff==0) sont
+            # EXCLUS du softmax (logit −inf), pas juste log(1e-8)=−18. Bug mesuré : sans ça, un rayon
+            # BLEU (eau) PROCHE battait un rayon ROUGE (bouffe) LOIN via le prior −4/m·dist → le
+            # slot-bouffe lisait la position de l'EAU (1.1 m au lieu de 6.0 m) → planner orbite un
+            # fantôme en monde épars (bouffe-loin+eau-proche). Dense (bouffe proche) non affecté.
+            # Toggle SYLVAN_SLOT_HARD_MASK (défaut 1=fix) : 0 reproduit l'ancien masque MOU pour l'A/B
+            # de non-régression dense (le fix change aussi le dense multi-objet).
+            import os as _os
+            _hard = _os.environ.get("SYLVAN_SLOT_HARD_MASK", "1") != "0"
+            NEG = -1e9
+            a_list = []
+            for k in range(self.n_resources):
+                logit = torch.log(sal * aff[..., k, :] * prox + 1e-8) - 4.0 * dist
+                if _hard:
+                    logit = torch.where(aff[..., k, :] > 0.0, logit, torch.full_like(logit, NEG))
+                a_list.append(torch.softmax(logit, dim=-1))
         return dist, sal, a_list
 
     def positions(self, retina: torch.Tensor) -> torch.Tensor:

@@ -6,7 +6,7 @@
   <img src="assets/forage_sim.gif" width="640" alt="The 3D agent foraging in the simulation: perceiving food/water and juggling hunger & thirst to survive."/>
 </p>
 
-<p align="center"><i>The real simulation: a six-legged agent perceives resources (red = food, blue = water) and arbitrates two competing drives to stay alive.</i></p>
+<p align="center"><i>The real simulation: the agent perceives resources (red = food, blue = water) and arbitrates two competing drives to stay alive.</i></p>
 
 ---
 
@@ -78,9 +78,9 @@ A key detail: the world-model stays **self-supervised** and reward-free, it's th
 
 ## Sylvan: a concrete, embodied instantiation
 
-Sylvan takes those ideas and makes them **run** on a physical body, on a laptop CPU. It is a six-legged creature in a physics simulation (Godot + PyTorch) that must keep **hunger and thirst** above zero by finding food (red) and water (blue).
+Sylvan takes those ideas and makes them **run** on a physical body, on a laptop CPU. It is a creature in a physics simulation (Godot + PyTorch) that must keep **hunger and thirst** above zero by finding food (red) and water (blue).
 
-The design separates **what to do** (learned, body-agnostic) from **how to move the limbs** (body-specific), with a compact 2-D **command** `(v, ω)` = *(forward speed, turn rate)* as the interface between them.
+The design separates **what to do** (learned, body-agnostic) from **how to move** (a given prerequisite), with a compact 2-D **command** `(v, ω)` = *(forward speed, turn rate)* as the interface between them. Locomotion is deliberately out of scope (a prerequisite, not the research): the body obeys `(v, ω)` kinematically, which keeps the substrate clean and lets the whole `(v, ω)` cognitive stack stay body-agnostic.
 
 ```mermaid
 flowchart TB
@@ -92,9 +92,9 @@ flowchart TB
         P["learned retina<br/>(red=food, blue=water)"]
         I["imagines futures in<br/>latent space + object slot"]
     end
-    subgraph BODY["① BODY, hexapod (the 'how to move')"]
-        CPG["hand-coded CPG<br/>(tripod gait: walks + turns by construction)"]
-        RES["bounded PPO residual<br/>(balance + propulsion while turning)"]
+    subgraph BODY["① BODY (the 'how to move', a given prerequisite)"]
+        KIN["differential-drive core<br/>obeys (v, ω) exactly (kinematic)"]
+        SKIN["creature skin<br/>(cosmetic, speed-driven animation)"]
     end
     BRAIN -- "(v, ω)" --> WM
     WM --> BODY
@@ -108,7 +108,7 @@ flowchart TB
 | Actor, Mode 1 & Mode 2 | **Mode 2** = a receding-horizon planner that dreams `(v,ω)` rollouts through the world-model; **Mode 1** = a fast **drive-symmetric** reactive policy |
 | Mode 2 → Mode 1 consolidation | the reflex is trained to **imitate** the planner (behavioral cloning) |
 
-**① Body.** A hexapod whose gait is a **hand-coded CPG** (walks and steers *by construction*), corrected by a **small bounded PPO residual** for balance and speed. Turning is kinematics, not a reward gradient, which sidesteps the classic "the turn freezes" failure of end-to-end legged RL. *(≈ 3× the speed of the earlier quadruped, 0 % falls.)*
+**① Body.** Locomotion is a **given kinematic prerequisite**: the body obeys the `(v, ω)` command exactly (a differential-drive core, stable, able to turn in place), so far-target navigation is not a bottleneck (far resources at 5 to 8 m are reached about 75 % of the time). It is cosmetically skinned as a low-poly creature whose walk animation is driven by its speed. Keeping the legs out of the control loop is deliberate: locomotion is a means, not the object of study, and abstracting it keeps the substrate clean for the cognition above.
 
 **② World-model.** Trained **self-supervised by prediction in latent space**, the slow, general substrate. It perceives through a **learned retina** (color-gated depth rays; no oracle) and can **imagine** how the world evolves under a command. It stays **frozen and task-agnostic**: the reward never touches it.
 
@@ -137,7 +137,7 @@ Each honest negative *shaped* the architecture, and each is a commit with the pr
 
 ## Status
 
-- **Body**: hexapod walks/turns, banked.
+- **Body & locomotion**: a given kinematic prerequisite. The body obeys `(v, ω)` exactly and reaches far resources (5 to 8 m) about 75 % of the time. Cosmetically skinned as a low-poly wolf, animated by its speed.
 - **Perception**: both resources located by the world-model's own learned slots (color-queried, label-free); the last perception oracle (a water radar) was removed. A per-resource spatial memory gives object permanence across replans (dead-reckoned by a learned ego-motion head).
 - **Mode 2 (deliberation)**: plans in the world-model over slot coordinates and scores candidates by simulated survival (drain, refill on contact, both visit orders). Zero tuned weights on this path. Multi-drive record: median survival 2735 to 2820 (dense world), off the no-consumption floor in the sparse world.
 - **Current frontier**: replacing the remaining hand-coded survival simulation with a **critic learned from lived episodes** (LeCun's trainable critic). It passes every offline gate but hits an imitation ceiling in closed loop: its corpus of 142 lives, all lived by the analytic planner, lacks the far-pursuit successes it would need to learn. The next step is therefore the **day/night consolidation cycle** (live by day, retrain the critic and re-distill the reflex by night), which is also the missing continual-learning stage of the blueprint. See `docs/audit_lecun_2026-07-06.md` for the full purity audit against the blueprint.
@@ -148,12 +148,13 @@ A **research prototype**, meant to *investigate* emergent embodied cognition, it
 
 - **"JEPA" here is *functional*, not doctrinaire**: the world-model was de-collapsed and shifted toward latent-space prediction (VICReg + a latent loss), but it is not a strict JEPA. The property that matters, a self-supervised, frozen substrate, is preserved.
 - The current multi-drive planner still tracks the **drive levels analytically** (a hand-coded piece). The pure version, a **learned drive-dynamics head** on the latent, is a *named* debt on the roadmap, not swept under the rug.
+- **Locomotion is given, not learned**: the body's motion is a kinematic `(v, ω)` prerequisite and the creature skin is cosmetic. No claim is made of an emergent legged gait; the research is entirely upstream (perception, world-model, planning, drives).
 
 ## Repository layout
 
 ```
-godot/        # physics + environment (Godot 4, Jolt): hexapod body, drives, resources
-python/sylvan/  # the brain, models/ (world-model, retina, value/slot heads) + control/ (CPG+residual, PPO, planner, Mode-1 policy)
+godot/        # physics + environment (Godot 4, Jolt): kinematic body + creature asset, drives, resources
+python/sylvan/  # the brain, models/ (world-model, retina, value/slot heads) + control/ (locomotion, planner, Mode-1 policy)
 diagnostics/  # the free, falsifiable probes (diag_*.py) that gate every run
 scripts/      # run / train / evaluate scripts
 docs/         # design docs (the "why" behind each decision) + the blueprint
