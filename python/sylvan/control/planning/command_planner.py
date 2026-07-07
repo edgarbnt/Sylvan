@@ -309,7 +309,7 @@ class CommandPlanner:
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
         self._critic = None
-        _cp = os.environ.get("SYLVAN_PLANNER_CRITIC", "data/checkpoints/survival_critic/critic_best.pt")
+        _cp = os.environ.get("SYLVAN_PLANNER_CRITIC", "data/checkpoints/survival_critic_kin/critic_best.pt")
         if self.cfg.cost_mode == "critic":
             from scripts.train_survival_critic import SurvivalCritic
             _ck = torch.load(_cp, map_location="cpu", weights_only=False)
