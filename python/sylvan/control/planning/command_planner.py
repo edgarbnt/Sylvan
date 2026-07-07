@@ -547,6 +547,10 @@ class CommandPlanner:
             if wi is not None and (float(vis[int(wi)]) > 1e-3 or _bel(int(wi)) is not None):
                 water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
                 wx, wz = water
+            elif os.environ.get("SYLVAN_SYM_WATER") == "1":
+                # NIVEAU 1 (pureté symétrique) : l'eau hors-vue devient None comme la bouffe (plus de
+                # béquille "garder la dernière position"). has_water gère son absence, symétrique à has_food.
+                water = None
         elif (getattr(self.world_model, "with_slot", False) and "slot" in out
                 and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
@@ -570,11 +574,12 @@ class CommandPlanner:
         min_df = torch.full((n,), float("inf"), device=self.device)
         min_dw = torch.full((n,), float("inf"), device=self.device)
         has_food = food is not None
+        has_water = water is not None                       # NIVEAU 1 : l'eau peut être absente, symétrique à la bouffe
         fx, fz = food if has_food else (0.0, 0.0)
-        wx, wz = water
-        # COÛT SURVIE (gate B0) : actif si demandé ET bouffe visible (sans bouffe, pas d'alternance
-        # simulable → on retombe sur le coût designed validé, qui pousse déjà vers l'eau/explore).
-        surv_mode = cfg.cost_mode in ("survival", "critic") and has_food
+        wx, wz = water if has_water else (0.0, 0.0)
+        # COÛT SURVIE (gate B0) : actif si demandé ET les DEUX ressources visibles (l'alternance food↔eau
+        # simulée exige les deux ; sinon → coût designed, qui gère l'absence via has_food/has_water).
+        surv_mode = cfg.cost_mode in ("survival", "critic") and has_food and has_water
         critic_mode = cfg.cost_mode == "critic" and self._critic is not None and "slots" in out
         lvl_traj: list[torch.Tensor] = []
         drive_alive = torch.ones(n, device=self.device)     # mort-des-drives PERSISTANTE (pas de résurrection)
@@ -608,16 +613,17 @@ class CommandPlanner:
                 align_f = align_f + _urg(e_lvl) * cos_f * gate_f
                 if t >= late0:
                     align_f_late = align_f_late + _urg(e_lvl) * cos_f * gate_f
-            dw = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
-            min_dw = torch.minimum(min_dw, dw)
-            reached_w = (dw < cfg.resource_reach).float()
-            t_lvl = (t_lvl + reached_w * cfg.resource_restore).clamp(max=1.0)
-            cos_w = ((wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw)) / (dw + 1e-6)
-            gate_w = (dw / cfg.heading_far_gate).clamp(max=1.0)
-            align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
-            align_w = align_w + _urg(t_lvl) * cos_w * gate_w
-            if t >= late0:
-                align_w_late = align_w_late + _urg(t_lvl) * cos_w * gate_w
+            if has_water:                                # eau absente → pas de refill/attraction (la soif draine → mort)
+                dw = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+                min_dw = torch.minimum(min_dw, dw)
+                reached_w = (dw < cfg.resource_reach).float()
+                t_lvl = (t_lvl + reached_w * cfg.resource_restore).clamp(max=1.0)
+                cos_w = ((wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw)) / (dw + 1e-6)
+                gate_w = (dw / cfg.heading_far_gate).clamp(max=1.0)
+                align_sum = align_sum + _urg(t_lvl) * cos_w * gate_w
+                align_w = align_w + _urg(t_lvl) * cos_w * gate_w
+                if t >= late0:
+                    align_w_late = align_w_late + _urg(t_lvl) * cos_w * gate_w
             survival_pen = survival_pen + alive * done_prob[:, t]
             alive = alive * (1.0 - done_prob[:, t])
 
@@ -748,17 +754,19 @@ class CommandPlanner:
         # right-turn side too), while a satisfied resource (urg→0) stops attracting. Keeps arbitration emergent.
         ue0 = (1.0 - max(0.0, min(1.0, e0))) ** cfg.urgency_exp
         ut0 = (1.0 - max(0.0, min(1.0, t0))) ** cfg.urgency_exp
-        attract = ut0 * min_dw + (ue0 * min_df if has_food else 0.0)
+        attract = (ut0 * min_dw if has_water else 0.0) + (ue0 * min_df if has_food else 0.0)
         # FORESIGHT de survie consciente du TRAJET (anti-myopie, défaut OFF). Pour chaque ressource : de combien le
         # niveau passerait SOUS zéro le temps de l'atteindre depuis la position imaginée en fin de rollout
         # (deficit = relu(dist/vitesse × drain − niveau_fin), en unités de niveau). Pénalise les candidats qui laissent
         # une ressource devenir fatalement inatteignable → l'agent y va AU BON MOMENT (tôt si loin). 0 → inchangé.
         if cfg.survival_weight != 0.0:
             spd = max(cfg.nominal_speed, 1e-4)
-            df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
-            dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
-            deficit = torch.relu(dw_end / spd * cfg.resource_drain - t_lvl)
+            deficit = torch.zeros(n, device=self.device)
+            if has_water:
+                dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+                deficit = deficit + torch.relu(dw_end / spd * cfg.resource_drain - t_lvl)
             if has_food:
+                df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
                 deficit = deficit + torch.relu(df_end / spd * cfg.resource_drain - e_lvl)
             survival_def = cfg.survival_weight * deficit
         else:
@@ -775,11 +783,11 @@ class CommandPlanner:
         out_d = {
             "command": (vx, om),
             "food": (fx, fz) if has_food else None,
-            "water": (wx, wz),
+            "water": (wx, wz) if has_water else None,
             "energy0": e0,
             "thirst0": t0,
             "pred_min_food": float(min_df[best]) if has_food else None,
-            "pred_min_water": float(min_dw[best]),
+            "pred_min_water": float(min_dw[best]) if has_water else None,
             "reason": "plan_multi",
         }
         if debug_scores:
