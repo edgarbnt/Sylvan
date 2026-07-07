@@ -1,8 +1,9 @@
 #!/bin/zsh
 # BOUCLE 100% PURE (validée 2026-07-07) : corps cinématique + WM object-centric + VALEUR APPRISE
-# (le critique remplace la queue analytique) + perception SYMÉTRIQUE food/eau (SYLVAN_SYM_WATER, le
-# hack "garder la dernière position d'eau" est retiré) + ZÉRO échafaudage de cap. La décision est
-# 100% apprise/sans-oracle (readout géométrique du slot mis à part). Forage épars 1+1.
+# (le critique remplace la queue analytique) + perception SYMÉTRIQUE food/eau (le hack "garder la
+# dernière position d'eau" est retiré du code, plus de flag — l'eau se comporte comme la bouffe
+# partout dans le codebase) + ZÉRO échafaudage de cap. La décision est 100% apprise/sans-oracle
+# (readout géométrique du slot mis à part). Forage épars 1+1.
 # Résultat validé : forage équilibré (repas ~7-14 vs 2 avec le hack eau ; > échafaudage 8), dense = max.
 # Usage: [SEED=5 NEP=12] bash scripts/run_forage_critic_pure.sh
 set +e
@@ -14,10 +15,10 @@ export GODOT_BIN="$(pwd)/tools/godot/godot"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 echo "=== BOUCLE PURE : critique appris + eau symétrique + sans échafaudage (épars 1+1, seed $SEED) ==="
 
-# Serveur : COÛT CRITIQUE (valeur apprise) + échafaudage OFF + eau symétrique.
+# Serveur : COÛT CRITIQUE (valeur apprise) + échafaudage OFF (perception food/eau symétrique = défaut).
 env SYLVAN_PLANNER_COST=critic SYLVAN_PLANNER_CRITIC="$CRITIC" \
     SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_FAR_ALIGN=0 SYLVAN_SYM_WATER=1 \
+    SYLVAN_PLANNER_FAR_ALIGN=0 \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
     --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/pure_srv.log 2>&1 &

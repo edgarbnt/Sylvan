@@ -1,8 +1,9 @@
 #!/bin/zsh
 # VOIR le forager CINÉMATIQUE (pivot corps différentiel) dans une FENÊTRE (temps réel).
 # Le corps glisse en (vx, omega) via le cœur cinématique (SYLVAN_KINEMATIC), le planner WM le pilote
-# vers bouffe/eau. Maillage = hexapode actuel (pattes figées, loup pas encore câblé). Ferme la fenêtre
-# pour arrêter (serveur tué automatiquement). Usage: bash scripts/voir_kinematic.sh
+# vers bouffe/eau via le CRITIQUE APPRIS (boucle pure vivante, cf run_forage_critic_pure.sh). Maillage
+# = loup cosmétique (SYLVAN_WOLF=1). Ferme la fenêtre pour arrêter (serveur tué automatiquement).
+# Usage: bash scripts/voir_kinematic.sh
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
@@ -10,9 +11,9 @@ export GODOT_BIN="$(pwd)/tools/godot/godot"
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
 PORT=${PORT:-6191}
 
-env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
-    SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_FAR_ALIGN=1 SYLVAN_PLANNER_ALIGN_GAIN=60 \
+env SYLVAN_PLANNER_COST=critic SYLVAN_PLANNER_CRITIC=data/checkpoints/survival_critic_kin/critic_best.pt \
+    SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
+    SYLVAN_PLANNER_FAR_ALIGN=0 \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
     --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/voir_kin_srv.log 2>&1 &

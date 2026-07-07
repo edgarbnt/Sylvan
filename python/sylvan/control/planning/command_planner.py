@@ -526,16 +526,18 @@ class CommandPlanner:
             # SLOT-2 (chantier pureté 2026-07-04) : bouffe ET eau lues du WM (slots requêtés-couleur)
             # → l'EAU QUITTE l'oracle radar-EMA. food/water_idx = assignation label-free du ckpt slot.
             # GATE DE VISIBILITÉ (leçon 1+1 : ressource hors de vue → le readout géométrique sortait un
-            # fantôme ~10 m direction-bruit → replans poubelle). Invisible = ABSENTE (pas hallucinée) :
-            # bouffe → None (le coût gère has_food=False) ; eau → garde l'EMA de CE replan (transitoire
-            # flaggé — le vrai comportement « ressource hors de vue » = CHERCHER, prochaine feature).
+            # fantôme ~10 m direction-bruit → replans poubelle). Invisible = ABSENTE (pas hallucinée),
+            # SYMÉTRIQUE entre bouffe et eau (2026-07-07 : l'ancienne béquille "eau garde sa dernière
+            # position, jamais None" est retirée — has_water gère son absence exactement comme has_food ;
+            # A/B a montré qu'elle nuisait aux deux chemins vivants, survival +29% / critic +7x repas
+            # sans elle). Le vrai comportement « ressource hors de vue » = CHERCHER, prochaine feature.
             fi = int(getattr(self.world_model, "food_idx", 0) or 0)
             wi = getattr(self.world_model, "water_idx", None)
             vis = _vis
             # Gate 3 états (mémoire spatiale 2026-07-04) : VISIBLE = lecture fraîche ;
             # ÉCLIPSÉE = souvenir dead-reckoné (MultiSlotMemory, ego-motion apprise — l'objet-
             # permanence ENTRE les replans, « retourner où j'ai vu » émerge du coût existant) ;
-            # JAMAIS-VUE = absente (bouffe) / EMA du replan (eau, fenêtre ~2% flaggée).
+            # JAMAIS-VUE = absente, SYMÉTRIQUE bouffe/eau (les deux → None, pas hallucinées).
             def _bel(k: int) -> tuple[float, float] | None:
                 if slots_belief is not None and k < len(slots_belief) and slots_belief[k] is not None:
                     return (float(slots_belief[k][0]), float(slots_belief[k][1]))
@@ -546,11 +548,8 @@ class CommandPlanner:
                 food = None                          # jamais vue → absente (pas hallucinée)
             if wi is not None and (float(vis[int(wi)]) > 1e-3 or _bel(int(wi)) is not None):
                 water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
-                wx, wz = water
-            elif os.environ.get("SYLVAN_SYM_WATER") == "1":
-                # NIVEAU 1 (pureté symétrique) : l'eau hors-vue devient None comme la bouffe (plus de
-                # béquille "garder la dernière position"). has_water gère son absence, symétrique à has_food.
-                water = None
+            else:
+                water = None                         # jamais vue → absente (pas hallucinée), symétrique à la bouffe
         elif (getattr(self.world_model, "with_slot", False) and "slot" in out
                 and os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") != "0"):
             food = (float(out["slot"][0, 0, 0]), float(out["slot"][0, 0, 1]))
@@ -656,11 +655,37 @@ class CommandPlanner:
             score = vmap.mean(dim=1) * (1.0 - survival_pen.clamp(0.0, 1.0))
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            # DIAGNOSTIC SEUL (n'influence PAS `best`) : les scores analytiques par-ordre (sf/sw),
+            # calculés en parallèle, uniquement pour que le corpus collecté en mode critique reste
+            # utilisable par le gate offline NON-SATURATION (train_survival_critic.py) — sans ces
+            # champs (absents quand cost_mode=critic ne passe jamais par la branche surv_mode ci-
+            # dessous), le gate décisif est incalculable sur son propre corpus (ratio = NaN).
+            # ⚠️ N'inclut PAS le bonus far_align (contrairement à surv_mode ci-dessous) : sans
+            # conséquence tant que la collecte se fait à FAR_ALIGN=0 (défaut boucle pure), mais si
+            # ce diagnostic est un jour réutilisé avec FAR_ALIGN=1, sf/sw ne reflétera plus fidèlement
+            # ce que surv_mode aurait scoré.
+            df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
+            dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+            dist_fw = math.hypot(fx - wx, fz - wz)
+            bear_f = torch.atan2((fx - x) * torch.cos(yaw) - (fz - z) * torch.sin(yaw),
+                                 (fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw))
+            bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
+                                 (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
+            rate = max(cfg.surv_turn_rate, 1e-6)
+            s_food_diag, s_water_diag = _survival_extension(
+                df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
+                dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
+                cfg.surv_horizon, cfg.surv_margin_weight,
+                turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
+                gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
+            )
+            fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             return {
                 "command": (vx, om), "food": (fx, fz), "water": (wx, wz),
                 "energy0": e0, "thirst0": t0,
                 "pred_min_food": float(min_df[best]), "pred_min_water": float(min_dw[best]),
                 "reason": "plan_multi_critic",
+                "order_scores": [float((s_food_diag * fall).max()), float((s_water_diag * fall).max())],
             }
 
         if surv_mode:
