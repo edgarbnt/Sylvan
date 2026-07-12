@@ -20,6 +20,7 @@ import argparse
 import json
 import math
 import os
+import random
 import socketserver
 import threading
 from pathlib import Path
@@ -174,6 +175,24 @@ class _PlannerService:
         self._lock = threading.Lock()
         self._cmd = cfg.no_food_command
         self._ticks = 0
+        # EXPLORATION EN ESPACE-COMMANDE (2026-07-08). Sans elle, la collecte est DÉTERMINISTE : l'agent
+        # ne tente jamais rien d'autre que ce que sa propre valeur dicte déjà → il orbite, enregistre son
+        # orbite, et réapprend à orbiter. Boucle AUTO-CONFIRMANTE, mesurée : en approche terminale (<3 m)
+        # seulement 18.6% des états ont la ressource pile devant (mode à 60-90° = perpendiculaire) → le
+        # critique n'a quasi AUCUN exemple de « aligné + proche → réussi », donc il ne peut pas l'apprendre,
+        # et il préfère ce qu'il connaît (le biais). Deux collectes + deux ré-entraînements l'ont confirmé.
+        # NB : le bouton d'exploration existant (SYLVAN_POLICY_EXPLORATION_STD_*) est un NO-OP sur le corps
+        # cinématique — il bruite l'action 18-dim des articulations, que ce corps IGNORE (il glisse sur
+        # cpg_command). D'où cette exploration au bon étage : la COMMANDE (vx, ω).
+        # Le bruit est tiré UNE FOIS PAR REPLAN et tenu sur toute la fenêtre (≠ un tremblement par tick,
+        # qui se moyennerait à zéro sans jamais dévier la trajectoire) → vraie diversité de trajectoires.
+        # Explorer pour APPRENDRE, exploiter pour AGIR : le déploiement reste déterministe (défaut 0).
+        _ex = os.environ.get("SYLVAN_CMD_EXPLORE_STD", "0")
+        self.explore_std = max(0.0, float(_ex))
+        self._explore_rng = random.Random(int(os.environ.get("SYLVAN_CMD_EXPLORE_SEED", "0")))
+        if self.explore_std > 0.0:
+            print(f"[planner-cmd] EXPLORATION COMMANDE active : std={self.explore_std} (vx et ω), "
+                  f"tirée par replan, bornée à la bande du grid → corpus DIVERSIFIÉ (collecte seulement)")
         # Smooth the food direction across ticks: the egocentric radar's sector jitters as the gait
         # sways the torso heading ±a few degrees/step → the reconstructed food bearing flips → the
         # planner flip-flops its turn and never commits. An EMA over the radar steadies the target so
@@ -309,6 +328,23 @@ class _PlannerService:
             print(f"[planner-cmd] OCCLUSION MASK inactif : SYLVAN_OCCLUDE_FOV_DEG={_OCCLUDE_FOV_DEG}° "
                   f"(perception 360° intacte, non-régression)")
 
+    def _explore(self, cmd: tuple[float, float]) -> tuple[float, float]:
+        """Bruit gaussien sur la commande choisie, BORNÉ à la bande du grid du planner.
+
+        Les bornes ne sont pas cosmétiques : le WM a été collecté sur cette bande de babbling
+        (vx 0.55-0.75, ω ±0.6) — en sortir rendrait son rêve hors-distribution, donc le plan
+        suivant serait bâti sur une imagination non fiable. On explore DANS le domaine de validité.
+        std=0 (défaut) → identité, zéro régression sur le chemin de déploiement.
+        """
+        if self.explore_std <= 0.0:
+            return cmd
+        vx = cmd[0] + self._explore_rng.gauss(0.0, self.explore_std)
+        om = cmd[1] + self._explore_rng.gauss(0.0, self.explore_std)
+        cfg = self.planner.cfg
+        vx = min(max(vx, min(cfg.vx_grid)), max(cfg.vx_grid))
+        om = min(max(om, min(cfg.omega_grid)), max(cfg.omega_grid))
+        return (vx, om)
+
     @torch.no_grad()
     def predict_full(self, payload: dict) -> dict:
         proprio = payload.get("proprio")
@@ -400,7 +436,7 @@ class _PlannerService:
                         water_override=water_pos if self._retina_n_res > 1 else (
                             None),
                     )
-                    self._cmd = plan_res["command"]
+                    self._cmd = self._explore(plan_res["command"])
                     self._last_min_dist = float(plan_res.get("pred_min_dist", float("nan")))
                 elif (os.environ.get("SYLVAN_MULTI_FOOD_SLOT", "1") == "0"
                       and len(retina) == RETINA_DIM and self._water_ema is not None
@@ -415,7 +451,7 @@ class _PlannerService:
                         energy=energy / 100.0, thirst=thirst / 100.0,
                         override_pos=True, food_override=_frp, water_override=_wxz,
                     )
-                    self._cmd = plan_res["command"]
+                    self._cmd = self._explore(plan_res["command"])
                     self._last_plan = plan_res
                     self._plan_fresh = True
                 else:
@@ -429,7 +465,7 @@ class _PlannerService:
                         slot_belief=self._slot_belief,
                         slots_belief=self._slots_belief,
                     )
-                    self._cmd = plan_res["command"]
+                    self._cmd = self._explore(plan_res["command"])
                     self._last_plan = plan_res
                     self._plan_fresh = True
             self._ticks += 1

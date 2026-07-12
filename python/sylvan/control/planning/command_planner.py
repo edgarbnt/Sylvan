@@ -576,10 +576,33 @@ class CommandPlanner:
         has_water = water is not None                       # NIVEAU 1 : l'eau peut être absente, symétrique à la bouffe
         fx, fz = food if has_food else (0.0, 0.0)
         wx, wz = water if has_water else (0.0, 0.0)
-        # COÛT SURVIE (gate B0) : actif si demandé ET les DEUX ressources visibles (l'alternance food↔eau
-        # simulée exige les deux ; sinon → coût designed, qui gère l'absence via has_food/has_water).
+        # PHASE 1 (suivi analytique des pulsions dans le rêve : drain/refill, drive_alive, steps_alive).
+        # Exige les DEUX ressources : l'alternance food↔eau simulée n'a pas de sens sinon. Alimente le
+        # coût survie ET le diagnostic sf/sw de la branche critique → garder "critic" ici (le retirer
+        # laisserait drive_alive/steps_alive non initialisés et le diagnostic sf/sw serait faux).
         surv_mode = cfg.cost_mode in ("survival", "critic") and has_food and has_water
+        # ⭐ DÉCOUVERTE 2026-07-08 : le critique ne décidait que ~3% des replans en monde ÉPARS.
+        # `critic_mode` était gaté sur has_food AND has_water (via surv_mode) → il ne s'activait QUE
+        # si les DEUX ressources étaient visibles SIMULTANÉMENT, ce qui est rare en épars. Les ~97%
+        # restants retombaient SILENCIEUSEMENT sur le coût `designed` codé-main. La « boucle 100%
+        # pure » était donc, en épars, pilotée par la formule codée-main la majorité du temps.
+        # Le token drive-symétrique du critique porte pourtant DÉJÀ un flag « connu=0 » pour une
+        # ressource absente (train_survival_critic.py:token()) : il a été ENTRAÎNÉ avec ce cas et n'a
+        # jamais eu besoin des deux ressources à la fois. C'était un TROU DE GATING, pas une limite.
+        # ⚠️ MAIS le lever DÉGRADE le forage (mesuré, 2 graines) : consommations 41/28 (gate d'origine)
+        # → 20/12 (critique à 100%), et ce MALGRÉ 4 corrections principielles et vérifiées (corpus
+        # apparié au déploiement, symétrie miroir imposée, exploration en collecte, pic de valeur
+        # hors-axe résorbé). Diagnostic : l'horizon du rêve (~0.8 m) est minuscule devant les distances
+        # (2-8 m) → les 33 candidats sont quasi ex-aequo (marge relative 0.003-0.005) → on demande au
+        # critique de RANGER des options presque identiques, alors qu'il a été entraîné à PRÉDIRE une
+        # valeur (MSE sur retours Monte-Carlo). Deux tâches différentes. Le coût designed s'en sort via
+        # son terme de cap, qui donne une poussée directionnelle cohérente et cumulative entre replans.
+        # → OPT-IN (défaut = gate d'origine) : la découverte reste reproductible sans imposer la
+        # régression. Piste suivante : changer l'OBJECTIF (apprendre à CLASSER — préférences/TD — au
+        # lieu de prédire une moyenne), pas les données. Voir diagnostics/diag_critic_landscape.py.
         critic_mode = cfg.cost_mode == "critic" and self._critic is not None and "slots" in out
+        if os.environ.get("SYLVAN_CRITIC_ALWAYS", "0") == "0":
+            critic_mode = critic_mode and has_food and has_water
         lvl_traj: list[torch.Tensor] = []
         drive_alive = torch.ones(n, device=self.device)     # mort-des-drives PERSISTANTE (pas de résurrection)
         steps_alive = torch.zeros(n, device=self.device)
@@ -599,8 +622,11 @@ class CommandPlanner:
             if surv_mode:
                 drive_alive = drive_alive * ((e_lvl > 0.0) & (t_lvl > 0.0)).float()
                 steps_alive = steps_alive + drive_alive
-                if critic_mode:
-                    lvl_traj.append(torch.stack([e_lvl, t_lvl], dim=-1))   # [n, 2] par pas
+            if critic_mode:
+                # e_lvl/t_lvl sont drainés SANS condition juste au-dessus → la trajectoire de niveaux
+                # est valide même quand une seule ressource est connue (le refill de la ressource
+                # absente ne s'applique simplement pas : sa pulsion draine, ce qui est la vérité).
+                lvl_traj.append(torch.stack([e_lvl, t_lvl], dim=-1))       # [n, 2] par pas
             if has_food:
                 df = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
                 min_df = torch.minimum(min_df, df)
@@ -647,46 +673,65 @@ class CommandPlanner:
                     known[:, :, j] = 1.0            # visible OU souvenir : coords déjà dans les slots
                                                     # (t0=souvenir via slots0, transporté par candidat)
             d = pos.norm(dim=-1).clamp(min=1e-6)                    # [n, h, 2]
+            # TOKEN — DOIT rester BYTE-IDENTIQUE à train_survival_critic.token() (train ≠ déploiement
+            # sinon). SYMÉTRIE MIROIR PAR CONSTRUCTION (2026-07-08) : |sin(bearing)|, pas sin signé.
+            # Gauche/droite est une symétrie exacte du monde → la VALEUR ne peut en dépendre. Avec le
+            # sin signé, le critique avait appris un écart miroir jusqu'à 0.13 sur des états physiquement
+            # identiques, ce qui plaçait son optimum de valeur HORS-AXE (~30°) → le planner gardait la
+            # ressource de biais → ORBITE, dernier mètre jamais fermé. Voir le docstring de token().
             toks = torch.stack([lv, torch.where(known > 0.5, d.clamp(max=10.0) / 10.0, torch.ones_like(d)),
-                                pos[..., 0] / d * known, pos[..., 1] / d * known,
+                                pos[..., 0].abs() / d * known, pos[..., 1] / d * known,
                                 known], dim=-1)                     # [n, h, 2, TOK=5]
             with torch.no_grad():
                 vmap = self._critic.value(toks.reshape(-1, 2, toks.shape[-1])).reshape(lv.shape[0], lv.shape[1])
             score = vmap.mean(dim=1) * (1.0 - survival_pen.clamp(0.0, 1.0))
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
-            # DIAGNOSTIC SEUL (n'influence PAS `best`) : les scores analytiques par-ordre (sf/sw),
-            # calculés en parallèle, uniquement pour que le corpus collecté en mode critique reste
-            # utilisable par le gate offline NON-SATURATION (train_survival_critic.py) — sans ces
-            # champs (absents quand cost_mode=critic ne passe jamais par la branche surv_mode ci-
-            # dessous), le gate décisif est incalculable sur son propre corpus (ratio = NaN).
-            # ⚠️ N'inclut PAS le bonus far_align (contrairement à surv_mode ci-dessous) : sans
-            # conséquence tant que la collecte se fait à FAR_ALIGN=0 (défaut boucle pure), mais si
-            # ce diagnostic est un jour réutilisé avec FAR_ALIGN=1, sf/sw ne reflétera plus fidèlement
-            # ce que surv_mode aurait scoré.
-            df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
-            dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
-            dist_fw = math.hypot(fx - wx, fz - wz)
-            bear_f = torch.atan2((fx - x) * torch.cos(yaw) - (fz - z) * torch.sin(yaw),
-                                 (fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw))
-            bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
-                                 (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
-            rate = max(cfg.surv_turn_rate, 1e-6)
-            s_food_diag, s_water_diag = _survival_extension(
-                df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
-                dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
-                cfg.surv_horizon, cfg.surv_margin_weight,
-                turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
-                gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
-            )
-            fall = 1.0 - survival_pen.clamp(0.0, 1.0)
-            return {
-                "command": (vx, om), "food": (fx, fz), "water": (wx, wz),
+            out_d: dict[str, object] = {
+                "command": (vx, om),
+                "food": (fx, fz) if has_food else None,
+                "water": (wx, wz) if has_water else None,
                 "energy0": e0, "thirst0": t0,
-                "pred_min_food": float(min_df[best]), "pred_min_water": float(min_dw[best]),
+                "pred_min_food": float(min_df[best]) if has_food else None,
+                "pred_min_water": float(min_dw[best]) if has_water else None,
                 "reason": "plan_multi_critic",
-                "order_scores": [float((s_food_diag * fall).max()), float((s_water_diag * fall).max())],
             }
+            if has_food and has_water:
+                # DIAGNOSTIC SEUL (n'influence PAS `best`) : les scores analytiques par-ordre (sf/sw),
+                # calculés en parallèle, pour que le corpus collecté en mode critique reste utilisable
+                # par le gate offline NON-SATURATION (train_survival_critic.py) — sinon ce gate est
+                # incalculable sur son propre corpus (ratio = NaN).
+                # GATÉ sur has_food/has_water (2026-07-08, suite à la levée du gate du critique) :
+                # sans ça, fx/fz ou wx/wz seraient des placeholders (0,0) quand une ressource est
+                # inconnue → sf/sw calculés vers une position bidon, ce qui POLLUERAIT le gate.
+                # Absence de "order_scores" = replan à perception partielle : attendu, simplement
+                # non exploitable par ce gate-là.
+                # ⚠️ N'inclut PAS le bonus far_align (contrairement à surv_mode ci-dessous) : sans
+                # conséquence tant que la collecte se fait à FAR_ALIGN=0 (défaut boucle pure).
+                df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
+                dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
+                dist_fw = math.hypot(fx - wx, fz - wz)
+                bear_f = torch.atan2((fx - x) * torch.cos(yaw) - (fz - z) * torch.sin(yaw),
+                                     (fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw))
+                bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
+                                     (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
+                rate = max(cfg.surv_turn_rate, 1e-6)
+                s_food_diag, s_water_diag = _survival_extension(
+                    df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
+                    dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
+                    cfg.surv_horizon, cfg.surv_margin_weight,
+                    turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
+                    gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
+                )
+                fall = 1.0 - survival_pen.clamp(0.0, 1.0)
+                out_d["order_scores"] = [float((s_food_diag * fall).max()),
+                                         float((s_water_diag * fall).max())]
+            if debug_scores:  # sondes offline (diag_critic_landscape) : le score PAR CANDIDAT
+                out_d["scores"] = score.tolist()
+                out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
+                out_d["min_df"] = min_df.tolist()   # distance MIN à la bouffe atteinte dans le rêve
+                out_d["min_dw"] = min_dw.tolist()   # idem eau → mesure si l'argmax ferme sur la cible
+            return out_d
 
         if surv_mode:
             # ── COÛT SURVIE refill-aware (gate B0) : score = pas-vécus simulés (phase 1 WM + phase 2

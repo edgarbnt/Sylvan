@@ -41,10 +41,26 @@ TOK_DIM = 5             # [niveau, dist/10, cos, sin, connu]
 
 
 def token(level: float, pos: list[float] | None) -> list[float]:
+    """Token drive-symétrique : [niveau, dist/10, |sin(bearing)|, cos(bearing), connu].
+
+    SYMÉTRIE MIROIR IMPOSÉE PAR CONSTRUCTION (2026-07-08) : on donne |sin| et non sin.
+    Gauche/droite est une SYMÉTRIE EXACTE du monde : la VALEUR d'un état (« combien d'avenir
+    depuis ici ») ne peut pas dépendre du côté où se trouve la ressource — seule l'ACTION le peut.
+    Avec sin SIGNÉ, le réseau POUVAIT distinguer les deux, et il l'a fait : mesuré sur le critique
+    précédent, écart miroir jusqu'à 0.13 (V=0.825 bouffe à droite vs 0.703 à gauche, situations
+    physiquement IDENTIQUES) — soit PLUS que l'effet de distance sur 3 m. Ce bruit appris créait un
+    optimum de valeur HORS-AXE (~30°) : le planner était récompensé de garder la ressource de biais
+    → ORBITE au lieu de foncer, et l'agent ratait le dernier mètre. Symétriser le critique existant
+    a suffi à ramener l'optimum PILE DEVANT (0°) et à rendre V monotone en |bearing| à 2 m et 4 m.
+    ⚠️ Ce token est construit à DEUX endroits qui DOIVENT rester identiques : ici (entraînement) et
+    dans command_planner.py (inférence, branche critic_mode). Toute divergence = train ≠ déploiement.
+    (Leçon récurrente du projet : une symétrie connue s'IMPOSE, elle ne se fitte pas — cf slot_calib
+    et le readout géométrique.)
+    """
     if pos is None:
         return [level, 1.0, 0.0, 0.0, 0.0]
     d = math.hypot(pos[0], pos[1])
-    return [level, min(d, 10.0) / 10.0, pos[0] / (d + 1e-6), pos[1] / (d + 1e-6), 1.0]
+    return [level, min(d, 10.0) / 10.0, abs(pos[0]) / (d + 1e-6), pos[1] / (d + 1e-6), 1.0]
 
 
 def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
