@@ -170,47 +170,51 @@ def main() -> None:
           f"(pour une vie mediane de {actual.median():.0f} pas)")
 
     # ── B. LE RESIDU EST-IL APPRENABLE ? (LA question) ───────────────────────────────────────
+    # ⚠️ VALIDATION CROISEE 4 PLIS, PAS UN SPLIT UNIQUE (corrige le 2026-07-15). La 1re version de
+    # cette sonde tirait UN decoupage aleatoire et annoncait R2 +0.21 : c'etait un pli CHANCEUX.
+    # Avec 57 vies, un pli unique n'en teste que ~14 -> l'estimation oscille de -0.13 a +0.10 selon
+    # le tirage. Un seul chiffre etait donc une AUTODECEPTION (CLAUDE.md §2). On moyenne sur 4 plis.
     resid = actual - fitted
-    # decoupe par EPISODE (jamais par instant : les instants d'une meme vie sont quasi identiques
-    # -> un split naif fuiterait et gonflerait artificiellement le R2 hors-echantillon).
-    perm = torch.randperm(n_ep)
-    tr_ep = set(perm[: int(0.75 * n_ep)].tolist())
-    tr = torch.tensor([int(e) in tr_ep for e in eid])
-    te = ~tr
-    if int(te.sum()) < 20 or int(tr.sum()) < 20:
-        print("\nB. trop peu de vies pour un split honnete par episode.")
-        return
+    r2s: list[float] = []
+    for k in range(4):
+        te = torch.tensor([int(e) % 4 == k for e in eid])          # split par EPISODE (jamais par
+        tr = ~te                                                   # instant : ce serait une fuite)
+        if int(te.sum()) < 20 or int(tr.sum()) < 20:
+            continue
+        torch.manual_seed(args.seed)
+        mu, sd = resid[tr].mean(), resid[tr].std().clamp(min=1e-6)
+        net = nn.Sequential(nn.Linear(10, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(),
+                            nn.Linear(64, 1))
+        opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+        xtr, xte = X[tr].reshape(-1, 10), X[te].reshape(-1, 10)
+        ytr = ((resid[tr] - mu) / sd).unsqueeze(1)
+        for _ in range(args.epochs):
+            nn.functional.mse_loss(net(xtr), ytr).backward()
+            opt.step()
+            opt.zero_grad()
+        with torch.no_grad():
+            pred_te = net(xte).squeeze(1) * sd + mu
+        r2s.append(r2(pred_te, resid[te]))
+        print(f"   pli {k} : R2 hors-echantillon {r2s[-1]:+.3f}")
 
-    mu, sd = resid[tr].mean(), resid[tr].std().clamp(min=1e-6)
-    net = nn.Sequential(nn.Linear(10, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 1))
-    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
-    xtr, xte = X[tr].reshape(-1, 10), X[te].reshape(-1, 10)
-    ytr = ((resid[tr] - mu) / sd).unsqueeze(1)
-    for _ in range(args.epochs):
-        loss = nn.functional.mse_loss(net(xtr), ytr)
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-    with torch.no_grad():
-        pred_te = net(xte).squeeze(1) * sd + mu
-        pred_tr = net(xtr).squeeze(1) * sd + mu
-
-    r2_te = r2(pred_te, resid[te])
+    r2_te = sum(r2s) / len(r2s)
     print(f"\nB. LE RESIDU (ce que l'inne RATE) est-il APPRENABLE depuis l'etat ?")
-    print(f"   vies d'entrainement {len(tr_ep)} | vies de test {n_ep - len(tr_ep)} (jamais vues)")
-    print(f"   R2 sur les vies D'ENTRAINEMENT : {r2(pred_tr, resid[tr]):+.3f}")
-    print(f"   R2 sur les vies JAMAIS VUES    : {r2_te:+.3f}   <<< LA REPONSE")
+    print(f"   R2 MOYEN sur les vies JAMAIS VUES : {r2_te:+.3f}   <<< LA REPONSE")
+    print(f"   dispersion entre plis : {min(r2s):+.3f} a {max(r2s):+.3f}")
     print(f"   dispersion du residu : {resid.std():.0f} pas "
           f"({resid.std() / actual.mean() * 100:.0f}% de la vie moyenne)")
 
     print("\n--- VERDICT (critere ecrit AVANT) ---")
     if r2_te < 0.05:
-        print(f"  R2 hors-echantillon {r2_te:+.3f} < 0.05 -> LE VECU N'ENSEIGNE RIEN.")
-        print("  Ce que l'inne rate est du BRUIT, pas une structure. Aucun critique ne peut le rattraper.")
-        print("  => le monde est trop pauvre pour que l'experience vaille quelque chose : ENRICHIR LE")
-        print("     MONDE (obstacles, ressources qui s'epuisent, danger) avant d'enrichir le cerveau.")
+        print(f"  R2 hors-echantillon {r2_te:+.3f} < 0.05 -> CE VECU-LA N'ENSEIGNE RIEN DE FIABLE.")
+        print("  Ce que l'inne rate n'est pas retrouvable sur des vies jamais vues -> aucun critique")
+        print("  ne peut le rattraper A PARTIR DE CE CORPUS.")
+        print("  => la cause la plus probable n'est pas le cerveau mais l'EXPERIENCE elle-meme :")
+        print("     57 vies, UNE politique deterministe (boucle auto-confirmante deja mesuree).")
+        print("     Il faut de l'EXPLORATION et des vies VARIEES avant d'esperer apprendre quoi que")
+        print("     ce soit -- ou un monde plus riche (obstacles, ressources qui s'epuisent, danger).")
     elif r2_te < 0.15:
-        print(f"  R2 hors-echantillon {r2_te:+.3f} : lecon FAIBLE mais non nulle. Marge etroite.")
+        print(f"  R2 hors-echantillon {r2_te:+.3f} : lecon FAIBLE, non robuste entre plis. Marge etroite.")
     else:
         print(f"  R2 hors-echantillon {r2_te:+.3f} >= 0.15 -> IL Y A UNE LECON DANS LE VECU.")
         print("  => le critique doit apprendre CE RESIDU (et non la valeur absolue, dont 98% est un")

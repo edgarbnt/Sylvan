@@ -39,6 +39,7 @@ GAMMA = 0.99            # par replan (10 pas Godot) — même échelle que G2/B0
 H_SURV = 10             # « vivant dans 10 replans » (= 100 pas Godot, G2)
 LOW, HIGH = 0.30, 0.50
 TOK_DIM = 5             # [niveau, dist/10, cos, sin, connu]
+STEPS_PER_REPLAN = 10   # 1 replan planner = 10 pas Godot (cf H_SURV)
 
 
 def token(level: float, pos: list[float] | None) -> list[float]:
@@ -162,6 +163,78 @@ def analytic_labels(X: torch.Tensor) -> torch.Tensor:
     return (torch.maximum(s_food, s_water) / cfg.surv_horizon).clamp(0.0, 2.0)   # même échelle que V
 
 
+def load_lived(dirs: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """→ (X [N,2,TOK], ACTUAL [N] pas RÉELLEMENT vécus après l'instant, EID [N]).
+
+    Ne garde QUE les vies finies par une MORT. Une vie coupée par la fin du run a une survie
+    CENSURÉE (« au moins X ») : la garder étiquetterait une bonne situation comme mauvaise et
+    biaiserait le résidu vers le négatif. Même découpe aux respawns que load()."""
+    X: list[list[list[float]]] = []
+    actual: list[float] = []
+    eids: list[int] = []
+    eid = 0
+    for d in dirs:
+        f = Path(d) / "ep_0000.jsonl"
+        if not f.exists():
+            continue
+        rows = []
+        for line in open(f):
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            p = r.get("plan")
+            if p is None:
+                continue
+            rows.append((float(r["obs"]["energy"]) / 100.0, float(r["obs"]["thirst"]) / 100.0,
+                         p.get("food"), p.get("water")))
+        segs: list[list] = []
+        cur: list = []
+        for row in rows:
+            if cur and (row[0] - cur[-1][0] > 0.5 or row[1] - cur[-1][1] > 0.5):
+                segs.append(cur)
+                cur = []
+            cur.append(row)
+        if cur:
+            segs.append(cur)
+        for seg in segs:
+            L = len(seg)
+            if L < 15 or min(seg[-1][0], seg[-1][1]) >= 0.03:     # trop court, ou CENSURÉ (pas mort)
+                continue
+            for t, (e, th, fp, wp) in enumerate(seg):
+                X.append([token(e, fp), token(th, wp)])
+                actual.append((L - t) * STEPS_PER_REPLAN)
+                eids.append(eid)
+            eid += 1
+    return (torch.tensor(X), torch.tensor(actual, dtype=torch.float32), torch.tensor(eids))
+
+
+def innate_steps(X: torch.Tensor) -> torch.Tensor:
+    """La prédiction de l'INNÉ, en pas : « depuis cet état, je vivrai encore N pas »."""
+    from sylvan.control.planning.command_planner import CommandPlanConfig
+
+    return analytic_labels(X) * CommandPlanConfig().surv_horizon
+
+
+def residual_labels(X: torch.Tensor, actual: torch.Tensor) -> torch.Tensor:
+    """LABEL RÉSIDU = (survie RÉELLE − prédiction de l'INNÉ), en unités de surv_horizon.
+
+    POURQUOI (2026-07-15, `docs/recherche_critique_argmax.md` §6bis). Le critique ne doit PAS
+    ré-apprendre la valeur absolue : 98% en est un socle commun à tous les candidats, qui s'annule
+    dans la comparaison — le MSE lui faisait donc optimiser le mauvais 98%. Et il ne peut PAS
+    départager les candidats mieux que l'inné, qui est EXACT (écart d'action 1e-5 ≪ erreur d'un
+    réseau). Ce qu'il peut apporter, et lui seul, c'est ce que l'inné IGNORE : l'inné suppose un
+    trajet DROIT à vitesse nominale avec alternance parfaite, et se croit bon pour 1572 pas quand
+    l'entité n'en vit que 930 (optimiste ×1.7). Ce manque-à-vivre est APPRENABLE : R² +0.21 sur des
+    vies JAMAIS VUES (diag_experience_residual.py) → ce n'est pas du bruit, c'est une leçon.
+
+    ÉCHELLE : / surv_horizon, pour que le planner puisse faire `note = inné_en_pas + λ·V·surv_horizon`
+    (même échelle des deux côtés). Le résidu est NÉGATIF en moyenne (l'inné est optimiste)."""
+    from sylvan.control.planning.command_planner import CommandPlanConfig
+
+    return (actual - innate_steps(X)) / CommandPlanConfig().surv_horizon
+
+
 class SurvivalCritic(nn.Module):
     """Tokens [B, K, TOK_DIM] → V [B]. Drive-symétrique : encodeur PARTAGÉ + somme (invariant
     à l'ordre et au NOMBRE de pulsions → pulsion nouvelle = token nouveau, zéro retrain)."""
@@ -175,19 +248,117 @@ class SurvivalCritic(nn.Module):
         return self.head(self.enc(toks).sum(dim=-2)).squeeze(-1)
 
 
+def _r2(pred: torch.Tensor, target: torch.Tensor) -> float:
+    ss_res = float(((target - pred) ** 2).sum())
+    ss_tot = float(((target - target.mean()) ** 2).sum())
+    return 1.0 - ss_res / max(ss_tot, 1e-12)
+
+
+def train_residual(args: argparse.Namespace) -> None:
+    """CRITIQUE-CORRECTION : note = coût INNÉ (exact) + λ × correction APPRISE du vécu.
+
+    Le critique n'apprend plus la valeur (impossible : il faudrait trancher un écart de 1e-5), il
+    apprend le RÉSIDU — l'erreur systématique de l'inné. Voir residual_labels().
+
+    GATE PRÉ-ENREGISTRÉ (falsifiable, écrit AVANT l'entraînement) : sur des vies JAMAIS VUES,
+    `inné + correction` doit prédire la survie réelle MIEUX que `inné` seul, d'au moins +0.10 de R².
+    Sinon la correction n'a rien appris d'utile → NE PAS la brancher dans le planner."""
+    dirs = sorted(globmod.glob(args.glob))
+    X, actual, EID = load_lived(dirs)
+    if X.numel() == 0:
+        print(f"[critic] AUCUNE vie MORTE (non-censurée) dans {args.glob} — rien à apprendre. STOP.")
+        return
+    n_ep = int(EID.max()) + 1
+    G = residual_labels(X, actual)
+    innate = innate_steps(X)
+    from sylvan.control.planning.command_planner import CommandPlanConfig
+    horizon = CommandPlanConfig().surv_horizon
+    print(f"[critic] LABELS = RÉSIDU (vécu − inné). vies={n_ep} instants={len(X)}")
+    print(f"[critic] survie réelle méd={float(actual.median()):.0f} pas | inné méd="
+          f"{float(innate.median()):.0f} pas → l'inné est optimiste de "
+          f"{float(innate.median() / actual.median().clamp(min=1)):.2f}×")
+
+    def fit(tr: torch.Tensor) -> SurvivalCritic:
+        torch.manual_seed(args.seed)
+        c = SurvivalCritic()
+        opt = torch.optim.Adam(c.parameters(), 2e-3, weight_decay=1e-4)
+        Xt, Gt = X[tr], G[tr]
+        for _ in range(args.iters):
+            bi = torch.randint(0, len(Xt), (512,))
+            nn.functional.mse_loss(c.value(Xt[bi]), Gt[bi]).backward()
+            opt.step()
+            opt.zero_grad()
+        return c.eval()
+
+    # GATE par VALIDATION CROISÉE 4 PLIS (par ÉPISODE — jamais par instant : les instants d'une même
+    # vie sont quasi identiques → un split naïf fuiterait). 57 vies seulement : un pli unique ne teste
+    # que ~14 vies, l'estimation serait trop bruitée pour décider. Le CRITÈRE reste +0.10 — on estime
+    # mieux la MÊME quantité, on ne déplace pas les poteaux.
+    gains, r2i, r2c = [], [], []
+    for k in range(4):
+        te = (EID % 4 == k)
+        c_k = fit(~te)                       # l'entraînement doit rester HORS de no_grad
+        with torch.no_grad():
+            corr_te = c_k.value(X[te]) * horizon
+        a_te, i_te = actual[te], innate[te]
+        # RÉFÉRENCE HONNÊTE : on accorde à l'inné SEUL son meilleur recalage affine (son échelle est
+        # arbitraire) — sinon on le battrait juste en corrigeant son biais, ce qui serait trivial.
+        a_ = torch.stack([i_te, torch.ones_like(i_te)], dim=1)
+        coef = torch.linalg.lstsq(a_, a_te.unsqueeze(1)).solution.squeeze(1)
+        ri = _r2(i_te * coef[0] + coef[1], a_te)
+        rc = _r2(i_te + corr_te, a_te)
+        r2i.append(ri)
+        r2c.append(rc)
+        gains.append(rc - ri)
+        print(f"[critic]   pli {k} : inné {ri:+.3f} → inné+correction {rc:+.3f}   gain {rc - ri:+.3f}")
+
+    gain = sum(gains) / len(gains)
+    r2_innate, r2_corrected = sum(r2i) / len(r2i), sum(r2c) / len(r2c)
+    critic = fit(torch.ones(len(X), dtype=torch.bool))            # modèle final : toutes les vies
+    with torch.no_grad():
+        corr_te = critic.value(X) * horizon
+
+    print(f"\n[critic] === GATE (moyenne des 4 plis, vies JAMAIS VUES) ===")
+    print(f"[critic] R² de l'INNÉ seul (recalé)        : {r2_innate:+.3f}")
+    print(f"[critic] R² de INNÉ + CORRECTION           : {r2_corrected:+.3f}")
+    print(f"[critic] GAIN                              : {gain:+.3f}  (gate ≥ +0.10)  "
+          f"[plis : {', '.join(f'{g:+.3f}' for g in gains)}]")
+    print(f"[critic] correction médiane : {float(corr_te.median()):+.0f} pas "
+          f"(dispersion {float(corr_te.std()):.0f} pas)")
+    if gain < 0.10:
+        print("[critic] ❌ GATE ÉCHOUÉ → la correction n'apporte pas assez. NE PAS la brancher "
+              "dans le planner (le critère était écrit avant : on ne déplace pas les poteaux).")
+    else:
+        print("[critic] ✅ GATE PASSÉ → correction utilisable. Reste à vérifier GRATUITEMENT qu'elle "
+              "ne DÉTRUIT pas le classement fin de l'inné : diagnostics/diag_residual_lambda.py")
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": critic.state_dict(), "labels": "residual", "tok_dim": TOK_DIM,
+                "r2_innate": r2_innate, "r2_corrected": r2_corrected, "gain": gain,
+                "surv_horizon": horizon, "dirs": dirs, "drive_symmetric": True},
+               out / "critic_best.pt")
+    print(f"[critic] sauvé → {out / 'critic_best.pt'}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--glob", default="data/replay_buffer/hesit_probe_*_surv")
     ap.add_argument("--out", default="data/checkpoints/survival_critic")
     ap.add_argument("--iters", type=int, default=6000)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--labels", choices=("mc", "analytic"), default="mc",
+    ap.add_argument("--labels", choices=("mc", "analytic", "residual"), default="mc",
                     help="mc = retours Monte-Carlo du VÉCU (bruité mais vrai, défaut) ; "
                          "analytic = DISTILLATION depuis le professeur codé-main (propre mais capé "
-                         "à sa performance) — cf docstring de analytic_labels()")
+                         "à sa performance) — cf docstring de analytic_labels() ; "
+                         "residual = CORRECTION de l'inné (le seul apport possible d'un critique — "
+                         "cf residual_labels() et docs/recherche_critique_argmax.md §6bis)")
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     torch.set_num_threads(4)
+
+    if args.labels == "residual":
+        train_residual(args)
+        return
 
     dirs = sorted(globmod.glob(args.glob))
     X, G, S, EID = load(dirs)

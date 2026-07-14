@@ -310,7 +310,13 @@ class CommandPlanner:
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
         self._critic = None
         _cp = os.environ.get("SYLVAN_PLANNER_CRITIC", "data/checkpoints/survival_critic_kin/critic_best.pt")
-        if self.cfg.cost_mode == "critic":
+        # λ = poids de la CORRECTION apprise (mode "residual"). Réglable car il porte un RISQUE réel :
+        # l'inné tranche entre candidats un écart d'action de ~1e-5, alors que l'erreur d'un réseau est
+        # ~2e-4 (mesuré, diag_critic_aggregation) → une correction à pleine échelle peut NOYER le
+        # classement fin que l'inné réussit, et donc casser ce qui marche. Le gate gratuit
+        # diag_residual_lambda.py mesure exactement ça AVANT tout forage. Ne pas monter λ sans lui.
+        self.critic_lambda = float(os.environ.get("SYLVAN_CRITIC_LAMBDA", "1.0"))
+        if self.cfg.cost_mode in ("critic", "residual"):
             from scripts.train_survival_critic import SurvivalCritic
             _ck = torch.load(_cp, map_location="cpu", weights_only=False)
             self._critic = SurvivalCritic()
@@ -318,8 +324,20 @@ class CommandPlanner:
             self._critic.eval()
             for prm in self._critic.parameters():
                 prm.requires_grad_(False)
-            print(f"[planner-cmd] CRITIQUE APPRIS actif : {_cp} (AUC {_ck.get('auc'):.3f}, "
-                  f"non-sat {_ck.get('nonsat_ratio'):.2f}, swap {_ck.get('swap'):.2f}) — queue analytique remplacée")
+            _lab = _ck.get("labels", "mc")
+            if self.cfg.cost_mode == "residual":
+                if _lab != "residual":
+                    raise ValueError(
+                        f"cost_mode=residual attend un critique entraîné en --labels residual, "
+                        f"mais {_cp} porte labels={_lab!r}. Brancher un critique de VALEUR comme une "
+                        f"CORRECTION serait un train≠déploiement silencieux (il prédit des pas-vécus "
+                        f"absolus, pas un écart) → refusé.")
+                print(f"[planner-cmd] NOTE = INNÉ + λ×CORRECTION APPRISE : {_cp} "
+                      f"(λ={self.critic_lambda}, R² inné {_ck.get('r2_innate'):.3f} → "
+                      f"{_ck.get('r2_corrected'):.3f} sur vies jamais vues)")
+            else:
+                print(f"[planner-cmd] CRITIQUE APPRIS actif : {_cp} (AUC {_ck.get('auc'):.3f}, "
+                      f"non-sat {_ck.get('nonsat_ratio'):.2f}, swap {_ck.get('swap'):.2f}) — queue analytique remplacée")
         self.device = torch.device(device)
         self.world_model = world_model.to(self.device).eval()
         for p in self.world_model.parameters():
@@ -580,7 +598,7 @@ class CommandPlanner:
         # Exige les DEUX ressources : l'alternance food↔eau simulée n'a pas de sens sinon. Alimente le
         # coût survie ET le diagnostic sf/sw de la branche critique → garder "critic" ici (le retirer
         # laisserait drive_alive/steps_alive non initialisés et le diagnostic sf/sw serait faux).
-        surv_mode = cfg.cost_mode in ("survival", "critic") and has_food and has_water
+        surv_mode = cfg.cost_mode in ("survival", "critic", "residual") and has_food and has_water
         # ⭐ DÉCOUVERTE 2026-07-08 : le critique ne décidait que ~3% des replans en monde ÉPARS.
         # `critic_mode` était gaté sur has_food AND has_water (via surv_mode) → il ne s'activait QUE
         # si les DEUX ressources étaient visibles SIMULTANÉMENT, ce qui est rare en épars. Les ~97%
@@ -802,6 +820,33 @@ class CommandPlanner:
             fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             s_food = s_food * fall
             s_water = s_water * fall
+            ic_only = torch.maximum(s_food, s_water).clone()   # l'inné SEUL (diagnostic λ)
+            corr = torch.zeros_like(s_food)
+            if cfg.cost_mode == "residual" and self._critic is not None:
+                # ── NOTE = INNÉ + λ × CORRECTION APPRISE (2026-07-15) ──────────────────────────
+                # L'inné (s_food/s_water) est EXACT : il tranche sans bruit l'écart minuscule entre
+                # candidats. Mais il est OPTIMISTE ×1.7 (il rêve un trajet droit à vitesse nominale ;
+                # la réalité erre et hésite). La correction apprend ce manque-à-vivre sur le VÉCU —
+                # c'est le seul apport possible d'un critique ici. Voir residual_labels().
+                # TOKEN — DOIT rester byte-identique à train_survival_critic.token() : même repère ego
+                # (px = latéral, pz = avant), même |sin| (symétrie miroir imposée), même dist/10 capée.
+                px_f = (fx - x) * torch.cos(yaw) - (fz - z) * torch.sin(yaw)
+                pz_f = (fx - x) * torch.sin(yaw) + (fz - z) * torch.cos(yaw)
+                px_w = (wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw)
+                pz_w = (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw)
+                tok = torch.stack([
+                    torch.stack([e_lvl, df_end.clamp(max=10.0) / 10.0, px_f.abs() / (df_end + 1e-6),
+                                 pz_f / (df_end + 1e-6), torch.ones_like(e_lvl)], dim=-1),
+                    torch.stack([t_lvl, dw_end.clamp(max=10.0) / 10.0, px_w.abs() / (dw_end + 1e-6),
+                                 pz_w / (dw_end + 1e-6), torch.ones_like(t_lvl)], dim=-1),
+                ], dim=1)                                          # [n, 2, TOK] — surv_mode ⇒ connu=1
+                with torch.no_grad():
+                    corr = self._critic.value(tok) * cfg.surv_horizon * self.critic_lambda
+                # La correction est une propriété de l'ÉTAT ATTEINT, pas de l'ORDRE de visite : elle
+                # s'ajoute aux deux ordres à l'identique et ne déplace donc PAS le choix bouffe/eau.
+                # LIMITE ASSUMÉE et flaggée (§2) : le corpus ne porte aucun label d'ordre.
+                s_food = s_food + corr
+                s_water = s_water + corr
             if cfg.far_align:
                 # ÉCHAFAUDAGE far-target (RETIRABLE, doc §5/§7) : quand la cible est LOIN, tous les candidats
                 # survivent (score saturé au cap) → départage vers celui dont la trajectoire RÊVÉE pointe la
@@ -859,6 +904,9 @@ class CommandPlanner:
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
                 out_d["min_df"] = min_df.tolist()   # distance MIN a la bouffe atteinte dans le reve
                 out_d["df_end"] = df_end.tolist()   # distance a la bouffe en FIN de reve
+                out_d["ic"] = ic_only.tolist()      # l'INNÉ seul, par candidat (gate λ)
+                out_d["corr"] = corr.tolist()       # la CORRECTION apprise, par candidat (gate λ)
+                out_d["min_dw"] = min_dw.tolist()
             return out_d
 
         discomfort = _urg(e_lvl) + _urg(t_lvl)  # predicted future discomfort at horizon end

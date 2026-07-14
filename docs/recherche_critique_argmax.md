@@ -174,29 +174,45 @@ bruit réordonne les actions* ») et prescrit de paramétrer `V(s) + A(s,a)` en 
   faut zéro. **La question qu'elle devait trancher (« ne sait pas exprimer » vs « ne sait pas apprendre »)
   a maintenant une troisième réponse : ni l'un ni l'autre — la fente est trop étroite pour QUICONQUE.**
 
-## 6bis. « L'entité peut-elle progresser de son vécu ? » — OUI, et c'est mesuré (2026-07-15)
+## 6bis. « L'entité peut-elle progresser de son vécu ? » — PAS DE CE VÉCU-LÀ (2026-07-15)
 
 Question de l'owner, après le §4 : si le critique n'a plus à remplacer le coût, reste-t-il quelque chose
 à apprendre ? Un critique ne peut apporter que le **résidu** — l'écart entre ce que l'inné prédit et ce qui
-arrive vraiment. Si ce résidu est du bruit, le vécu n'enseigne rien. Sonde `diag_experience_residual.py`
-(gratuite, 57 vies mortes non-tronquées, split par ÉPISODE) :
+arrive vraiment. Si ce résidu n'est pas retrouvable sur des vies inconnues, le vécu n'enseigne rien.
+
+**Ce qui est solide** (`diag_experience_residual.py`, 57 vies mortes non-tronquées) :
 
 | | |
 |---|---|
 | survie réellement vécue | médiane **930** pas |
 | survie prédite par l'inné | médiane **1572** pas → **l'inné est optimiste de ~1,7×** |
 | l'inné explique-t-il le vécu ? | R² **+0.52**, corrélation de rang **+0.88** (il ORDONNE bien, il CALIBRE mal) |
-| **le résidu est-il apprenable ?** | **R² = +0.21 sur des vies JAMAIS VUES** (critère pré-enregistré : ≥ 0.15) |
 
-**Le vécu contient une leçon, et elle est structurée** (ce n'est pas du bruit : un petit réseau la retrouve
-sur des vies qu'il n'a jamais vues). Cette leçon a un contenu identifiable : l'inné suppose un trajet **droit,
-à vitesse nominale, avec alternance parfaite** — la réalité (errance, hésitation, virages) coûte ~40 % de vie
-en moins. **C'est exactement ce qu'un critique peut apprendre et que la géométrie ne saura jamais dire.**
+L'inné suppose un trajet **droit, à vitesse nominale, avec alternance parfaite** ; la réalité (errance,
+hésitation, virages) coûte ~40 % de vie en moins. Ce manque-à-vivre est réel et n'est **pas** dans la géométrie.
 
-→ Renforce ③ + ④ : `score = IC(inné, exact) + TC(résidu appris)`. Le résidu n'a **pas de socle commun** (il est
-petit par construction) → le problème des 98 % du §1b disparaît de lui-même.
-⚠️ Honnêteté §2 : corpus d'UNE politique déterministe → on mesure ce qui est apprenable **sous cette politique**
-(boucle auto-confirmante déjà connue). R² 0.21 = réel mais **modeste**. Ne pas survendre.
+**⚠️ ERREUR CORRIGÉE — j'avais d'abord annoncé « résidu apprenable, R² +0.21 » : c'était UN SEUL découpage
+aléatoire, et il était CHANCEUX.** Avec 57 vies, un pli n'en teste que ~14 → l'estimation est instable. En
+validation croisée 4 plis (même critère, meilleure estimation — on ne déplace pas les poteaux) :
+
+| mesure | plis | moyenne | verdict |
+|---|---|---|---|
+| R² du résidu sur vies jamais vues | +0.22 / **+0.01** / +0.19 / +0.12 | **+0.13** | < 0.15 → faible, non robuste |
+| **GATE pré-enregistré** : `inné+correction` prédit-il la survie mieux que `inné` (recalé) ? (≥ +0.10) | +0.10 / **−0.13** / +0.05 / +0.08 | **+0.023** | ❌ **ÉCHOUÉ** |
+
+**La correction est bâtie, testée, et le gate la REFUSE.** Un pli est franchement négatif : sur des vies
+inconnues, la correction apprise peut *dégrader* la prédiction. Ce n'est pas une leçon, c'est du bruit
+autour de zéro. **Elle n'est donc PAS branchée dans le planner** (`SYLVAN_PLANNER_COST=residual` existe et
+fonctionne, mais reste NON PROMU).
+
+**La cause n'est pas le cerveau, c'est l'EXPÉRIENCE** : 57 vies, **une seule politique déterministe** —
+la boucle auto-confirmante déjà mesurée (18.6 % d'approches alignées). L'entité revit toujours la même vie ;
+il n'y a rien à en tirer. → **Le verrou n'est plus le critique, c'est l'EXPLORATION** (rappel : le bouton
+d'exploration existant est un NO-OP sur le corps cinématique — mesuré, 2026-07-08). Tant qu'elle n'a pas
+vécu des vies VARIÉES, aucun critique, quelle que soit sa forme, n'a matière à apprendre.
+
+→ Le gate est écrit et coûte 2 minutes : **le rejouer dès que le corpus sera varié**. C'est lui qui dira si
+③/④ redeviennent vivants.
 
 ## 7. Critère de succès (le BUT, pas le proxy)
 
