@@ -72,6 +72,27 @@ La marge du critique est **structurellement petite ICI** : l'inné forage déjà
 **Gate déjà écrit** (`train_survival_critic --labels residual`, 2 min, critère +0.10) : à rejouer dès qu'un
 corpus **réellement varié** existe (voie 2 ou 3). C'est lui qui dira si `inné + correction` prend vie.
 
+## Direction choisie (2026-07-15, owner) : ENRICHIR LE MONDE — zone nocive (danger)
+
+Décision owner : Sylvan doit être un système où l'expérience compte → voie 3. Premier élément = **zone
+nocive** (une région qui abîme la santé). Choisi car la **place est prouvable** : le coût inné n'a aucun
+terme de danger → l'entité fonce dedans en aveugle, coût inévitable par construction. Pas de piège collision.
+
+**Bâti** : `godot/scripts/world/hazard_manager.gd` (disque sur le trajet spawn→bouffe, opt-in
+`SYLVAN_HAZARD_COUNT`, défaut OFF = zéro régression). Branché dans `main.gd` par 4 lignes **NON stagées**
+(chantier HUD owner — hooks locaux à intégrer côté owner ; toute la logique est dans le manager, stageable).
+Gate gratuit : `diagnostics/diag_hazard_gate.py` (critères pré-enregistrés : aveuglement ≥50 %, coût réel).
+
+**Méthode anti-boucle** (ce qui rend ce chantier différent) : le cher (WM-retrain pour percevoir le danger,
+puis composant qui apprend à l'éviter) est **gaté derrière la preuve gratuite que la place existe**. On ne
+paie l'étape N+1 que si l'entité aveugle SOUFFRE mesurablement du danger. Le baseline aveugle (santé perdue /
+morts par danger) = le chiffre que l'entité percevante+décidante devra battre ensuite.
+
+**État au coucher (2026-07-15)** : gate en cours (12 vies OFF vs 12 ON). Prochain pas au réveil : lire le
+verdict (`diag_hazard_gate.py --off /tmp/gate_godot_off.log --on /tmp/gate_godot_on.log`) ; si place prouvée
+→ étage suivant = donner au WM le sens « danger » (re-collecte + retrain), PRINCIPE N°3. Si raté de réglage
+(placement/dégâts) → retuner `SYLVAN_HAZARD_*` et rejouer (gratuit).
+
 ## Critère de succès = le BUT
 
 Forage (repas + boissons sur 12 vies), jamais la survie médiane (plafond épars = **métabolique**,
