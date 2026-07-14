@@ -190,9 +190,17 @@ class _PlannerService:
         _ex = os.environ.get("SYLVAN_CMD_EXPLORE_STD", "0")
         self.explore_std = max(0.0, float(_ex))
         self._explore_rng = random.Random(int(os.environ.get("SYLVAN_CMD_EXPLORE_SEED", "0")))
+        # PERSISTANCE (2026-07-15) : tenir le MÊME décalage sur K replans, pas 1. Mesuré (2026-07-08) :
+        # le bruit par-replan est un NO-OP sur le corps cinématique — 1 replan ≈ 0.2 m, puis l'argmax
+        # déterministe re-corrige au replan suivant → la trajectoire ne dévie jamais. En tenant le biais
+        # K replans (K=5 ≈ 1 m de déviation ENGAGÉE), l'entité finit AILLEURS → vies vraiment variées, le
+        # contraste (foncer-droit vs errer) que la correction-résidu doit apprendre. K=1 = ancien comportement.
+        self.explore_persist = max(1, int(os.environ.get("SYLVAN_CMD_EXPLORE_PERSIST", "1")))
+        self._explore_off = (0.0, 0.0)                     # décalage courant (vx, ω), tenu K replans
+        self._explore_age = 0                              # replans écoulés depuis le dernier tirage
         if self.explore_std > 0.0:
             print(f"[planner-cmd] EXPLORATION COMMANDE active : std={self.explore_std} (vx et ω), "
-                  f"tirée par replan, bornée à la bande du grid → corpus DIVERSIFIÉ (collecte seulement)")
+                  f"tenue {self.explore_persist} replan(s), bornée au grid → corpus DIVERSIFIÉ (collecte seulement)")
         # Smooth the food direction across ticks: the egocentric radar's sector jitters as the gait
         # sways the torso heading ±a few degrees/step → the reconstructed food bearing flips → the
         # planner flip-flops its turn and never commits. An EMA over the radar steadies the target so
@@ -338,11 +346,16 @@ class _PlannerService:
         """
         if self.explore_std <= 0.0:
             return cmd
-        vx = cmd[0] + self._explore_rng.gauss(0.0, self.explore_std)
-        om = cmd[1] + self._explore_rng.gauss(0.0, self.explore_std)
+        # Redraw the held offset only every `explore_persist` replans (K=1 → every call, l'ancien
+        # comportement par-replan). Entre deux tirages, le MÊME décalage biaise l'argmax courant → la
+        # déviation s'ACCUMULE au lieu d'être re-corrigée à chaque replan.
+        if self._explore_age % self.explore_persist == 0:
+            self._explore_off = (self._explore_rng.gauss(0.0, self.explore_std),
+                                 self._explore_rng.gauss(0.0, self.explore_std))
+        self._explore_age += 1
         cfg = self.planner.cfg
-        vx = min(max(vx, min(cfg.vx_grid)), max(cfg.vx_grid))
-        om = min(max(om, min(cfg.omega_grid)), max(cfg.omega_grid))
+        vx = min(max(cmd[0] + self._explore_off[0], min(cfg.vx_grid)), max(cfg.vx_grid))
+        om = min(max(cmd[1] + self._explore_off[1], min(cfg.omega_grid)), max(cfg.omega_grid))
         return (vx, om)
 
     @torch.no_grad()
@@ -564,6 +577,8 @@ class _PlannerService:
             self._low_engage = 0
             self._search_t = 0
             self._searching = False
+            self._explore_age = 0            # nouvelle vie → redraw immédiat du biais d'exploration
+            self._explore_off = (0.0, 0.0)   # (chaque vie explore indépendamment, pas de fuite inter-épisode)
             # MÉMOIRE SPATIALE (Task 3) : réinitialiser le belief entre épisodes
             if self.slot_memory is not None:
                 self.slot_memory.reset()

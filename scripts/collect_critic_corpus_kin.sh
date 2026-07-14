@@ -25,6 +25,7 @@ env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=${COST:-survival} SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
     SYLVAN_PLANNER_FAR_ALIGN=${FAR_ALIGN:-1} SYLVAN_PLANNER_ALIGN_GAIN=60 \
     SYLVAN_PLANNER_CRITIC=${CRITIC:-data/checkpoints/survival_critic_kin/critic_best.pt} \
+    SYLVAN_CMD_EXPLORE_STD=${EXPLORE_STD:-0} SYLVAN_CMD_EXPLORE_PERSIST=${EXPLORE_PERSIST:-1} SYLVAN_CMD_EXPLORE_SEED=${SEED:-0} \
     SYLVAN_BC_LOG="$OUT" \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
