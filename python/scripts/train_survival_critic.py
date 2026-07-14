@@ -29,6 +29,7 @@ import argparse
 import glob as globmod
 import json
 import math
+import os
 from pathlib import Path
 
 import torch
@@ -104,6 +105,63 @@ def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
     return (torch.tensor(X), torch.tensor(G), torch.tensor(S), torch.tensor(EID))
 
 
+def analytic_labels(X: torch.Tensor) -> torch.Tensor:
+    """DISTILLATION (2026-07-08) : noter chaque état avec le PROFESSEUR ANALYTIQUE au lieu du vécu.
+
+    POURQUOI. Les labels Monte-Carlo (`G` ci-dessus) viennent de ce qui s'est RÉELLEMENT passé
+    ensuite : « depuis cet état, j'ai tenu encore L−t replans ». C'est la vérité, mais c'est BRUITÉ —
+    l'agent peut être dans une position excellente et mourir 200 pas plus tard pour une raison sans
+    rapport ; la réalité étiquette alors cette bonne situation comme mauvaise, et le critique apprend
+    une moyenne polluée. Le coût survie ANALYTIQUE, lui, EST déjà une fonction de valeur (« pas-vécus
+    simulés », `_survival_extension`) : il donne une note PROPRE, DENSE et COHÉRENTE à chaque état.
+
+    SONDE DE PLAFOND (faite AVANT d'écrire ceci, principe n°1 — gater le cher derrière le pas-cher) :
+    cette même valeur analytique, branchée DIRECTEMENT dans la fente du critique (SYLVAN_CRITIC_ORACLE=1)
+    et consommée exactement comme lui, forage 33 consommations contre 20 pour le critique appris (et 41
+    pour la formule codée-main dans SA propre fente). Donc (a) la fente du critique FONCTIONNE — le
+    planner sait exploiter un bon juge ; (b) c'est bien la VALEUR APPRISE le goulot, avec ~65% de forage
+    à récupérer. La distillation vise ce plafond de 33.
+
+    HONNÊTETÉ (§2). Distiller un coût codé-main, c'est BLANCHIR de la connaissance codée-main dans des
+    poids : on ne peut pas DÉPASSER son professeur (qui plafonne). Ça ne vaut donc PAS comme solution
+    finale — c'est un AMORÇAGE et un DIAGNOSTIC. La suite pure = affiner ensuite sur le vécu réel, et
+    MESURER que ça dépasse le professeur (sinon on n'a gagné qu'une copie plus lente et plus opaque).
+
+    Les paramètres du monde imaginé sont ceux du DÉPLOIEMENT (drain/restore passés par les scripts) —
+    toute divergence recréerait un train ≠ déploiement.
+    """
+    from sylvan.control.planning.command_planner import CommandPlanConfig, _survival_extension
+
+    cfg = CommandPlanConfig()
+    drain = float(os.environ.get("SYLVAN_PLANNER_DRAIN", "0.0005"))
+    restore = float(os.environ.get("SYLVAN_PLANNER_RESTORE", "0.4"))
+
+    lvl = X[:, :, 0]                                  # [N, 2] niveaux (énergie, soif)
+    dist = X[:, :, 1] * 10.0                          # [N, 2] distances (le token porte dist/10)
+    cos_b = X[:, :, 3]                                # cos(bearing) par ressource
+    known = X[:, :, 4] > 0.5
+    FAR = 1e4                                         # ressource inconnue → hors de portée (= token connu=0)
+    df = torch.where(known[:, 0], dist[:, 0], torch.full_like(dist[:, 0], FAR))
+    dw = torch.where(known[:, 1], dist[:, 1], torch.full_like(dist[:, 1], FAR))
+    # |bearing| depuis cos (le token est mirror-symétrique : le SIGNE est perdu, mais seul |bearing|
+    # compte pour le temps de virage — c'est précisément ce que la symétrie miroir garantit).
+    bf = torch.acos(cos_b[:, 0].clamp(-1.0, 1.0))
+    bw = torch.acos(cos_b[:, 1].clamp(-1.0, 1.0))
+    rate = max(cfg.surv_turn_rate, 1e-6)
+    # distance bouffe↔eau : inconnue depuis les tokens (le signe du bearing est perdu) → on prend une
+    # borne géométrique moyenne. Approximation ASSUMÉE et flaggée : elle n'affecte que la phase-2 du
+    # professeur (l'alternance après la 1ʳᵉ ressource), pas le terme dominant (atteindre l'urgente).
+    dist_fw = float(torch.sqrt((df.clamp(max=10.0) ** 2 + dw.clamp(max=10.0) ** 2)).mean())
+    s_food, s_water = _survival_extension(
+        df, dw, lvl[:, 0], lvl[:, 1],
+        torch.ones_like(df), torch.zeros_like(df),      # valeur DEPUIS cet état (frais, rien de vécu)
+        dist_fw, drain, restore, cfg.nominal_speed,
+        cfg.surv_horizon, cfg.surv_margin_weight,
+        turn_f=bf / rate, turn_w=bw / rate, gamma=0.0,
+    )
+    return (torch.maximum(s_food, s_water) / cfg.surv_horizon).clamp(0.0, 2.0)   # même échelle que V
+
+
 class SurvivalCritic(nn.Module):
     """Tokens [B, K, TOK_DIM] → V [B]. Drive-symétrique : encodeur PARTAGÉ + somme (invariant
     à l'ordre et au NOMBRE de pulsions → pulsion nouvelle = token nouveau, zéro retrain)."""
@@ -123,6 +181,10 @@ def main() -> None:
     ap.add_argument("--out", default="data/checkpoints/survival_critic")
     ap.add_argument("--iters", type=int, default=6000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--labels", choices=("mc", "analytic"), default="mc",
+                    help="mc = retours Monte-Carlo du VÉCU (bruité mais vrai, défaut) ; "
+                         "analytic = DISTILLATION depuis le professeur codé-main (propre mais capé "
+                         "à sa performance) — cf docstring de analytic_labels()")
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     torch.set_num_threads(4)
@@ -133,6 +195,16 @@ def main() -> None:
     te_mask = (EID % 4 == 3)                                # split par ÉPISODE (déterministe, ~25%)
     tr = ~te_mask
     print(f"[critic] dirs={len(dirs)} épisodes={n_ep} replans={len(X)} (train={int(tr.sum())} test={int(te_mask.sum())})")
+
+    if args.labels == "analytic":
+        # DISTILLATION : mêmes ÉTATS, notes du PROFESSEUR au lieu de l'issue vécue.
+        G = analytic_labels(X)
+        print(f"[critic] LABELS = ANALYTIQUE (distillation du coût survie codé-main) : "
+              f"cible méd={float(G.median()):.4f} min={float(G.min()):.4f} max={float(G.max()):.4f} "
+              f"std={float(G.std()):.4f}")
+        if float(G.std()) < 1e-3:
+            print("[critic] ⚠️ CIBLE QUASI CONSTANTE → rien à apprendre, la distillation serait vide. STOP.")
+            return
 
     critic = SurvivalCritic()
     opt = torch.optim.Adam(critic.parameters(), 2e-3, weight_decay=1e-4)
@@ -146,6 +218,14 @@ def main() -> None:
     with torch.no_grad():
         v = critic.value(X[te_mask])
         s = S[te_mask]
+        # 0. FIDÉLITÉ À LA CIBLE (le gate DÉCISIF en distillation) : R² sur le held-out. Un critique
+        #    qui ne SAIT PAS reproduire son professeur n'a aucune chance de le remplacer — et si R²
+        #    est haut mais que le forage reste mauvais, alors le défaut n'est NI les données NI les
+        #    notes : c'est l'architecture ou la façon dont le planner l'interroge. Les 2 issues tranchent.
+        gt = G[te_mask]
+        ss_res = float(((v - gt) ** 2).sum())
+        ss_tot = float(((gt - gt.mean()) ** 2).sum())
+        r2 = 1.0 - ss_res / max(ss_tot, 1e-12)
         # 1. AUC
         o = torch.argsort(v); rk = torch.empty_like(v); rk[o] = torch.arange(1, len(v) + 1, dtype=v.dtype)
         npos, nneg = float(s.sum()), float((1 - s).sum())
@@ -175,6 +255,9 @@ def main() -> None:
         correct = torch.where(dep_nearer, v0 > v1, v1 > v0)
         frac = float(correct.float().mean()) if len(Xs) else float("nan")
 
+    print(f"[critic] 0. FIDÉLITÉ à la cible : R² held-out = {r2:.3f}"
+          + ("  <- DÉCISIF en distillation : sait-il seulement reproduire son professeur ?"
+             if args.labels == "analytic" else "  (vs retours MC)"))
     print(f"[critic] 1. AUC held-out = {auc:.3f} (gate ≥0.85, réf G2 0.88)")
     print(f"[critic] 2. NON-SATURATION : std_V(saturés)/std_V(tous) = {ratio:.2f} (gate ≥0.5)")
     print(f"[critic] 3. équilibre : ΔV(e bas)={dvs[0]:+.3f} ΔV(t bas)={dvs[1]:+.3f} (les 2 <0)")

@@ -682,8 +682,46 @@ class CommandPlanner:
             toks = torch.stack([lv, torch.where(known > 0.5, d.clamp(max=10.0) / 10.0, torch.ones_like(d)),
                                 pos[..., 0].abs() / d * known, pos[..., 1] / d * known,
                                 known], dim=-1)                     # [n, h, 2, TOK=5]
-            with torch.no_grad():
-                vmap = self._critic.value(toks.reshape(-1, 2, toks.shape[-1])).reshape(lv.shape[0], lv.shape[1])
+            if os.environ.get("SYLVAN_CRITIC_ORACLE") == "1":
+                # ── SONDE « PLAFOND DE LA DISTILLATION » (2026-07-08, GRATUITE : zéro entraînement) ──
+                # On remplace la valeur APPRISE par la valeur ANALYTIQUE (le coût survie codé-main, qui
+                # EST déjà une fonction de valeur : « pas-vécus simulés »), calculée sur les MÊMES états
+                # rêvés et consommée EXACTEMENT comme le critique (moyenne sur l'horizon).
+                # QUESTION : si le critique copiait PARFAITEMENT le professeur analytique, foragerait-il
+                # bien ? Ce n'est PAS évident : le planner utilise le critique en MOYENNANT sa note le
+                # long du futur imaginé, alors que le coût survie, quand il travaille seul, score chaque
+                # candidat depuis la FIN de son rêve. La façon de CONSOMMER la valeur diffère.
+                #   - forage BON  → le plafond est atteignable → distiller le critique a du sens.
+                #   - forage MAUVAIS → même une valeur PARFAITE échoue dans cette fente → le défaut est
+                #     la façon dont le PLANNER interroge le critique, pas la valeur ni les données.
+                #     → la distillation serait inutile, et on l'aura su sans l'entraîner.
+                n_, h_ = lv.shape[0], lv.shape[1]
+                pf, pw = pos[:, :, 0, :], pos[:, :, 1, :]              # [n, h, 2]
+                df_ = pf.norm(dim=-1).reshape(-1)
+                dw_ = pw.norm(dim=-1).reshape(-1)
+                # temps de virage : bearing de chaque ressource dans le repère de l'état rêvé
+                bf_ = torch.atan2(pf[..., 0], pf[..., 1]).abs().reshape(-1)
+                bw_ = torch.atan2(pw[..., 0], pw[..., 1]).abs().reshape(-1)
+                rate_ = max(cfg.surv_turn_rate, 1e-6)
+                # ressource inconnue → la mettre HORS DE PORTÉE (le coût la traitera comme inatteignable),
+                # cohérent avec le token « connu=0 » du critique appris.
+                far = torch.full_like(df_, 1e4)
+                kf = known[:, :, 0].reshape(-1) > 0.5
+                kw = known[:, :, 1].reshape(-1) > 0.5
+                df_ = torch.where(kf, df_, far)
+                dw_ = torch.where(kw, dw_, far)
+                s_f, s_w = _survival_extension(
+                    df_, dw_, lv[:, :, 0].reshape(-1), lv[:, :, 1].reshape(-1),
+                    torch.ones_like(df_), torch.zeros_like(df_),          # valeur DEPUIS cet état (frais)
+                    float(torch.linalg.vector_norm(pf - pw, dim=-1).mean()),
+                    cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
+                    cfg.surv_horizon, cfg.surv_margin_weight,
+                    turn_f=bf_ / rate_, turn_w=bw_ / rate_, gamma=0.0,
+                )
+                vmap = torch.maximum(s_f, s_w).reshape(n_, h_) / cfg.surv_horizon   # ~[0,1] comme V
+            else:
+                with torch.no_grad():
+                    vmap = self._critic.value(toks.reshape(-1, 2, toks.shape[-1])).reshape(lv.shape[0], lv.shape[1])
             score = vmap.mean(dim=1) * (1.0 - survival_pen.clamp(0.0, 1.0))
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
@@ -731,6 +769,11 @@ class CommandPlanner:
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()
                 out_d["min_df"] = min_df.tolist()   # distance MIN à la bouffe atteinte dans le rêve
                 out_d["min_dw"] = min_dw.tolist()   # idem eau → mesure si l'argmax ferme sur la cible
+                # VALEUR BRUTE PAR PAS [n, h] + facteur de chute, AVANT l'agrégation de la ligne 725.
+                # Permet à diag_critic_aggregation de rejouer d'AUTRES agrégations (terminale, queue,
+                # escomptée) sur les MÊMES rêves, sans ré-entraîner ni re-rouler le WM.
+                out_d["vmap"] = vmap.tolist()
+                out_d["fall"] = (1.0 - survival_pen.clamp(0.0, 1.0)).tolist()
             return out_d
 
         if surv_mode:
