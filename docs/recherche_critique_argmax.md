@@ -174,6 +174,30 @@ bruit réordonne les actions* ») et prescrit de paramétrer `V(s) + A(s,a)` en 
   faut zéro. **La question qu'elle devait trancher (« ne sait pas exprimer » vs « ne sait pas apprendre »)
   a maintenant une troisième réponse : ni l'un ni l'autre — la fente est trop étroite pour QUICONQUE.**
 
+## 6bis. « L'entité peut-elle progresser de son vécu ? » — OUI, et c'est mesuré (2026-07-15)
+
+Question de l'owner, après le §4 : si le critique n'a plus à remplacer le coût, reste-t-il quelque chose
+à apprendre ? Un critique ne peut apporter que le **résidu** — l'écart entre ce que l'inné prédit et ce qui
+arrive vraiment. Si ce résidu est du bruit, le vécu n'enseigne rien. Sonde `diag_experience_residual.py`
+(gratuite, 57 vies mortes non-tronquées, split par ÉPISODE) :
+
+| | |
+|---|---|
+| survie réellement vécue | médiane **930** pas |
+| survie prédite par l'inné | médiane **1572** pas → **l'inné est optimiste de ~1,7×** |
+| l'inné explique-t-il le vécu ? | R² **+0.52**, corrélation de rang **+0.88** (il ORDONNE bien, il CALIBRE mal) |
+| **le résidu est-il apprenable ?** | **R² = +0.21 sur des vies JAMAIS VUES** (critère pré-enregistré : ≥ 0.15) |
+
+**Le vécu contient une leçon, et elle est structurée** (ce n'est pas du bruit : un petit réseau la retrouve
+sur des vies qu'il n'a jamais vues). Cette leçon a un contenu identifiable : l'inné suppose un trajet **droit,
+à vitesse nominale, avec alternance parfaite** — la réalité (errance, hésitation, virages) coûte ~40 % de vie
+en moins. **C'est exactement ce qu'un critique peut apprendre et que la géométrie ne saura jamais dire.**
+
+→ Renforce ③ + ④ : `score = IC(inné, exact) + TC(résidu appris)`. Le résidu n'a **pas de socle commun** (il est
+petit par construction) → le problème des 98 % du §1b disparaît de lui-même.
+⚠️ Honnêteté §2 : corpus d'UNE politique déterministe → on mesure ce qui est apprenable **sous cette politique**
+(boucle auto-confirmante déjà connue). R² 0.21 = réel mais **modeste**. Ne pas survendre.
+
 ## 7. Critère de succès (le BUT, pas le proxy)
 
 Forage = **repas + boissons sur 12 vies** (jamais la survie médiane : le plafond épars est MÉTABOLIQUE,
