@@ -127,14 +127,23 @@ MINEURE pour l'aveugle (le danger tue avant ; +2 morts de faim). Son impact sur 
 est inconnu et se résout probablement seul (contourner = ne plus faire face au cylindre = bouffe re-visible). On
 ne résout pas un problème non confirmé. Réserve si confirmé : champ de fins piliers verts (rayons passent entre).
 
-**PROCHAIN PAS — brancher le slot-danger dans la DÉCISION (plus de retrain, plus de tuning géométrie).** Le WM
-produit déjà `out['slots']` avec le 3ᵉ slot danger localisé. Reste à ce que le planner/critique l'UTILISE :
-1. Diagnostic « oracle » : un terme codé-main « évite le vert » dans le planner → une entité qui perçoit+contourne
-   fait-elle tomber morts-danger vers 0 EN continuant à manger ? Prouve que le monde est soluble par la perception
-   (et répond du même coup à la question occlusion : la bouffe redevient-elle visible en contournant ?).
-2. But du projet : le **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) apprend-il
-   « près du vert → valeur basse » DU VÉCU ? Résidu enfin STRUCTURÉ → re-gate `--labels residual`.
-3. Mesurer LE BUT : morts-par-danger ↓ vers 0 (baseline aveugle 7/12), forage préservé.
+**ÉTAPE 2b FAITE + A/B = NÉGATIF QUI TUE LE PARI « DIFFÉRER L'OCCLUSION » (2026-07-16).** WM 3-slots construit
+sans retrain (`build_hazard_slot.py`, slot danger=vert idx 2), terme codé-main « évite le vert » branché
+(`command_planner.py`, échafaudage `SYLVAN_HAZARD_AVOID`). A/B évite OFF vs ON (WM 3-slots, danger r=1.3) :
+**les deux bras IDENTIQUES** — danger 0, faim **11** (vs 3 sans danger), soif 1, entrée **9 %**. L'évitement ON=OFF
+car il n'y a rien à éviter : le gros cylindre vert **occulte la bouffe** → l'entité ne voit plus sa nourriture →
+erre → meurt de FAIM (11/12) → et par accident n'entre plus dans le danger (9 %).
+
+⭐ **RÉTROSPECTIVE : le baseline 7/12 était avec le danger INVISIBLE** (bouffe visible → l'entité fonçait dedans).
+Dès que le danger devient VISIBLE (obligatoire pour le percevoir), l'occlusion domine et casse le forage.
+**L'occlusion n'était pas à différer — c'est LE verrou, confirmé.** Un danger perceptible DOIT être non-occultant.
+
+**PROCHAIN PAS — danger PERCEPTIBLE mais NON-OCCULTANT : champ de fins piliers verts.** Remplacer le cylindre
+plein (`hazard_manager.gd`) par N fins piliers verts dans la zone : la rétine voit du vert (perceptible), l'entité
+prend des dégâts dans la zone (inchangé, par distance au disque), mais les rayons passent ENTRE les piliers → la
+bouffe reste visible. Puis : re-vérifier slot (diag_hazard_slot : vert localisé, bouffe visible) → re-A/B évite
+OFF/ON (baseline consequent RÉTABLI + morts-danger ↓ en forageant) → PUIS le but : critique-résidu apprend l'évitement.
+Fait passé minuit 2026-07-16 → à reprendre tête reposée.
 
 ## Critère de succès = le BUT
 
