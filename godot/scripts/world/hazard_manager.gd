@@ -18,7 +18,11 @@ class_name HazardManager
 # traverse par construction. Auto-logge ses stats par épisode (pas de dépendance à main.gd pour le log).
 
 const HAZARD_HEIGHT := 1.2                 # hauteur du cylindre (les rayons rétine, à hauteur torse, le touchent)
-const HAZARD_COLOR := Color(0.6, 0.12, 0.85)   # VIOLET : distinct du rouge(bouffe) et du bleu(eau) dans les 3 canaux
+# VERT : le seul canal libre (rouge=bouffe, bleu=eau). Choisi pour la REQUÊTE-COULEUR du slot (seuil cosinus
+# 0.55, cf slot_head.py) : vert normalisé → cos 0.11 avec rouge, 0.23 avec bleu (les 2 < 0.55 = aucune fuite
+# dans les slots bouffe/eau), 0.97 avec une requête verte. Le violet (0.6,0.12,0.85) fuyait dans les DEUX
+# (cos 0.57 rouge / 0.81 bleu) → aurait corrompu la perception existante. Sonde slot-couleur, 2026-07-15.
+const HAZARD_COLOR := Color(0.1, 0.9, 0.15)   # émissif pour ressortir de l'herbe (mate, non-perceptible)
 
 var _discs: Array[Vector3] = []          # centres des zones (monde)
 var _radius := 1.3

@@ -104,13 +104,26 @@ sur food_manager) au centre de chaque zone. Vérif gratuite (collecte hazard-ON 
 rétine renvoie exactement le violet, distinct du rouge(bouffe)/bleu(eau) ; danger VU dans **79 % des frames**.
 Zéro ligne changée dans la rétine (elle encode déjà RGB). main.gd : +1 ligne `add_child(hazard_manager)` (local, non stagé).
 
-**PROCHAIN PAS — ÉTAPE 2 (le cher légitime, PRINCIPE N°3) : apprendre à VOIR le danger.** Aujourd'hui la
-rétine capte le violet mais le WM/slot ne requête que rouge+bleu → l'entité voit sans comprendre. Il faut
-**re-collecter le monde (hazard-ON) + ré-entraîner le WM** pour qu'il perçoive la position du danger (3ᵉ slot,
-requête-couleur violet, comme le slot-2 eau). Gaté derrière l'étape 1 (faite). Puis :
-3. Mesurer : une entité qui voit le danger le contourne-t-elle → morts-par-danger ↓ vers 0 (baseline 7/12), forage préservé ?
-4. Alors le **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) a enfin un résidu
-   structuré à apprendre (« près du danger → valeur basse ») → re-gate `--labels residual`.
+**ÉTAPE 2 RÉSOLUE SANS RETRAIN (2026-07-15) — le slot-danger marche sur le WM GELÉ.** Sonde gratuite
+`diag_hazard_slot.py` : le slot lit la rétine BRUTE (pas le latent) et localise par attention-couleur
+GÉOMÉTRIQUE → un 3ᵉ slot requête-VERT localise le danger sans ré-entraîner le WM (leçon slot-1 : « le slot
+était déjà là »). Résultats : (A) séparation couleur PARFAITE, 0 fuite (253 rouge→rouge, 2364 bleu→bleu,
+19498 vert→vert) ; (B) positions bouffe/eau bit-identiques 2-res vs 3-res ; (C) danger localisé 100 % des
+frames (saillance 0.80, 2.41 m). **Le violet était un piège** (cos 0.57 rouge / 0.81 bleu > seuil 0.55 →
+aurait corrompu bouffe+eau) → corrigé en VERT (`hazard_manager.gd`, `slot_head.py` 3ᵉ requête `[0,1,0]`).
+
+⚠️ **Caveat trouvé par la sonde (§2)** : 19498 rayons verts vs 253 rouges → le cylindre (rayon 1.3) **occulte
+la bouffe** qu'il garde (confirmé au gate : à 0.5, soif satisfaite mais morts de faim → eau atteignable, bouffe
+non). Réaliste mais confond « éviter » et « voir la ressource ». À l'étape suivante : **réduire le rayon**
+(ou décaler la zone) pour un test propre de « éviter le danger TOUT EN forageant ».
+
+**PROCHAIN PAS — brancher le slot-danger dans la DÉCISION (plus de retrain).** Le WM produit déjà `out['slots']`
+avec le 3ᵉ slot danger. Reste à ce que le planner/critique l'UTILISE :
+1. Régler l'occlusion (rayon danger ↓) pour un monde « évitable ET forageable ».
+2. Donner au planner un terme « évite le vert » (coût inné danger) OU — mieux, but du projet — laisser le
+   **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) apprendre « près du vert →
+   valeur basse ». Le résidu est enfin STRUCTURÉ (mourir dans le danger) → re-gate `--labels residual`.
+3. Mesurer LE BUT : morts-par-danger ↓ vers 0 (baseline aveugle 7/12), forage préservé.
 
 ## Critère de succès = le BUT
 

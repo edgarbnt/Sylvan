@@ -48,7 +48,10 @@ class SelfSupervisedSlotHead(nn.Module):
         # BYTE-IDENTIQUE (saillance color-agnostique du slot promu). L'émergence pure sans requête
         # (compétition+répulsion seules) a été tentée et a dégénéré (slot mort) — négatif informatif.
         if n_resources > 1:
-            q = torch.tensor([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]][:n_resources])
+            # requêtes PURE-CANAL, 1 par ressource : rouge=bouffe, bleu=eau, VERT=danger (2026-07-15).
+            # Vert = seul canal libre → cosinus < 0.55 (seuil) avec rouge ET bleu → zéro fuite croisée
+            # (le violet fuyait dans les deux). Byte-identique pour n_resources ≤ 2 (le slice garde red,blue).
+            q = torch.tensor([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]][:n_resources])
             self.register_buffer("color_queries", q / q.norm(dim=-1, keepdim=True))
         else:
             self.color_queries = None
