@@ -1,4 +1,4 @@
-extends RefCounted
+extends Node3D
 class_name HazardManager
 
 # ZONE NOCIVE (2026-07-15) — premier enrichissement du monde : une région qui ABÎME la santé.
@@ -7,13 +7,18 @@ class_name HazardManager
 # qu'une zone nocive est sur le chemin, l'entité fonce dedans en aveugle → coût INÉVITABLE par la
 # perception/décision actuelles. Cet échec est PROUVABLE, pas espéré : c'est le gate qui casse la boucle.
 #
-# ÉTAGE : c'est du MONDE (comme food_manager/water_manager), PAS de la perception. À ce stade l'entité
-# ne PERÇOIT pas le danger (le WM ne l'a jamais vu). C'est voulu : on prouve d'abord que la place existe
-# (l'entité souffre en aveugle), AVANT de payer le WM-retrain qui lui donnera le sens « danger ».
+# ÉTAGE : c'est du MONDE (comme food_manager/water_manager). La ZONE EST MAINTENANT PERCEPTIBLE (2026-07-15,
+# étape 1) : un cylindre coloré (retina_color VIOLET) sur la couche-8 rétine → la rétine la voit GRATIS,
+# exactement comme le rouge=bouffe / bleu=eau. MAIS le WM ne SAIT PAS ENCORE lire cette couleur (il ne
+# requête que rouge+bleu) → l'entité voit le violet sans le comprendre. Le sens « danger » = étape 2
+# (re-collecte + retrain WM, PRINCIPE N°3), gaté derrière la vérif que la rétine capte bien la couleur.
 #
-# Tout est OPT-IN (SYLVAN_HAZARD_COUNT=0 par défaut → module inerte, zéro régression). Placement : un
-# disque sur le segment spawn→bouffe-la-plus-proche, à HAZARD_FRAC du trajet → « aller tout droit » le
+# Tout est OPT-IN (SYLVAN_HAZARD_COUNT=0 par défaut → module inerte, zéro visuel, zéro régression). Placement :
+# un disque sur le segment spawn→bouffe-la-plus-proche, à HAZARD_FRAC du trajet → « aller tout droit » le
 # traverse par construction. Auto-logge ses stats par épisode (pas de dépendance à main.gd pour le log).
+
+const HAZARD_HEIGHT := 1.2                 # hauteur du cylindre (les rayons rétine, à hauteur torse, le touchent)
+const HAZARD_COLOR := Color(0.6, 0.12, 0.85)   # VIOLET : distinct du rouge(bouffe) et du bleu(eau) dans les 3 canaux
 
 var _discs: Array[Vector3] = []          # centres des zones (monde)
 var _radius := 1.3
@@ -25,6 +30,9 @@ var _damage := 0.5                        # santé/pas dedans. 0.5 = niveau LÉT
 var _frac := 0.55                         # position sur le segment spawn→bouffe (0=spawn, 1=bouffe)
 var _count := 0
 var _rng := RandomNumberGenerator.new()
+
+var _material: StandardMaterial3D
+var _visuals: Array[Node3D] = []          # 1 cylindre perceptible par zone (mesh + Area3D couche-8)
 
 # stats de l'épisode courant (le gate les lit dans le log Godot)
 var _ep := -1
@@ -48,6 +56,44 @@ func active() -> bool:
 	return _count > 0
 
 
+# Construit les cylindres perceptibles UNE FOIS (mesh violet translucide + Area3D couche-8 rétine).
+# Calqué sur food_manager._ensure_built : l'Area3D ne bloque PAS la physique (mask 0), elle sert
+# UNIQUEMENT à être lue par le raycast couleur de la rétine (meta "retina_color").
+func _ensure_built() -> void:
+	if not active() or not _visuals.is_empty():
+		return
+	if _material == null:
+		_material = StandardMaterial3D.new()
+		_material.albedo_color = Color(HAZARD_COLOR.r, HAZARD_COLOR.g, HAZARD_COLOR.b, 0.45)
+		_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_material.emission_enabled = true
+		_material.emission = HAZARD_COLOR * 0.4
+	for i in range(_count):
+		var m := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = _radius
+		cyl.bottom_radius = _radius
+		cyl.height = HAZARD_HEIGHT
+		m.mesh = cyl
+		m.material_override = _material
+		m.position = Vector3(0.0, HAZARD_HEIGHT * 0.5, 0.0)   # pose sur le sol
+		add_child(m)
+		# PERCEPTION rétine : Area3D couche 8 (jamais bloquante), meta "retina_color" = ce que le rayon lira.
+		var area := Area3D.new()
+		area.collision_layer = 1 << 7   # couche 8 = "perceptible-rétine" (idem food_manager)
+		area.collision_mask = 0
+		area.set_meta("retina_color", HAZARD_COLOR)
+		var cs := CollisionShape3D.new()
+		var shape := CylinderShape3D.new()
+		shape.radius = _radius
+		shape.height = HAZARD_HEIGHT
+		cs.shape = shape
+		area.add_child(cs)
+		m.add_child(area)
+		m.visible = false
+		_visuals.append(m)
+
+
 # Placer les zones pour le nouvel épisode ET logger les stats de l'épisode PRÉCÉDENT (self-contained).
 func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array) -> void:
 	if _ep >= 0 and active():
@@ -60,6 +106,7 @@ func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array
 	_discs.clear()
 	if not active():
 		return
+	_ensure_built()
 	# Zone sur le segment spawn→bouffe-la-plus-proche (celle que le planner va viser en aveugle).
 	var nearest: Vector3 = spawn_pos
 	var best := INF
@@ -75,6 +122,13 @@ func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array
 		var a := _rng.randf_range(0.0, TAU)
 		var r := _rng.randf_range(2.0, 6.0)
 		_discs.append(spawn_pos + Vector3(cos(a) * r, 0.0, sin(a) * r))
+	# positionner/afficher les cylindres perceptibles aux centres des zones
+	for i in range(_visuals.size()):
+		if i < _discs.size():
+			_visuals[i].global_position = Vector3(_discs[i].x, 0.0, _discs[i].z)
+			_visuals[i].visible = true
+		else:
+			_visuals[i].visible = false
 
 
 # Dégâts à appliquer à cette position (0 si hors zone). Appelé chaque pas depuis la boucle de main.gd.

@@ -98,13 +98,17 @@ zone devient **létale** : traverser vide la barre (100 dégâts) → **7/12 vie
   par une entité qui PERÇOIT et CONTOURNE. Payoff net, non ambigu (≠ marge floue du critique).
 - **Config verrouillée** : `SYLVAN_HAZARD_COUNT=1` (r=1.3, dégâts=0.5, frac=0.55). Défaut OFF = zéro régression.
 
-**PROCHAIN PAS (identifié avec l'owner) : rendre le danger PERCEPTIBLE.** La rétine encode déjà la couleur RGB
-(`perception.gd:56-60`, `retina_color` sur couche 8) → food=rouge, eau=bleu, appris. Étapes :
-1. Donner à la zone une présence physique **colorée** (collider couche-8, `retina_color` distincte) → la rétine
-   la voit GRATIS (zéro ligne rétine). *(cheap)*
-2. **Re-collecter + ré-entraîner le WM** pour qu'il perçoive cette couleur = le sens « danger » (PRINCIPE N°3,
-   le seul cher légitime). *(cher — gaté derrière 1)*
-3. Mesurer : une entité qui voit le danger le contourne-t-elle → morts-par-danger ↓ vers 0, forage préservé ?
+**ÉTAPE 1 FAITE + VÉRIFIÉE (2026-07-15) : le danger est PERCEPTIBLE.** `hazard_manager.gd` est devenu un
+`Node3D` qui pose un cylindre **violet** `(0.6,0.12,0.85)` (mesh + Area3D couche-8 `retina_color`, calqué
+sur food_manager) au centre de chaque zone. Vérif gratuite (collecte hazard-ON + parse `wm.retina0`) : la
+rétine renvoie exactement le violet, distinct du rouge(bouffe)/bleu(eau) ; danger VU dans **79 % des frames**.
+Zéro ligne changée dans la rétine (elle encode déjà RGB). main.gd : +1 ligne `add_child(hazard_manager)` (local, non stagé).
+
+**PROCHAIN PAS — ÉTAPE 2 (le cher légitime, PRINCIPE N°3) : apprendre à VOIR le danger.** Aujourd'hui la
+rétine capte le violet mais le WM/slot ne requête que rouge+bleu → l'entité voit sans comprendre. Il faut
+**re-collecter le monde (hazard-ON) + ré-entraîner le WM** pour qu'il perçoive la position du danger (3ᵉ slot,
+requête-couleur violet, comme le slot-2 eau). Gaté derrière l'étape 1 (faite). Puis :
+3. Mesurer : une entité qui voit le danger le contourne-t-elle → morts-par-danger ↓ vers 0 (baseline 7/12), forage préservé ?
 4. Alors le **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) a enfin un résidu
    structuré à apprendre (« près du danger → valeur basse ») → re-gate `--labels residual`.
 
