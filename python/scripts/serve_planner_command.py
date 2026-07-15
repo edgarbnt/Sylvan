@@ -154,6 +154,7 @@ class _PlannerService:
         # SLOT-2 : assignation slot→ressource (label-free, calculée au train) portée par le meta.
         wm.food_idx = meta.get("food_idx", 0)
         wm.water_idx = meta.get("water_idx")
+        wm.hazard_idx = meta.get("hazard_idx")   # 3ᵉ slot danger (WM construit par build_hazard_slot) — None sinon
         if meta.get("slot_resources", 1) > 1:
             print(f"[planner-cmd] SLOT-2 actif : {meta['slot_resources']} slots requêtés-couleur "
                   f"(food_idx={wm.food_idx}, water_idx={wm.water_idx}) → l'eau quitte l'oracle EMA")

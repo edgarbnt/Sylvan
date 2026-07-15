@@ -847,6 +847,25 @@ class CommandPlanner:
                 # LIMITE ASSUMÉE et flaggée (§2) : le corpus ne porte aucun label d'ordre.
                 s_food = s_food + corr
                 s_water = s_water + corr
+
+            # ── ÉVITE LE DANGER — ÉCHAFAUDAGE DIAGNOSTIC (2026-07-15), terme codé-main « fuis le vert » ──
+            # BUT : PROUVER que le monde est soluble par la PERCEPTION (une entité qui VOIT le danger et le
+            # contourne fait-elle tomber les morts-danger EN continuant à manger ?) → plafond atteignable,
+            # AVANT d'investir dans la version APPRISE (critique-résidu). 🚨 ÉCHAFAUDAGE déclaré
+            # (architecture.json), À RETIRER : la vraie évitement doit être APPRISE, pas codée (PRINCIPE §3).
+            # OPT-IN, SYLVAN_HAZARD_AVOID=0 par défaut = OFF (zéro régression). Pénalise un candidat dont le
+            # rêve s'APPROCHE du slot-danger (transporté par le WM), gaté par la visibilité du danger à t0
+            # (pas de fantôme hors-vue). Comme corr, se soustrait aux DEUX ordres → ne biaise pas bouffe/eau.
+            _haz_i = getattr(self.world_model, "hazard_idx", None)
+            _haz_w = float(os.environ.get("SYLVAN_HAZARD_AVOID", "0"))
+            if (_haz_w > 0.0 and _haz_i is not None and "slots" in out
+                    and _vis is not None and float(_vis[int(_haz_i)]) > 1e-3):
+                reach = float(os.environ.get("SYLVAN_HAZARD_AVOID_REACH", "1.0"))
+                d_haz = out["slots"][:, :, int(_haz_i), :].norm(dim=-1)          # [n, h] dist au danger le long du rêve
+                intrusion = (reach - d_haz.min(dim=1).values).clamp(min=0.0)      # [n] combien on entre dans la marge
+                penalty = _haz_w * intrusion                                      # en pas-de-survie
+                s_food = s_food - penalty
+                s_water = s_water - penalty
             if cfg.far_align:
                 # ÉCHAFAUDAGE far-target (RETIRABLE, doc §5/§7) : quand la cible est LOIN, tous les candidats
                 # survivent (score saturé au cap) → départage vers celui dont la trajectoire RÊVÉE pointe la
