@@ -138,12 +138,33 @@ erre → meurt de FAIM (11/12) → et par accident n'entre plus dans le danger (
 Dès que le danger devient VISIBLE (obligatoire pour le percevoir), l'occlusion domine et casse le forage.
 **L'occlusion n'était pas à différer — c'est LE verrou, confirmé.** Un danger perceptible DOIT être non-occultant.
 
-**PROCHAIN PAS — danger PERCEPTIBLE mais NON-OCCULTANT : champ de fins piliers verts.** Remplacer le cylindre
-plein (`hazard_manager.gd`) par N fins piliers verts dans la zone : la rétine voit du vert (perceptible), l'entité
-prend des dégâts dans la zone (inchangé, par distance au disque), mais les rayons passent ENTRE les piliers → la
-bouffe reste visible. Puis : re-vérifier slot (diag_hazard_slot : vert localisé, bouffe visible) → re-A/B évite
-OFF/ON (baseline consequent RÉTABLI + morts-danger ↓ en forageant) → PUIS le but : critique-résidu apprend l'évitement.
-Fait passé minuit 2026-07-16 → à reprendre tête reposée.
+**CHAMP DE PILIERS = OCCLUSION RÉSOLUE (2026-07-16, `ddb8f5e`).** Cylindre plein → N fins piliers verts (dégâts
+= disque inchangé ; visibilité = poteaux fins, rayons passent entre). Sonde slot : bouffe visible 2185 rayons
+(vs 253), danger localisé 100 %, slot-danger ↔ slot-bouffe 2.05 m (distincts). Un disque plat au sol ne marcherait
+pas (rétine horizontale ne voit pas le sol).
+
+**A/B ÉVITE OFF vs ON (piliers, WM 3-slots) — JALON + DILEMME (2026-07-16) :**
+| | sans danger | évite OFF | évite ON |
+|---|---|---|---|
+| morts danger | 0 | **8/12** | **5/12** |
+| morts faim | 3 | 3 | 7 |
+| entrée zone | — | 64 % | 45 % |
+
+⭐ **PROUVÉ (jalon net) : la chaîne perception → slot → décision marche DE BOUT EN BOUT, ZÉRO retrain WM.** Baseline
+conséquent rétabli (OFF 8/12) ; l'évitement RÉDUIT morts-danger (8→5) et entrée (64→45 %) → l'entité perçoit ET
+évite le danger. **PAS atteint : gain de survie net** — l'évitement échange danger contre faim (3→7). Causes (non
+masquées) : (1) le danger GARDE la bouffe (55 % du trajet) → éviter = ne plus manger = dilemme risque/récompense
+RÉEL ; (2) horizon planner myope (~0.8 m vs danger 2-4 m) → évitement TARDIF, l'entité fuit au lieu de contourner
+(même mur d'horizon court que le critique) ; (3) monde marginal → vies condamnées de toute façon (change la cause,
+pas le nombre).
+
+**PROCHAIN PAS — le monde pose enfin un VRAI dilemme de décision** (traverser pour manger vs détourer) : dans le
+plat l'inné était optimal, ICI il ne l'est plus → c'est LA place pour que l'apprentissage compte. Pistes (tête
+reposée) : (a) sweep du poids d'évitement / reach (existe-t-il un équilibre qui améliore la survie NETTE, ou le
+dilemme est-il irréductible avec un avoid myope ?) ; (b) mesurer le BUT = forage (repas+boissons) et temps de survie,
+pas la cause de mort ; (c) LE BUT DU PROJET : le **critique-résidu déjà codé** (`SYLVAN_PLANNER_COST=residual`)
+apprend-il un arbitrage risque/récompense PLUS FIN que l'avoid myope (le résidu « mourir dans le vert » est
+maintenant structuré ET perçu) → re-gate `--labels residual`. Échafaudage avoid = à retirer une fois l'appris validé.
 
 ## Critère de succès = le BUT
 
