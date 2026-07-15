@@ -17,7 +17,11 @@ class_name HazardManager
 
 var _discs: Array[Vector3] = []          # centres des zones (monde)
 var _radius := 1.3
-var _damage := 0.1                        # santé/pas tant qu'à l'intérieur
+var _damage := 0.5                        # santé/pas dedans. 0.5 = niveau LÉTAL choisi au gate (2026-07-15) :
+                                          # traverser vide la barre (100 dégâts) → 7/12 vies aveugles TUÉES
+                                          # par le danger (vs 0 sans) ; éviter = retour au régime normal. En
+                                          # dessous (0.1-0.35) la santé est du slack (la faim tue avant) → non
+                                          # conséquent. diagnostics/diag_hazard_gate.py.
 var _frac := 0.55                         # position sur le segment spawn→bouffe (0=spawn, 1=bouffe)
 var _count := 0
 var _rng := RandomNumberGenerator.new()

@@ -39,13 +39,12 @@ def parse_lives(path: str) -> list[dict]:
             last[ep] = (int(m.group(2)), float(m.group(3)), float(m.group(4)), float(m.group(5)))
     lives = []
     for ep, (_step, e, t, h) in sorted(last.items()):
-        cause = "tronque"
-        if h <= 0.5:
-            cause = "danger"           # sante a 0 = tue par la zone nocive (rien d'autre ne l'abime ici)
-        elif e <= 0.5:
-            cause = "faim"
-        elif t <= 0.5:
-            cause = "soif"
+        # CAUSE = le drive le PLUS BAS a la derniere mesure (le log echantillonne tous les 10 pas →
+        # le vrai zero est manque ; l'argmin est le proxy honnete). Sante = seule chose que la zone
+        # nocive abaisse → sante minimale = mort par danger. Seuil 15 : au-dessus = vie tronquee.
+        levels = {"faim": e, "soif": t, "danger": h}
+        killer = min(levels, key=levels.get)
+        cause = killer if levels[killer] <= 15.0 else "tronque"
         lives.append({"ep": ep, "energy": e, "thirst": t, "health": h, "cause": cause})
     return lives
 

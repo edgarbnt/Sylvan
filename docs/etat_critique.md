@@ -88,10 +88,25 @@ puis composant qui apprend à l'éviter) est **gaté derrière la preuve gratuit
 paie l'étape N+1 que si l'entité aveugle SOUFFRE mesurablement du danger. Le baseline aveugle (santé perdue /
 morts par danger) = le chiffre que l'entité percevante+décidante devra battre ensuite.
 
-**État au coucher (2026-07-15)** : gate en cours (12 vies OFF vs 12 ON). Prochain pas au réveil : lire le
-verdict (`diag_hazard_gate.py --off /tmp/gate_godot_off.log --on /tmp/gate_godot_on.log`) ; si place prouvée
-→ étage suivant = donner au WM le sens « danger » (re-collecte + retrain), PRINCIPE N°3. Si raté de réglage
-(placement/dégâts) → retuner `SYLVAN_HAZARD_*` et rejouer (gratuit).
+**Gate PASSÉ et CONSÉQUENT (2026-07-15)** : `diag_hazard_gate.py`, 12 vies OFF vs ON, plusieurs niveaux de
+dégâts. Résultat : la santé est du **slack** (rien ne la lit avant 0 : ni planner, ni récompense, ni corps →
+vérifié) → un danger sous-létal ne change rien (la faim tue avant). À **dégâts 0.5** (défaut verrouillé), la
+zone devient **létale** : traverser vide la barre (100 dégâts) → **7/12 vies aveugles TUÉES par le danger**
+(vs 0 sans danger ; morts de soif 8→0). Éviter = retour au régime normal → monde survivable *si contourné*.
+
+- **BASELINE AVEUGLE = 7/12 (58 %) tuées par un danger invisible.** C'est le chiffre à faire tomber vers 0
+  par une entité qui PERÇOIT et CONTOURNE. Payoff net, non ambigu (≠ marge floue du critique).
+- **Config verrouillée** : `SYLVAN_HAZARD_COUNT=1` (r=1.3, dégâts=0.5, frac=0.55). Défaut OFF = zéro régression.
+
+**PROCHAIN PAS (identifié avec l'owner) : rendre le danger PERCEPTIBLE.** La rétine encode déjà la couleur RGB
+(`perception.gd:56-60`, `retina_color` sur couche 8) → food=rouge, eau=bleu, appris. Étapes :
+1. Donner à la zone une présence physique **colorée** (collider couche-8, `retina_color` distincte) → la rétine
+   la voit GRATIS (zéro ligne rétine). *(cheap)*
+2. **Re-collecter + ré-entraîner le WM** pour qu'il perçoive cette couleur = le sens « danger » (PRINCIPE N°3,
+   le seul cher légitime). *(cher — gaté derrière 1)*
+3. Mesurer : une entité qui voit le danger le contourne-t-elle → morts-par-danger ↓ vers 0, forage préservé ?
+4. Alors le **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) a enfin un résidu
+   structuré à apprendre (« près du danger → valeur basse ») → re-gate `--labels residual`.
 
 ## Critère de succès = le BUT
 
