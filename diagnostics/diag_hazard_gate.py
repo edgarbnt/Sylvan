@@ -55,8 +55,11 @@ def parse_hazard(path: str) -> dict[int, dict]:
     for line in open(path, errors="ignore"):
         m = HAZ.search(line)
         if m:
-            out[int(m.group(1))] = {"entered": m.group(2) == "True",
-                                    "steps_in": int(m.group(3)), "damage": float(m.group(4))}
+            # signal ROBUSTE = pas_dans_zone > 0 (le flag texte est "true"/"false" en GDScript,
+            # minuscule → une comparaison "==True" ratait ; on lit directement les pas comptés).
+            steps_in = int(m.group(3))
+            out[int(m.group(1))] = {"entered": steps_in > 0,
+                                    "steps_in": steps_in, "damage": float(m.group(4))}
     return out
 
 
