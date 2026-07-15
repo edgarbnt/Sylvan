@@ -117,12 +117,23 @@ la bouffe** qu'il garde (confirmé au gate : à 0.5, soif satisfaite mais morts 
 non). Réaliste mais confond « éviter » et « voir la ressource ». À l'étape suivante : **réduire le rayon**
 (ou décaler la zone) pour un test propre de « éviter le danger TOUT EN forageant ».
 
-**PROCHAIN PAS — brancher le slot-danger dans la DÉCISION (plus de retrain).** Le WM produit déjà `out['slots']`
-avec le 3ᵉ slot danger. Reste à ce que le planner/critique l'UTILISE :
-1. Régler l'occlusion (rayon danger ↓) pour un monde « évitable ET forageable ».
-2. Donner au planner un terme « évite le vert » (coût inné danger) OU — mieux, but du projet — laisser le
-   **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) apprendre « près du vert →
-   valeur basse ». Le résidu est enfin STRUCTURÉ (mourir dans le danger) → re-gate `--labels residual`.
+**Occlusion : réglage géométrique RÉFUTÉ (2026-07-15, 3 négatifs convergents).** Sweep rayon+placement pour
+rendre le monde « évitable ET forageable » : r=0.8/0.5 → bouffe visible (0.78/frame) MAIS entrée 9%/0% (l'aveugle
+rate le petit disque → 0 mort-danger, baseline perdu) ; funnel (frac 0.8, près bouffe) → PIRE : bouffe bloquée
+(10 morts de faim) et 2 morts-danger seulement. CAUSE FONDAMENTALE : un disque opaque « sur le trajet vers la
+bouffe » EST « sur la ligne de vue vers la bouffe » → occulte par construction. Rayon/placement = mauvais leviers.
+DÉCISION anti-boucle : **garder r=1.3** (seule config conséquente, 7/12 ; défaut, zéro code). L'occlusion y est
+MINEURE pour l'aveugle (le danger tue avant ; +2 morts de faim). Son impact sur une entité qui PERÇOIT+CONTOURNE
+est inconnu et se résout probablement seul (contourner = ne plus faire face au cylindre = bouffe re-visible). On
+ne résout pas un problème non confirmé. Réserve si confirmé : champ de fins piliers verts (rayons passent entre).
+
+**PROCHAIN PAS — brancher le slot-danger dans la DÉCISION (plus de retrain, plus de tuning géométrie).** Le WM
+produit déjà `out['slots']` avec le 3ᵉ slot danger localisé. Reste à ce que le planner/critique l'UTILISE :
+1. Diagnostic « oracle » : un terme codé-main « évite le vert » dans le planner → une entité qui perçoit+contourne
+   fait-elle tomber morts-danger vers 0 EN continuant à manger ? Prouve que le monde est soluble par la perception
+   (et répond du même coup à la question occlusion : la bouffe redevient-elle visible en contournant ?).
+2. But du projet : le **critique-correction déjà codé** (`IC + λ·TC`, `SYLVAN_PLANNER_COST=residual`) apprend-il
+   « près du vert → valeur basse » DU VÉCU ? Résidu enfin STRUCTURÉ → re-gate `--labels residual`.
 3. Mesurer LE BUT : morts-par-danger ↓ vers 0 (baseline aveugle 7/12), forage préservé.
 
 ## Critère de succès = le BUT
