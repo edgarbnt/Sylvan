@@ -65,6 +65,12 @@ DEFAULT_PAIN = "data/checkpoints/waypoint_pain_v3/pain_best.pt"
 DEFAULT_RUNS = ["data/replay_buffer/critic_kin_g24as1", "data/replay_buffer/critic_kin_g24as2",
                 "data/replay_buffer/critic_kin_g24bs1", "data/replay_buffer/critic_kin_g24bs2",
                 "data/replay_buffer/critic_kin_spx3", "data/replay_buffer/critic_kin_spx4"]
+# corpus élargi de la tête P(mort) (P2-bis) : + les bras juge/pure (riches en morts-danger).
+# ⚠️ leurs `costs` loggés ne sont PAS analytiques (leur forme de scoring) → train de têtes
+# seulement ; les replays de gates (simulate_choice analytique) restent sur DEFAULT_RUNS.
+DEATH_RUNS = DEFAULT_RUNS + [
+    "data/replay_buffer/critic_kin_judge1", "data/replay_buffer/critic_kin_judge2",
+    "data/replay_buffer/critic_kin_pure1", "data/replay_buffer/critic_kin_pure2"]
 
 
 class SprintCritic(nn.Module):
@@ -144,6 +150,13 @@ def load_sprint_decisions(run: Path, life_base: int = 0) -> list[dict]:
         i = bisect.bisect_left(gticks, t)          # fallback log Godot (échantillonné /10)
         return gvals[min(i, len(gvals) - 1)]
 
+    # santé FINALE par épisode (dernier échantillon Godot de l'épisode) — robuste à la dérive des
+    # frontières approximées (+10/ép), contrairement à h_at(end−1) qui peut déborder sur la vie
+    # suivante (santé reset 100). Sémantique parse_lives : mort-danger ⇔ santé finale < 15.
+    ep_last_h: dict[int, float] = {}
+    for t, v in zip(gticks, gvals):
+        ep_last_h[bisect.bisect_right(gstarts, t) - 1] = v
+
     out = []
     for i, d in enumerate(decs):
         t0 = d["tick"]
@@ -175,7 +188,11 @@ def load_sprint_decisions(run: Path, life_base: int = 0) -> list[dict]:
             "cls": cls, "intr_chosen": chosen_i, "intr_direct": direct_i, "intr_all": intr,
             "e": e0, "t": t0v, "h": h0v, "d_tg": d["feats"][0][3] * 10.0,
             "got": got, "gain": gain, "dmg": max(0.0, h0 - hmin),
-            "died": t1 >= end - 2, "left": max(end - 1 - t0, 0), "steps": t1 - t0,
+            "died": t1 >= end - 2,
+            # mort-DANGER = la vie se termine dans la fenêtre ET santé finale <15 (sémantique
+            # parse_lives ; faim/soif gardent leur santé) — label de P̂mort (P2-bis)
+            "died_danger": t1 >= end - 2 and ep_last_h.get(b, 100.0) < 15.0,
+            "left": max(end - 1 - t0, 0), "steps": t1 - t0,
             "life": life_base + b, "chosen": d["chosen"], "feats_all": d["feats"],
             "costs": d["costs"],
         })
@@ -456,6 +473,92 @@ def train(args: argparse.Namespace) -> None:
     print(f"[sprint] sauvé → {out / 'sprint_best.pt'}")
 
 
+def _fit_bce(X: torch.Tensor, y: torch.Tensor, iters: int, seed: int) -> SprintCritic:
+    """Fit BCE générique (têtes sigmoïdes 14-d) — mêmes hyperparamètres que le trainer sprint."""
+    torch.manual_seed(seed)
+    c = SprintCritic()
+    opt = torch.optim.Adam(c.parameters(), 2e-3, weight_decay=1e-4)
+    for _ in range(iters):
+        bi = torch.randint(0, len(X), (256,))
+        nn.functional.binary_cross_entropy_with_logits(c.net(X[bi]).squeeze(-1), y[bi]).backward()
+        opt.step()
+        opt.zero_grad()
+    return c.eval()
+
+
+def train_death(args: argparse.Namespace) -> None:
+    """P2-bis (docs/design_purete_hjepa.md) : P̂mort(s,c) — la prime de risque non-linéaire que
+    W=25 encode, apprise des morts-danger vécues. Gates G-death pré-enregistrés : AUC CV-4 par
+    vie > 0.80 ET monotonie santé (P̂mort décroissant en h sur les traversées profondes)."""
+    rows = load_corpus(args.runs)
+    if not rows:
+        raise SystemExit("[death] aucun corpus lisible")
+    pain_model = PainCritic()
+    _pk = torch.load(args.pain, map_location="cpu", weights_only=True)
+    pain_model.load_state_dict(_pk["state_dict"])
+    pain_model.eval()
+    X = torch.cat([sprint_inputs([r["feats_all"][r["chosen"]]], (r["e"], r["t"], r["h"]),
+                                 _pain_of(pain_model, [r["feats_all"][r["chosen"]]]))
+                   for r in rows])
+    y = torch.tensor([float(r["died_danger"]) for r in rows])
+    life = torch.tensor([r["life"] for r in rows])
+    print(f"[death] corpus : {len(rows)} décisions ({len(args.runs)} runs) | "
+          f"positifs died_danger = {int(y.sum())} ({100 * float(y.mean()):.1f}%)")
+
+    # GATE G-death (1/2) — AUC en CV 4 plis PAR VIE.
+    aucs = []
+    for k in range(4):
+        te = (life % 4 == k)
+        if int(y[te].sum()) == 0 or int((1 - y[te]).sum()) == 0:
+            print(f"[death]   pli {k} : classe vide, sauté")
+            continue
+        c_k = _fit_bce(X[~te], y[~te], args.iters, args.seed)
+        with torch.no_grad():
+            aucs.append(_auc(c_k.p(X[te]), y[te].bool()))
+        print(f"[death]   pli {k} : AUC={aucs[-1]:.3f} (n_te={int(te.sum())}, pos={int(y[te].sum())})")
+    auc = sum(aucs) / max(len(aucs), 1)
+
+    # GATE G-death (2/2) — monotonie santé sur les traversées PROFONDES (là où le risque vit).
+    death = _fit_bce(X, y, args.iters, args.seed)
+    cross_i = [i for i, r in enumerate(rows) if r["cls"] == "cross"]
+    med_d = st.median([rows[i]["intr_chosen"] for i in cross_i])
+    deep = [i for i in cross_i if rows[i]["intr_chosen"] > med_d]
+    with torch.no_grad():
+        p_all = death.p(X)
+    p_by_h = []
+    for lo, hi in ((0.0, 30.0), (30.0, 60.0), (60.0, 101.0)):
+        idx = [i for i in deep if lo <= rows[i]["h"] < hi]
+        p_by_h.append(float(p_all[torch.tensor(idx)].mean()) if len(idx) >= 15 else float("nan"))
+    mono = p_by_h[0] > p_by_h[1] > p_by_h[2]
+    print(f"[death] P̂mort|profond par santé {['%.3f' % v for v in p_by_h]} (décroissant en h ?)")
+
+    g_death = auc > 0.80 and mono
+    print(f"\n[death] === GATE G-death (pré-enregistré) ===")
+    print(f"[death] AUC CV-4 par vie : {auc:.3f} (gate > 0.80) [{', '.join(f'{a:.3f}' for a in aucs)}]")
+    print(f"[death] monotonie santé : {'OUI' if mono else 'NON'}")
+    print(f"[death] {'✅ G-death PASSÉ → assemblage composed_pure_v2 + gates de forme' if g_death else '❌ G-death ÉCHOUÉ → ne pas assembler, négatif commité'}")
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": death.state_dict(), "in_dim": SPRINT_IN_DIM, "form": "death_v1",
+                "auc_cv": auc, "mono_health": mono, "p_by_health_deep": p_by_h,
+                "n_pos": int(y.sum()), "runs": list(args.runs), "gates_pass": bool(g_death)},
+               out / "death_best.pt")
+    print(f"[death] sauvé → {out / 'death_best.pt'}")
+    if g_death:
+        # assemblage du ckpt combiné : tête repas (juge PASS) + tête mort + constantes mesurées.
+        base = torch.load("data/checkpoints/sprint_critic/sprint_best.pt",
+                          map_location="cpu", weights_only=True)
+        combined = dict(base)
+        combined["form"] = "composed_pure_v2"
+        combined["death_state_dict"] = death.state_dict()
+        combined["death_auc_cv"] = auc
+        combined["note"] = ("P2-bis: pure pricing + learned death premium "
+                            "(docs/design_purete_hjepa.md)")
+        torch.save(combined, out / "sprint_pure_v2.pt")
+        print(f"[death] assemblé → {out / 'sprint_pure_v2.pt'} (repas + mort + constantes mesurées)")
+
+
 def selfcheck() -> None:
     """Contrat 14-d + intégration waypoint_layer : g≡0 ⇒ bit-identique à l'analytique ;
     g≡W ⇒ la licence ouvre le direct bloqué ; exclusivité des modes de scoring."""
@@ -555,10 +658,17 @@ def main() -> None:
     ap.add_argument("--form", choices=("composed", "q"), default="composed",
                     help="composed = P̂(repas)·bénéfice − κ·douleur̂ (reprise n°2, owner) ; "
                          "q = régression U (négatif n°2, gardée pour reproduction)")
+    ap.add_argument("--head", choices=("sprint", "death"), default="sprint",
+                    help="death = tête P(mort|s,c) (P2-bis) sur le corpus élargi DEATH_RUNS")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
     if args.selfcheck:
         selfcheck()
+        return
+    if args.head == "death":
+        if args.runs == DEFAULT_RUNS:
+            args.runs = DEATH_RUNS       # corpus élargi par défaut (juge/pure = riches en morts)
+        train_death(args)
         return
     train(args)
 
