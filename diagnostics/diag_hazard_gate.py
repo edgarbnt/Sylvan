@@ -30,22 +30,39 @@ HAZ = re.compile(r"\[hazard\] ep (\d+) : entr\S+=(\w+) pas_dans_zone=(\d+) d\S+g
 
 
 def parse_lives(path: str) -> list[dict]:
-    """-> une entree par vie : etat FINAL (energy/thirst/health) + cause de mort."""
+    """-> une entree par vie : etat FINAL + cause de mort + LE BUT (temps de survie, repas, boissons).
+
+    Repas/boissons comptes via les REMONTEES de niveau entre 2 echantillons (log tous les 10 pas) :
+    l'energie draine 0.05/pas (-0.5/echantillon) et ne REMONTE qu'en mangeant (+40) -> toute hausse
+    = un repas. Idem soif = une boisson. (2 repas dans la meme fenetre de 10 pas = 1 compte : rare,
+    sous-compte assume.) C'est LE BUT (forage), pas le proxy cause-de-mort (lecon 2026-07-16 : en
+    monde marginal, 'eviter' peut juste changer la CAUSE de mort -- juger sur survie+forage)."""
     last: dict[int, tuple] = {}
+    prev: dict[int, tuple] = {}                  # (energy, thirst) du sample precedent par episode
+    meals: dict[int, int] = {}
+    drinks: dict[int, int] = {}
     for line in open(path, errors="ignore"):
         m = EP.search(line)
         if m:
             ep = int(m.group(1))
-            last[ep] = (int(m.group(2)), float(m.group(3)), float(m.group(4)), float(m.group(5)))
+            e, t = float(m.group(3)), float(m.group(4))
+            if ep in prev:
+                if e > prev[ep][0] + 0.01:
+                    meals[ep] = meals.get(ep, 0) + 1
+                if t > prev[ep][1] + 0.01:
+                    drinks[ep] = drinks.get(ep, 0) + 1
+            prev[ep] = (e, t)
+            last[ep] = (int(m.group(2)), e, t, float(m.group(5)))
     lives = []
-    for ep, (_step, e, t, h) in sorted(last.items()):
+    for ep, (step, e, t, h) in sorted(last.items()):
         # CAUSE = le drive le PLUS BAS a la derniere mesure (le log echantillonne tous les 10 pas →
         # le vrai zero est manque ; l'argmin est le proxy honnete). Sante = seule chose que la zone
         # nocive abaisse → sante minimale = mort par danger. Seuil 15 : au-dessus = vie tronquee.
         levels = {"faim": e, "soif": t, "danger": h}
         killer = min(levels, key=levels.get)
         cause = killer if levels[killer] <= 15.0 else "tronque"
-        lives.append({"ep": ep, "energy": e, "thirst": t, "health": h, "cause": cause})
+        lives.append({"ep": ep, "energy": e, "thirst": t, "health": h, "cause": cause,
+                      "steps": step, "meals": meals.get(ep, 0), "drinks": drinks.get(ep, 0)})
     return lives
 
 
@@ -62,11 +79,39 @@ def parse_hazard(path: str) -> dict[int, dict]:
     return out
 
 
+def selfcheck() -> None:
+    """Invariants du parseur BUT : survie = dernier step ; repas/boisson = REMONTEE de niveau."""
+    import tempfile
+
+    lines = [
+        # vie 0 : energie 70->69.5 (drain) ->95 (REPAS +40 cape) ->94.5 ; soif 70->69.5->90 (BOISSON)
+        "[Godot] Episode 0 | Step 10 | Energy: 70.0 | Thirst: 70.0 | Health: 100.0 |",
+        "[Godot] Episode 0 | Step 20 | Energy: 69.5 | Thirst: 69.5 | Health: 100.0 |",
+        "[Godot] Episode 0 | Step 30 | Energy: 95.0 | Thirst: 69.0 | Health: 100.0 |",
+        "[Godot] Episode 0 | Step 40 | Energy: 94.5 | Thirst: 90.0 | Health: 100.0 |",
+        "[Godot] Episode 0 | Step 200 | Energy: 5.0 | Thirst: 60.0 | Health: 100.0 |",
+    ]
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+        f.write("\n".join(lines))
+        path = f.name
+    lives = parse_lives(path)
+    assert len(lives) == 1
+    lv = lives[0]
+    assert lv["steps"] == 200, lv                      # survie = dernier step vu
+    assert lv["meals"] == 1 and lv["drinks"] == 1, lv  # 1 remontee de chaque = 1 repas + 1 boisson
+    assert lv["cause"] == "faim", lv                   # energie 5 = min <= 15
+    print("[selfcheck] OK : survie=dernier step ; remontees comptees (1 repas, 1 boisson) ; cause=faim")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--off", default="/tmp/gate_godot_off.log")
     ap.add_argument("--on", default="/tmp/gate_godot_on.log")
+    ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
+    if args.selfcheck:
+        selfcheck()
+        return
 
     off, on = parse_lives(args.off), parse_lives(args.on)
     haz = parse_hazard(args.on)
@@ -87,6 +132,12 @@ def main() -> None:
     dmg_med = st.median([h["damage"] for h in haz.values()]) if haz else 0.0
     haz_deaths = deaths(on, "danger")
 
+    def med(lives, key):
+        return st.median([l[key] for l in lives])
+
+    def tot(lives, key):
+        return sum(l[key] for l in lives)
+
     print(f"\n=== GATE ZONE NOCIVE — {len(off)} vies OFF vs {len(on)} vies ON (memes graines) ===\n")
     print(f"{'':22}{'OFF':>10}{'ON':>10}")
     print("-" * 42)
@@ -94,6 +145,12 @@ def main() -> None:
     print(f"{'morts par DANGER':22}{deaths(off, 'danger'):>10d}{haz_deaths:>10d}")
     print(f"{'morts par faim':22}{deaths(off, 'faim'):>10d}{deaths(on, 'faim'):>10d}")
     print(f"{'morts par soif':22}{deaths(off, 'soif'):>10d}{deaths(on, 'soif'):>10d}")
+    print("-" * 42)
+    # LE BUT (pas le proxy cause-de-mort) : survie + forage. En monde marginal, 'eviter' peut
+    # seulement deplacer la cause de mort -- ces trois lignes disent si ca ACHETE quelque chose.
+    print(f"{'survie med (pas)':22}{med(off, 'steps'):>10.0f}{med(on, 'steps'):>10.0f}")
+    print(f"{'repas (total)':22}{tot(off, 'meals'):>10d}{tot(on, 'meals'):>10d}")
+    print(f"{'boissons (total)':22}{tot(off, 'drinks'):>10d}{tot(on, 'drinks'):>10d}")
     print("-" * 42)
     print(f"\nZone nocive (bras ON) :")
     print(f"  entree dans la zone : {len(entered)}/{len(on)} vies ({entry_rate * 100:.0f}%)")

@@ -158,13 +158,36 @@ RÉEL ; (2) horizon planner myope (~0.8 m vs danger 2-4 m) → évitement TARDIF
 (même mur d'horizon court que le critique) ; (3) monde marginal → vies condamnées de toute façon (change la cause,
 pas le nombre).
 
-**PROCHAIN PAS — le monde pose enfin un VRAI dilemme de décision** (traverser pour manger vs détourer) : dans le
-plat l'inné était optimal, ICI il ne l'est plus → c'est LA place pour que l'apprentissage compte. Pistes (tête
-reposée) : (a) sweep du poids d'évitement / reach (existe-t-il un équilibre qui améliore la survie NETTE, ou le
-dilemme est-il irréductible avec un avoid myope ?) ; (b) mesurer le BUT = forage (repas+boissons) et temps de survie,
-pas la cause de mort ; (c) LE BUT DU PROJET : le **critique-résidu déjà codé** (`SYLVAN_PLANNER_COST=residual`)
-apprend-il un arbitrage risque/récompense PLUS FIN que l'avoid myope (le résidu « mourir dans le vert » est
-maintenant structuré ET perçu) → re-gate `--labels residual`. Échafaudage avoid = à retirer une fois l'appris validé.
+**⭐⭐ VERDICT D'ÉLIMINATION (2026-07-16, journée entière) : LA FENTE DU PLANNER EST LE VERROU, PAS LE JUGE.**
+Six règles codées-main « oracle » testées pour obtenir « contourne le vert ET mange » (mesure = LE BUT : repas
+>10 ET morts-danger ≤2 ; réf sans danger = 15 repas ; parseur survie+repas/boissons ajouté à diag_hazard_gate) :
+| règle | morts-danger | repas |
+|---|---|---|
+| répulsion 200/500/1000 | 2-8 | 3-6 |
+| rêve ×2 (h160) | 4-6 | 2-7 |
+| détour ligne binaire | 5 | 3-7 |
+| détour gradué (profondeur de coupe) | 6 | 9 |
+| + centre corrigé (+1 m) | 6 | 4 |
+| mur-vert rétine brute 300/600 | 6/3 | 3/4 |
+**Aucune ne casse le troc évitement↔repas.** Le mur-vert@600 ÉVITE vraiment (dégâts médians 0, boissons 22 :
+l'entité campe à l'eau) mais ne mange pas. Chaque échec a été DIAGNOSTIQUÉ (pas deviné) : minimum local de la
+répulsion ; gradient détour 6-37 pas vs spreads 300-500 (trace 88 replans, SYLVAN_HAZARD_DEBUG) ; centre estimé
+depuis UN point perçu = ±1 m d'erreur pour une zone de 1.3 m ; paysage de coupe PLAT sur 53 % des replans.
+→ **33 arcs myopes (commande constante, ~0.8 m) rejoués goulûment ne peuvent pas COMPOSER un contournement,
+quel que soit le score.** Entraîner le critique-résidu dans cette fente = garanti de rejouer l'échec du critique.
+
+**FORK DE DESIGN (owner) — donner à la fente le pouvoir d'exprimer le détour :**
+(A) **Candidats à 2 segments** (tourner-puis-droit) : la famille de candidats peut enfin FINIR à côté/derrière
+    le danger, aligné bouffe → le mur-vert/queue jugent des vrais détours. Change SEULEMENT la génération de
+    candidats (compute ×~2-5). Le plus contenu ; hinté par align_mode="end" (« tourne tôt puis COMMIT droit »).
+(B) **Sous-but/waypoint** (hiérarchie LeCun §4.7) : choisir un point de passage à côté du danger, beeline dessus,
+    puis bouffe. Le blueprint-answer aux horizons longs ; plus d'archi.
+(C) **Acteur amorti (Mode-1) RL dans le monde-danger** : contourne la fente MPC — mais rouvre la saga RL.
+(D) **Accepter le troc** : entraîner le critique-résidu quand même — il apprendrait « près du vert = moins
+    d'avenir » et reproduirait ~le troc (éviter sans manger). Prouve « l'expérience compte » faiblement, sans le
+    comportement complet. Cheap mais mou.
+Échafaudages actifs (tous opt-in, défaut OFF, déclarés) : SYLVAN_HAZARD_AVOID / _DETOUR / _CENTER_SHIFT /
+_GREENWALL / _DEBUG (trace). WM 3-slots : wm_objcentric_kin_haz. À retirer une fois l'appris validé.
 
 ## Critère de succès = le BUT
 

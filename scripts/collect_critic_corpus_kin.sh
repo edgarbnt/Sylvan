@@ -29,7 +29,7 @@ env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_BC_LOG="$OUT" \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
-    --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/critic_srv_${TAG}.log 2>&1 &
+    --host 127.0.0.1 --port $PORT --horizon ${HORIZON:-80} --replan-every 10 > /tmp/critic_srv_${TAG}.log 2>&1 &
 SRV=$!
 for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
 

@@ -516,6 +516,7 @@ class CommandPlanner:
         # v2 = souvenir statique identique pour tous les candidats → gradient mort, sans-cible 76%.)
         _slots0 = None
         _vis = None
+        _ret0 = None   # rétine t0 (144) — consommée aussi par le mur-vert (surv_mode) ; None si pas multi-slot
         if (getattr(self.world_model, "slot_resources", 1) > 1
                 and os.environ.get("SYLVAN_MULTI_SLOT2", "1") != "0"):
             _ret0 = obs[self.world_model.proprio_dim:self.world_model.proprio_dim + RETINA_DIM].to(self.device)
@@ -810,8 +811,61 @@ class CommandPlanner:
             bear_w = torch.atan2((wx - x) * torch.cos(yaw) - (wz - z) * torch.sin(yaw),
                                  (wx - x) * torch.sin(yaw) + (wz - z) * torch.cos(yaw))
             rate = max(cfg.surv_turn_rate, 1e-6)
+            # ── QUEUE CONSCIENTE DU DANGER — ÉCHAFAUDAGE DIAGNOSTIC (2026-07-16) ─────────────────
+            # La queue extrapole le trajet fin-de-rêve → ressource EN LIGNE DROITE. Si cette ligne
+            # croise le danger PERÇU (slot vert, t0), le vrai trajet devra DÉTOURER → on rallonge la
+            # distance effective. Donne le gradient « finis À CÔTÉ du danger » (ligne dégagée = trajet
+            # court = gagne) que la répulsion seule ne peut pas produire : répulsion + attraction =
+            # MINIMUM LOCAL au rebord (mesuré : repas 3-7 vs 15, à TOUS les poids et horizons — le
+            # candidat qui glisse sur le côté n'était jamais récompensé). Classique champs-de-potentiel.
+            # OPT-IN SYLVAN_HAZARD_DETOUR=0 (mètres de détour ; défaut OFF). ⚠️ r_h (étendue de la
+            # zone) est un réglage main — la version APPRISE devra l'apprendre du vécu. df_eff/dw_eff
+            # SÉPARÉS : le token du critique doit rester sur la distance BRUTE (train=déploiement).
+            df_eff, dw_eff = df_end, dw_end
+            _haz_i = getattr(self.world_model, "hazard_idx", None)
+            _detour = float(os.environ.get("SYLVAN_HAZARD_DETOUR", "0"))
+            if (_detour > 0.0 and _haz_i is not None and _slots0 is not None
+                    and _vis is not None and float(_vis[int(_haz_i)]) > 1e-3):
+                hx = float(_slots0[int(_haz_i), 0])
+                hz = float(_slots0[int(_haz_i), 1])
+                # CORRECTION DE BIAIS (2026-07-16, diagnostiquée sur données) : le slot lit « le vert
+                # le plus proche » = le PILIER le plus proche = le BORD de la zone côté entité (anneau
+                # à 0.7·r + rayon pilier ≈ 1.0 m du centre) — PAS le centre. Sans correction, le disque
+                # protégé est décalé de ~1 m vers l'entité : la moitié ARRIÈRE de la vraie zone reste
+                # nue (entrée 64% = aveugle, 6 morts malgré le gradient) et la répulsion bloque les
+                # couloirs d'approche sains (repas 1). On prolonge donc le point perçu de CENTER_SHIFT
+                # dans sa propre direction pour estimer le centre. ⚠️ Utilise la structure CONNUE de
+                # l'échafaudage (géométrie des piliers) — la version APPRISE devra l'apprendre du vécu.
+                _shift = float(os.environ.get("SYLVAN_HAZARD_CENTER_SHIFT", "1.0"))
+                _pn = max(math.hypot(hx, hz), 1e-6)
+                hx = hx * (1.0 + _shift / _pn)
+                hz = hz * (1.0 + _shift / _pn)
+                r_h = float(os.environ.get("SYLVAN_HAZARD_AVOID_RADIUS", "1.3"))
+
+                def _cut_depth(qx: float, qz: float) -> torch.Tensor:
+                    # PROFONDEUR DE COUPE [n] : de combien le segment fin-de-rêve (x,z) → ressource
+                    # (qx,qz) s'enfonce dans le disque danger. GRADUÉE, pas binaire — leçon du 1er
+                    # essai : à distance, TOUS les arcs de 0.8 m croisent la ligne (aucun ne peut se
+                    # décaler de r_h en un arc) → un terme binaire est CONSTANT → zéro gradient. La
+                    # profondeur, elle, diminue CONTINÛMENT quand l'arc se décale latéralement (~0.3 m
+                    # de coupe en moins pour 0.5 m d'offset à 3 m) → préférence latérale cohérente à
+                    # CHAQUE replan → s'intègre en contournement, comme le beeline s'intègre en droite.
+                    vx_, vz_ = qx - x, qz - z
+                    l2 = (vx_ ** 2 + vz_ ** 2).clamp(min=1e-9)
+                    t_ = (((hx - x) * vx_ + (hz - z) * vz_) / l2).clamp(0.0, 1.0)
+                    d_line = ((x + t_ * vx_ - hx) ** 2 + (z + t_ * vz_ - hz) ** 2).sqrt()
+                    return (r_h - d_line).clamp(min=0.0)
+
+                # _detour = ÉCHELLE (m de trajet en plus PAR m de coupe ; ~2-3 : contourner coûte
+                # environ le double du décalage à gagner). Avant : montant forfaitaire binaire.
+                _depth_f = _cut_depth(fx, fz)
+                _depth_w = _cut_depth(wx, wz)
+                df_eff = df_end + _depth_f * _detour
+                dw_eff = dw_end + _depth_w * _detour
+            else:
+                _depth_f = _depth_w = None
             s_food, s_water = _survival_extension(
-                df_end, dw_end, e_lvl, t_lvl, drive_alive, steps_alive,
+                df_eff, dw_eff, e_lvl, t_lvl, drive_alive, steps_alive,
                 dist_fw, cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                 cfg.surv_horizon, cfg.surv_margin_weight,
                 turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
@@ -847,6 +901,33 @@ class CommandPlanner:
                 # LIMITE ASSUMÉE et flaggée (§2) : le corpus ne porte aucun label d'ordre.
                 s_food = s_food + corr
                 s_water = s_water + corr
+
+            # ── MUR-VERT — ÉCHAFAUDAGE (2026-07-16, redesign post-trace) : « ne marche pas vers le
+            #    vert proche ». La famille ligne-vs-disque-estimé est morte au diagnostic (trace 88
+            #    replans) : centre estimé depuis UN point perçu = ±1 m d'erreur pour une zone de 1.3 m,
+            #    et gradient 6-37 pas vs spreads 300-500 → le terme suggérait sans jamais décider.
+            #    ICI : zéro reconstruction — la rétine dit déjà QUELS secteurs sont verts et à quelle
+            #    distance. On pénalise un candidat dont le DÉPLACEMENT pointe vers un secteur vert-
+            #    proche (pondéré proximité²), au poids qui DÉCIDE (centaines de pas). C'est la forme
+            #    exacte qu'une valeur apprise consommerait. OPT-IN SYLVAN_HAZARD_GREENWALL=0 (pas). ──
+            _gw = float(os.environ.get("SYLVAN_HAZARD_GREENWALL", "0"))
+            if _gw > 0.0 and _ret0 is not None:
+                _r = _ret0.reshape(-1, 4)                                  # [36, 4] depth,R,G,B (t0)
+                _is_green = (_r[:, 2] > _r[:, 1]) & (_r[:, 2] > _r[:, 3]) & \
+                            ((_r[:, 1:4].amax(-1) - _r[:, 1:4].amin(-1)) > 0.15)
+                _green_prox = _is_green.float() * (1.0 - _r[:, 0]).clamp(min=0.0) ** 2   # [36]
+                if float(_green_prox.max()) > 1e-6:
+                    n_ray = _green_prox.shape[0]
+                    # bearing du DÉPLACEMENT de chaque candidat (frame t0, convention rétine :
+                    # secteur k à 2πk/n, 0 = devant, positif vers la droite → atan2(x_right, z_fwd))
+                    _beta = torch.atan2(x, z)                              # [n]
+                    _sec = ((torch.round(_beta / (2.0 * math.pi / n_ray)).long()) % n_ray)
+                    # lissage aux voisins : viser JUSTE À CÔTÉ d'un secteur vert compte à moitié
+                    _gp = torch.maximum(_green_prox,
+                                        0.5 * torch.maximum(_green_prox.roll(1), _green_prox.roll(-1)))
+                    penalty_gw = _gw * _gp[_sec]                           # [n] en pas-de-survie
+                    s_food = s_food - penalty_gw
+                    s_water = s_water - penalty_gw
 
             # ── ÉVITE LE DANGER — ÉCHAFAUDAGE DIAGNOSTIC (2026-07-15), terme codé-main « fuis le vert » ──
             # BUT : PROUVER que le monde est soluble par la PERCEPTION (une entité qui VOIT le danger et le
@@ -902,6 +983,15 @@ class CommandPlanner:
             score = s_food if target_first == "food" else s_water
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            # TRACE DIAGNOSTIC (SYLVAN_HAZARD_DEBUG=1, lecture seule) : le détour PILOTE-t-il vraiment
+            # l'argmax ? choisi≈min → le terme steer (chercher l'échec en aval : exécution/bascule) ;
+            # choisi≫min → un autre terme l'écrase (suspect : margin_w=200 vs gradient ~40-160 pas).
+            if _depth_f is not None and os.environ.get("SYLVAN_HAZARD_DEBUG", "0") == "1":
+                _dch = _depth_f if target_first == "food" else _depth_w
+                print(f"[hazdbg] tgt={target_first} depth_chosen={float(_dch[best]):.2f} "
+                      f"min={float(_dch.min()):.2f} max={float(_dch.max()):.2f} "
+                      f"haz=({hx:.1f},{hz:.1f}) d_haz={_pn + _shift:.1f} om={om:+.2f} "
+                      f"score_spread={float(score.max() - score.min()):.0f}", flush=True)
             out_d: dict[str, object] = {
                 "command": (vx, om),
                 "food": (fx, fz),
