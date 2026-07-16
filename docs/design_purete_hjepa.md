@@ -204,6 +204,20 @@ comptage (ρ̂) d'un seul geste de FORME ; (2) **prior de parcimonie** λ=0.01·
 (constante de conception, pas fittée — protège au changement de monde, le but du chantier).
 Mêmes gates, aucun seuil déplacé.
 
+### ⭐ VERDICT PHASE C (2026-07-17) : DÉ-CONTAMINATION EXACTE — PARITÉ **4/4**
+Filtre lunette (`decontaminate_heads.py`) : **0 décision écartée sur les 13 runs** (lunettes
+identiques sur 100 % des décisions, wpx compris) → re-trains à corpus identique + mêmes seeds =
+les têtes ′ reproduisent les vivantes À L'IDENTIQUE : pain′ **0.894** (= vivant), P̂′ **0.683**
+(= vivant, G-mono/G-consist aux mêmes valeurs), P̂mort′ **0.839** ✓ mono ✓. Lecture : le savoir
+des têtes ne portait AUCUNE connaissance spécifique à la règle-couleur au-delà de ce que la
+lunette apprise fournit — la dé-contamination est une substitution de SOURCE, pas de valeurs.
+**G-consist lunette+marges ρ̂** (replay exact `(ρ̂−dg)⁺` sur feats loggées, candidats du log =
+limite déclarée) : bascule **5.1 %** vs analytique-vert 6.5 % ✓ — les marges vécues ne font pas
+flotter les choix. Notes internes des trainers = celles du vivant (anti-myopie B2 réel=0
+historique ; G-rank 0.683 = plafond de bruit du label, owner-jugé). Ckpts :
+`waypoint_pain_decont`, `sprint_critic_decont` (pain_ckpt→decont), `sprint_death_decont`.
+→ Phase D licenciée per pré-enregistrement (offline 1-6 tous passés).
+
 ### ⭐⭐ VERDICT PHASE A (2026-07-17) : RE-TRAIN MIL **4/4 GATES** — LA LUNETTE DANGER EST APPRISE
 Re-train diagnostiqué (max-pool + parcimonie, budget 1/1 utilisé) : G-dmg **0.997** ✓ ;
 G-loc rappel **1.000** / flag non-vert **0.00 %** ✓ (le crédit-partagé du rouge est dissous par
