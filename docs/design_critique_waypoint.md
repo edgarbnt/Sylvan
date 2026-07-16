@@ -77,6 +77,22 @@ de route (douleur par leg parcouru, pas fenêtre fixe) ; κ CALIBRÉ des donnée
 par dégât, mesurable du corpus) ; re-A/B seulement après. Checkpoint bankée :
 `data/checkpoints/waypoint_pain/pain_best.pt` (opt-in SYLVAN_WP_PAIN_CRITIC, jamais défaut).
 
+## ⭐ REPRISE v3 (2026-07-16, owner) — LABEL POURSUITE + κ CALIBRÉ (gates écrits AVANT)
+Deux hypothèses NOUVELLES issues du diagnostic de l'échec A/B, sur le MÊME corpus (zéro recollecte) :
+- **Label = douleur DE POURSUITE** : dégâts depuis la décision jusqu'à la fin de la poursuite
+  (changement de cible / consommation de la cible poursuivie / fin de vie ; cap 600 ticks). Dissout
+  la myopie fenêtre-fixe : le wp qui RETARDE la traversée hérite de la douleur différée si la
+  continuation traverse, pas si elle contourne (attribution véridique, on-policy+ε).
+- **κ = MESURÉ du corpus** : ancre risque-neutre `médiane(pas-restants aux décisions)/100`
+  (100 dégâts = mort = vie restante perdue). Constante mesurée, plus devinée.
+Gates v3 PRÉ-ENREGISTRÉS :
+  1. AUC(« ≥1 dégât dans la poursuite ») > **0.80**, CV-4 par vie (inchangé) ;
+  2. monotonie de la douleur prédite en min(dégagure leg1, leg2) (inchangé) ;
+  3. **anti-myopie (le gate que v2 n'avait pas)** : bucket B2 = {leg1 dégagé >1.5 m ET leg2 bloqué
+     <0.5 m} — douleur prédite moyenne de B2 ≥ 50 % de la douleur RÉELLE moyenne de B2, ET ≫ bucket
+     dégagé (×5). C'est le cas « différer la traversée » qui a tué l'A/B v2.
+  4. A/B closed-loop inchangé : repas > 10 ET morts ≤ 2 ET ≥ analytique (14/1).
+
 ## Gates v1 (HISTORIQUE — survie ; le gate 1 a échoué, cf amendement)
 1. **G-gap (licence, gratuit post-collecte)** : les issues divergent-elles selon le choix ? Critère :
    écart médian de survie-après-décision entre legs exploratoires et legs argmin, à états comparables,
