@@ -77,6 +77,22 @@ chiffrée. Bruit d'instrument : ±5 repas par 24-total à seed identique → gat
 Budget dur : 1 entraînement + 1 seul re-train sur hypothèse NOUVELLE diagnostiquée sur trace ;
 tout échec au-delà = négatif commité + STOP (CLAUDE.md §1).
 
+## ⭐ PHASE 0 FAITE (2026-07-16) — G0 provisoire ✅, label PINNÉ
+`diagnostics/diag_sprint_corpus.py` (jointure tick, poursuites v3 partagées via `pursuit_end`,
+intrusion exacte reconstruite de costs−longueur) sur g24×4 :
+- Volumes : **1530 traversées / 216 refus-bloqués** (≥100/≥100 ✓). Même les bras géométrie
+  traversent via l'hystérésse (intrusions peu profondes) → contraste géométrique réel
+  (profondeur q1/méd/q3 = 0.25/0.59/0.77 m) — la forme modulation a de quoi apprendre.
+- Mesures : drain 0.0500/pas → **valeur repas = 799 pas** ; **κ_data v2 = 9.5 pas/dégât** ;
+  traversées mortes à santé<50 = 39/1530 = **3 % < 10 %** → **label LINÉAIRE pinné**
+  (variante plancher-mort NON retenue, per critère pré-enregistré).
+- Direction sains-affamés : U̅cross **523** > U̅refuse **335** ✓ (le signal oracle est dans les données).
+- Volet blessés : CONTREDIT (303 > 220) mais sur n_refuse=20 et traversées AUTO-SÉLECTIONNÉES
+  (l'oracle ne sprinte jamais sous 60 ; les directs blessés observés sont peu profonds) → NA
+  jusqu'à la collecte ε, comme pré-enregistré. Observation consignée (pas un bouton) : sous
+  plancher-mort, sain-repu et blessé changent de signe — hypothèse de secours DIAGNOSTIQUÉE si
+  G-rank échoue, à ne rouvrir que sur trace.
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.

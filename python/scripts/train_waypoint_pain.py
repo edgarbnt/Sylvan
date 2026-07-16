@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import gzip
 import json
 import re
 from pathlib import Path
@@ -32,6 +33,24 @@ HORIZON_TICKS = 200      # fenêtre de douleur (≈ un leg complet)
 _EP = re.compile(r"Episode (\d+) \| Step (\d+) .*?Health: ([\d.]+)")
 
 
+def _text_path(path: Path) -> Path | None:
+    """Le fichier en clair, ou sa variante .gz (corpus BC compressés post-banking), ou None."""
+    if path.exists():
+        return path
+    gz = Path(str(path) + ".gz")
+    return gz if gz.exists() else None
+
+
+def _open_text(path: Path):
+    """Ouvre path ou path.gz en texte (lecture seule, erreurs ignorées)."""
+    p = _text_path(path)
+    if p is None:
+        raise FileNotFoundError(path)
+    if p.suffix == ".gz":
+        return gzip.open(p, "rt", errors="ignore")
+    return open(p, errors="ignore")
+
+
 def health_series(path: Path) -> tuple[list[int], list[float], list[int]]:
     """Santé échantillonnée (tous les 10 pas) → (ticks GLOBAUX cumulés, valeurs, débuts d'épisode).
 
@@ -41,7 +60,7 @@ def health_series(path: Path) -> tuple[list[int], list[float], list[int]]:
     tolérée (la sonde Δsanté@200 a donné 28/5/0 net avec la même approximation)."""
     ticks, vals, starts = [], [], []
     base, prev_ep, prev_step = 0, None, 0
-    for line in open(path, errors="ignore"):
+    for line in _open_text(path):
         m = _EP.search(line)
         if not m:
             continue
@@ -59,17 +78,41 @@ def health_series(path: Path) -> tuple[list[int], list[float], list[int]]:
 PURSUIT_CAP = 600        # cap du label poursuite (~3 legs) — borne la diffusion de crédit
 
 
-def _drives_series(run: Path) -> tuple[list[float], list[float]]:
-    """(énergie, soif) par tick global depuis le flux BC (1 record = 1 tick, clé de jointure)."""
-    es, ts = [], []
-    for line in open(run / "ep_0000.jsonl", errors="ignore"):
+def pursuit_end(decs: list[dict], i: int, drv: list[float], end: int) -> int:
+    """Fin de POURSUITE (conventions v3, partagées trainer/diags) : premier de {décision suivante
+    avec AUTRE cible, consommation du drive poursuivi (remontée >+5), fin de vie, t0+PURSUIT_CAP}."""
+    d = decs[i]
+    t0 = d["tick"]
+    t1 = min(t0 + PURSUIT_CAP, end - 1)
+    for j in range(i + 1, len(decs)):        # décision suivante avec AUTRE cible
+        if decs[j]["tick"] >= t1:
+            break
+        if decs[j]["target"] != d["target"]:
+            t1 = decs[j]["tick"]
+            break
+    for t in range(t0 + 1, min(t1, len(drv) - 1)):   # consommation de la cible poursuivie
+        if drv[t] > drv[t - 1] + 5.0:
+            t1 = t
+            break
+    return t1
+
+
+def _drives_series(run: Path) -> tuple[list[float], list[float], list[float]]:
+    """(énergie, soif, santé) par tick global depuis le flux BC (1 record = 1 tick, clé de jointure).
+
+    La santé n'existe au BC que depuis le canal monde-v2 (g24+) — NaN pour les corpus antérieurs
+    (wpx…), où la seule source santé reste le log Godot échantillonné /10 (health_series)."""
+    es, ts, hs = [], [], []
+    for line in _open_text(run / "ep_0000.jsonl"):
         try:
             r = json.loads(line)
         except json.JSONDecodeError:
             continue
         es.append(float(r["obs"]["energy"]))
         ts.append(float(r["obs"]["thirst"]))
-    return es, ts
+        h = r["obs"].get("health")
+        hs.append(float(h) if h is not None else float("nan"))
+    return es, ts, hs
 
 
 def load_runs(runs: list[str], label: str = "window",
@@ -86,35 +129,24 @@ def load_runs(runs: list[str], label: str = "window",
     for run in runs:
         gl = Path(run) / "godot.log"
         df = Path(run) / "decisions.jsonl"
-        if not gl.exists() or not df.exists():
+        if _text_path(gl) is None or _text_path(df) is None:
             print(f"[pain] ⚠️ {run} incomplet (godot.log/decisions.jsonl) — ignoré")
             continue
         ticks, vals, starts = health_series(gl)
-        es, ts = _drives_series(Path(run))
+        es, ts, _ = _drives_series(Path(run))
 
         def h_at(t: int) -> float:
             i = bisect.bisect_left(ticks, t)
             return vals[min(i, len(vals) - 1)]
 
         ep_bounds = starts[1:] + [ticks[-1] + 10]
-        decs = [json.loads(line) for line in open(df)]
+        decs = [json.loads(line) for line in _open_text(df)]
         for i, d in enumerate(decs):
             t0 = d["tick"]
             b = bisect.bisect_right(ep_bounds, t0)
             end = ep_bounds[b] if b < len(ep_bounds) else ticks[-1] + 10
             if label == "pursuit":
-                t1 = min(t0 + PURSUIT_CAP, end - 1)
-                for j in range(i + 1, len(decs)):        # décision suivante avec AUTRE cible
-                    if decs[j]["tick"] >= t1:
-                        break
-                    if decs[j]["target"] != d["target"]:
-                        t1 = decs[j]["tick"]
-                        break
-                drv = es if d["target"] == "food" else ts
-                for t in range(t0 + 1, min(t1, len(drv) - 1)):   # consommation de la cible poursuivie
-                    if drv[t] > drv[t - 1] + 5.0:
-                        t1 = t
-                        break
+                t1 = pursuit_end(decs, i, es if d["target"] == "food" else ts, end)
             else:
                 t1 = min(t0 + HORIZON_TICKS, end - 1)
             if t1 <= t0 + 20:                            # fenêtre vide (agonie/abort immédiat) : sautée
