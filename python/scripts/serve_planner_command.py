@@ -175,6 +175,13 @@ class _PlannerService:
         self.residual.eval()
         for p in self.residual.parameters():
             p.requires_grad_(False)
+        if os.environ.get("SYLVAN_KINEMATIC", "0") == "1":
+            # corps cinématique : les articulations sont GELÉES (_kinematic_step) — le résidu est
+            # calculé puis ignoré par le corps. Conservé quand même pour la PARITÉ de config avec
+            # toutes les références mesurées (hygiène 2026-07-16 : bannière honnête plutôt qu'un
+            # court-circuit qui invaliderait la comparabilité des A/B).
+            print("[planner-cmd] ⚠️ SYLVAN_KINEMATIC=1 : résidu hexapode calculé mais IGNORÉ par le "
+                  "corps (pattes gelées) — conservé pour parité de config", flush=True)
         self.replan_every = max(1, replan_every)
         self._lock = threading.Lock()
         self._cmd = cfg.no_food_command
