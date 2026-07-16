@@ -6,6 +6,22 @@ Rendre l'étage waypoint (et son socle bas) pur au sens du recadrage LeCun 2026-
 CONNAISSANCE-DU-MONDE codée main (létalité du vert, géométrie des piliers, hints de cap) là où
 elle devrait être apprise du vécu.
 
+## ⭐ CRITÈRE OFFICIEL (owner, 2026-07-17) : « EST-CE QUE ÇA SURVIT À UN CHANGEMENT DE MONDE ? »
+Le but à terme est un monde ressemblant au VRAI monde — plus de boules de couleur ni de formes
+fluo comme béquilles. Le monde VA changer → toute variable clé-APPARENCE ou clé-GÉOMÉTRIE-du-monde
+est un **échafaudage du monde-jouet**, à dissoudre AVANT tout enrichissement du monde :
+- `green_points` (règle « danger = vert ») et les REQUÊTES-COULEUR des slots WM (« bouffe = rouge,
+  eau = bleu ») — les plus graves : la perception entière est clé-apparence ;
+- `green_margin`/`tangent_margin` (géométrie piliers) ;
+- ⚠️ les entrées dg1/dg2 de douleur̂/P̂mort passent par la lunette verte : LABELS purs (vécus),
+  FEATURES contaminées — les têtes devront être re-apprises sur percept brut.
+SURVIVENT au critère : W-aversion, κ/drain/restore, machine à états, odométrie (corps/préférences,
+zéro monde dedans) ; le WM lui-même (rétine RGB brute, latent général).
+Forme cible : **perception ancrée dans la CONSÉQUENCE vécue** — « dangereux » = ce qui a précédé
+mes dégâts (saillance-douleur sur rétine brute ; le corpus percept→dégâts existe déjà) ;
+« nourrissant » = ce dont la consommation a soulagé le drive (recette §3, dont les requêtes-couleur
+sont le bootstrap monde-jouet, pas la forme finale). Chantier dédié à licencier AVANT le monde v3.
+
 ## À lire d'abord
 - `docs/design_critique_sprint.md` (le juge PASS 45/8 = la référence vivante et la méthode).
 - `python/sylvan/control/planning/command_planner.py:602` (surv_mode = les DEUX visibles →
