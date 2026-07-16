@@ -352,6 +352,20 @@ requête à composantes négatives n'a AUCUN sens dans la forme déployée. La n
 la jauge du bon côté (canal OFF → w_i = 0 au bord actif ; canal ON → toute la masse). Mêmes
 gates, aucun seuil déplacé.
 
+### ⭐⭐ NÉGATIF n°2 P6 + STOP BUDGET (2026-07-17) — le FIT PAR GRADIENT n'identifie pas une requête
+Re-train cône-positif : q̂_food=[+0.48 +0.65 +0.59], q̂_water=[+0.48 +0.63 +0.61], q̂_danger=
+[+0.60 +0.43 +0.68] — les trois ≈ **l'init blanchâtre** (cos(q̂, 1⃗/√3) ≈ 0.99) + tilt appris
+famélique ; G-q ✗, parité masque 71.8 % ✗. Les AUC restent bonnes (0.88/0.81/0.997) : le signal
+vit dans les scalaires w_i+c (le COMPORTEMENT), pas dans la direction normalisée (la REQUÊTE) —
+gradients minuscules sur w (sigmoïdes saturées, 203 positifs food / 139k ticks, prior parcimonie)
+→ l'init domine la direction. **Per pré-enregistrement (1 train + 1 re-train) : STOP — requêtes
+main CONSERVÉES, négatif commité.** LEÇON (3ᵉ occurrence projet, après slot_calib 2026-06-25 et
+le readout géométrique 2026-07-04) : **une requête/géométrie de perception se MESURE, ne se fitte
+pas par gradient.** HYPOTHÈSE NOUVELLE évidente (licence owner requise, hors budget) : REQUÊTE
+MESURÉE — centroïde rgbn du rayon le plus proche aux événements-conséquence (même statut
+épistémique que κ_data/drain/restore : constante mesurée du vécu, re-mesurable si le monde
+change ; zéro gradient, mêmes gates G-q/G-slot-parité/smoke/juge inchangés).
+
 ### ⭐ VERDICT G0 P6 (2026-07-17, `diag_relief_corpus.py`, 0 train) : **PASSÉ 3/3**
 Soulagements avec percept proche : énergie **201** / soif **277** (≥100/≥100 ✓) ; repas engouffrés
 **160** (≥30 ✓) ; contraste **124 883** (≥500 ✓). Census (oracle d'éval) : énergie → rouge 94 %,
