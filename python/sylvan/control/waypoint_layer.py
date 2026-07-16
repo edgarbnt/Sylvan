@@ -246,16 +246,17 @@ class WaypointLayer:
             p.mkdir(parents=True, exist_ok=True)
             self._log_file = open(p / "decisions.jsonl", "w", buffering=1)
         self._global_ticks = 0               # jamais remis à zéro (jointure sur le flux BC continu)
-        # === ORACLE-SPRINT (SONDE Phase-2 monde v2, ÉCHAFAUDAGE DÉCLARÉ ET JETABLE) ===
-        # Question du gate G-place : une politique santé/drive-consciente SIMPLE bat-elle la
-        # géométrie pure quand la bouffe est AU CŒUR du danger ? Règle-cheat : cible bouffe BLOQUÉE
-        # (intrusion directe > 0) ET santé > 60 ET énergie < 50 → SPRINT (direct malgré le vert).
-        # = plafond atteignable ; si oracle ≥ analytique +4 repas → la place existe pour l'APPRIS.
+        # === ORACLE-SPRINT (SONDE HISTORIQUE — SUPERSEDED 2026-07-16 PAR LE CRITIQUE-SPRINT) ===
+        # Née pour le gate G-place (monde v2) : prouver qu'une politique santé/drive-consciente
+        # bat la géométrie (47/9 vs 34/11 ✓ → chantier apprenant licencié). MORTE per
+        # pré-enregistrement le jour où le critique-sprint composé a passé son juge (45/8 poolé,
+        # docs/design_critique_sprint.md) : l'arbitrage du sprint est désormais APPRIS
+        # (SYLVAN_WP_SPRINT_CRITIC). Ne plus l'utiliser comme bras de référence.
         self.oracle_sprint = os.environ.get("SYLVAN_WP_ORACLE_SPRINT", "0") == "1"
         self._drives: tuple[float, float, float] | None = None    # (énergie, soif, santé) 0-100
         if self.oracle_sprint:
-            print("[waypoint] ORACLE-SPRINT actif (sonde G-place, échafaudage) : bouffe bloquée + "
-                  "santé>60 + énergie<50 → direct malgré le vert", flush=True)
+            print("[waypoint] ⚠️ ORACLE-SPRINT actif (sonde HISTORIQUE, superseded par "
+                  "SYLVAN_WP_SPRINT_CRITIC — juge 45/8 vs oracle 47/9)", flush=True)
         # === GARDE SANS-CIBLE (dette Phase 0 MESURÉE) ===
         # Sans cible, le bas croise TOUT DROIT (no_food_command) et personne ne regarde le vert →
         # vies noyées sans une seule décision (seed 3 : vie de 250 ticks toute collée au vert, 115

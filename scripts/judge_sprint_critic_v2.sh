@@ -11,7 +11,7 @@ ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 SEED=${1:-1}; TAG=${2:-judge${SEED}}; CKPT=${3:-data/checkpoints/sprint_critic/sprint_best.pt}
 OUT="data/replay_buffer/critic_kin_${TAG}"
 
-[[ -f "$CKPT" ]] || { echo "[judge] ckpt introuvable : $CKPT"; exit 1 }
+[[ -f "$CKPT" ]] || { echo "[judge] ckpt introuvable : $CKPT"; exit 1; }
 
 export WM_CKPT=data/checkpoints/wm_objcentric_kin_haz/wm_best.pt
 export SYLVAN_HAZARD_COUNT=1
