@@ -204,6 +204,17 @@ comptage (ρ̂) d'un seul geste de FORME ; (2) **prior de parcimonie** λ=0.01·
 (constante de conception, pas fittée — protège au changement de monde, le but du chantier).
 Mêmes gates, aucun seuil déplacé.
 
+### ⭐⭐ VERDICT PHASE A (2026-07-17) : RE-TRAIN MIL **4/4 GATES** — LA LUNETTE DANGER EST APPRISE
+Re-train diagnostiqué (max-pool + parcimonie, budget 1/1 utilisé) : G-dmg **0.997** ✓ ;
+G-loc rappel **1.000** / flag non-vert **0.00 %** ✓ (le crédit-partagé du rouge est dissous par
+le max — s ne flagge plus que l'apparence qui précède la morsure) ; G-ρ **ρ̂=0.63 m** (τ=0.05)
+∈ [0.39, 0.89] ✓ — la portée-morsure est MESURÉE du vécu (green_margin 1.0 → 0.63 : la géométrie
+pilier connue d'avance sort, la marge vécue entre) ; G-feat lunettes identiques **100.0 %** des
+14 003 décisions ✓ → les dg loggés = dg-saillance PAR IDENTITÉ (la phase C est exacte, zéro
+reconstruction de repère). Ckpt `data/checkpoints/danger_saliency/saliency_best.pt`
+(gates_pass=True). Branchement : `SYLVAN_WP_SALIENCY` (waypoint_layer `_lens`, OFF bit-identique,
+selfcheck intégration ✓ : ρ̂=1.0 ⇒ décision identique, ρ̂ court suivi par l'intrusion).
+
 ### ⭐ VERDICT G0 (2026-07-17, `diag_saliency_corpus.py`, 0 train) : **PASSÉ 4/4**
 183 onsets (≥150 ✓) ; visibilité verte **100 %** de 23 091 ticks-dégâts (✓ — le label vécu est
 propre, zéro morsure aveugle) ; contraste 146 194 ticks proche-sans-dégât dont **96 115 rouge/bleu
