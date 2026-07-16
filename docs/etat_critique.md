@@ -176,16 +176,22 @@ depuis UN point perçu = ±1 m d'erreur pour une zone de 1.3 m ; paysage de coup
 → **33 arcs myopes (commande constante, ~0.8 m) rejoués goulûment ne peuvent pas COMPOSER un contournement,
 quel que soit le score.** Entraîner le critique-résidu dans cette fente = garanti de rejouer l'échec du critique.
 
-**FORK DE DESIGN (owner) — donner à la fente le pouvoir d'exprimer le détour :**
-(A) **Candidats à 2 segments** (tourner-puis-droit) : la famille de candidats peut enfin FINIR à côté/derrière
-    le danger, aligné bouffe → le mur-vert/queue jugent des vrais détours. Change SEULEMENT la génération de
-    candidats (compute ×~2-5). Le plus contenu ; hinté par align_mode="end" (« tourne tôt puis COMMIT droit »).
-(B) **Sous-but/waypoint** (hiérarchie LeCun §4.7) : choisir un point de passage à côté du danger, beeline dessus,
-    puis bouffe. Le blueprint-answer aux horizons longs ; plus d'archi.
-(C) **Acteur amorti (Mode-1) RL dans le monde-danger** : contourne la fente MPC — mais rouvre la saga RL.
-(D) **Accepter le troc** : entraîner le critique-résidu quand même — il apprendrait « près du vert = moins
-    d'avenir » et reproduirait ~le troc (éviter sans manger). Prouve « l'expérience compte » faiblement, sans le
-    comportement complet. Cheap mais mou.
+**FORK RÉSOLU (owner, 2026-07-16) : « PETIT H-JEPA » — hiérarchie waypoint à 2 niveaux.** Recherche
+approfondie faite (4 axes : LeCun §4.6-4.8, Director/HIQL/SoRB/HWM, classiques HRL, robotique TangentBug) →
+**`docs/recherche_hjepa_waypoint.md`** (le document de référence, avec croisement point-à-point sur nos faits
+mesurés). Verdict : full H-JEPA = non (ouvert même pour LeCun) ; 2-niveaux waypoint = **licencié par le
+blueprint** (sous-buts = « cibles pour les états du niveau bas », §4.7 ; proposeur de sous-buts = trou
+explicitement laissé ouvert, §6/§8.1), massivement précédenté (SoRB : même politique gelée, échoue loin en
+plat, réussit avec waypoints), et répare NOS DEUX murs au même étage : le détour devient un MODE discret
+(TangentBug : l'échappée d'un minimum local est un changement de mode, pas un blend) ET l'écart d'action
+redevient large (HIQL fig.8 : « des sous-buts différents mènent à des valeurs plus dissemblables que des
+actions primitives » → le critique renaît à cet étage). Bonus rétrospectif : nos 2 négatifs de la semaine
+(exploration-commande qui comprime ; blends scalaires qui calent) sont des résultats CONNUS (Director :
+bonus worker nuit, manager requis ; Koren-Borenstein : minima locaux inhérents).
+
+**CHANTIER SUIVANT (session dédiée)** : spec §6 du doc recherche + prompt de lancement
+**`docs/prompt_chantier_hjepa.md`**. Gates pré-enregistrés inchangés : G1 danger repas>10 ET morts≤2
+(réf 15 ; meilleur juge plat 9/6) ; G0 non-régression monde plat.
 Échafaudages actifs (tous opt-in, défaut OFF, déclarés) : SYLVAN_HAZARD_AVOID / _DETOUR / _CENTER_SHIFT /
 _GREENWALL / _DEBUG (trace). WM 3-slots : wm_objcentric_kin_haz. À retirer une fois l'appris validé.
 
