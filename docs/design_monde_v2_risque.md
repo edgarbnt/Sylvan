@@ -79,3 +79,15 @@ moins de morts — il a converti l'avantage en sécurité plutôt qu'en repas). 
 pré-enregistré (≥+8 sur CHAQUE seed) n'est pas atteint → per pré-enregistrement : NON-CONCLU strict,
 décision owner. Évidence accumulée : 4/4 comparaisons favorables (2 N, 2 seeds), signal poolé +13
 (bruit poolé ~±10). Corpus instrumentés (decisions.jsonl ×4) sur disque pour le chantier apprenant.
+
+## ⭐⭐⭐ G-PLACE LICENCIÉ (2026-07-17, DÉCISION OWNER — angle mort de la règle corrigé ouvertement)
+La barre pré-enregistrée ne comptait QUE les repas : elle ignorait que l'avantage peut se convertir
+en SURVIE (seed 1 : +4 repas ET −3 morts = Pareto-dominance). Owner : « licencie le chantier, la
+règle avait un angle mort ». Correction assumée à découvert (pas un déplacement de poteaux en douce —
+la leçon est de compter LE BUT complet : repas ET morts).
+**CHANTIER APPRENANT LICENCIÉ.** Critère du critique appris, PRÉ-ENREGISTRÉ ICI avec l'angle mort
+corrigé : sur 2×24 vies (seeds 1+2, monde v2 P=0.5 regen=0.05), **apprenant ≥ géométrie +8 repas
+POOLÉS ET morts poolées ≤ géométrie +2**. Références mesurées : géométrie 34 repas/11 morts ;
+plafond oracle 47/9. Forme imposée par les 3 négatifs : IC+TC (correction SUR l'analytique complet,
+jamais remplacement) ; le sprint appris remplace la règle-oracle (qui meurt ce jour-là).
+Corpus de départ : 4×24 vies instrumentées (decisions.jsonl) + wpx1-3 ; santé au corpus.
