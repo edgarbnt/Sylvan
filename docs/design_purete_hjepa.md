@@ -187,6 +187,23 @@ diagnostiqué par tête, puis STOP négatif commité)** :
 morts-danger ≤ 10** (réf vivante 45/8, bruit ±5) ; KILL précoce seed 1 < 14 repas. Échec →
 négatif commité, green_points conservé (lunette déclarée-datée), W/marges restent l'ancre.
 
+### ⭐ NÉGATIF n°1 Phase A (2026-07-17) — forme SOMME : 1/4 gates, cause diagnostiquée sur trace
+Train 1 : G-dmg **0.997** ✓ (la morsure EST prédite) mais G-loc ✗ (flag non-vert 48 %),
+G-ρ ✗ (ρ̂=1.46 ≈ init), G-feat ✗ (0 %). Sonde census GRATUITE (s par couleur × distance) :
+s(bleu)=0.010, s(vert)=1.000, **s(ROUGE)=0.601 PLAT à toute distance (100 % flaggé)** — pas une
+dérive d'init : un ÉQUILIBRE. La forme SOMME donne au rouge un crédit PARTIEL de dégâts (repas
+engouffrés : rouge près pendant la morsure), équilibré par les repas hors-zone → s(rouge) se pose
+juste au-dessus du seuil. Et médiane **7 rayons verts aux ticks-dégâts vs 3 en approche** → la
+somme sépare par le NOMBRE de rayons (taille angulaire = proxy de proximité) → g n'a jamais
+besoin d'apprendre la portée (ρ̂ reste à l'init 1.5). Les gates ont fait leur travail (AUC 0.997
+mentait, G-ρ/G-loc l'ont attrapé).
+**RE-TRAIN pré-enregistré (le seul du budget)** : (1) **MAX-POOLING (MIL)** — physique du vécu :
+la morsure a UNE source, pas une somme de rayons → dissout le crédit-partagé (rouge) ET le
+comptage (ρ̂) d'un seul geste de FORME ; (2) **prior de parcimonie** λ=0.01·mean(s(touchants)) —
+« rien n'est dangereux sans preuve vécue » : défaut sûr pour toute apparence jamais contrainte
+(constante de conception, pas fittée — protège au changement de monde, le but du chantier).
+Mêmes gates, aucun seuil déplacé.
+
 ### ⭐ VERDICT G0 (2026-07-17, `diag_saliency_corpus.py`, 0 train) : **PASSÉ 4/4**
 183 onsets (≥150 ✓) ; visibilité verte **100 %** de 23 091 ticks-dégâts (✓ — le label vécu est
 propre, zéro morsure aveugle) ; contraste 146 194 ticks proche-sans-dégât dont **96 115 rouge/bleu

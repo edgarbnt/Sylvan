@@ -26,16 +26,13 @@ import math
 import statistics as st
 from pathlib import Path
 
+from scripts.train_danger_saliency import CLEAN_TICKS, DMG_DROP, LIFE_JUMP
 from scripts.train_sprint_critic import DEATH_RUNS
 from scripts.train_waypoint_pain import _open_text
 from sylvan.control.waypoint_layer import N_RAY, RETINA_RANGE_M, green_points
 
-DMG_DROP = 0.3        # chute de santé/tick qui signe une morsure (mesuré : −0.5/pas en zone)
-LIFE_JUMP = 45.0      # remontée d'un signal vital qui signe un respawn. ⚠️ > 40 = restore d'un
-                      # repas/boisson (mesuré Phase 0 sprint) — sinon chaque repas fabriquerait une
-                      # fausse frontière (et de faux onsets pendant les repas engouffrés). Mort-danger
-                      # : santé <15→100 = +85 ; mort faim/soif : drive ~0→100 = +100 → captés.
-CLEAN_TICKS = 20      # ticks sains requis avant une morsure pour compter un ONSET
+# Les conventions de scan (DMG_DROP, LIFE_JUMP, CLEAN_TICKS) vivent dans le TRAINER
+# (train_danger_saliency) — parité diag/train par import, pas par convention.
 NEAR_D = 0.2          # « proche » = d normalisé < 0.2 (2 m)
 SAT = 0.15            # même seuil de saturation que la règle mur-vert
 

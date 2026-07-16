@@ -325,10 +325,41 @@ class WaypointLayer:
             print(f"[waypoint] CRITIQUE-SPRINT actif ({self._sprint_form}) : {Path(_sc).name} "
                   f"(AUC_cv={_ck.get('auc_cv', 0):.3f}) — {_desc} "
                   f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
+        # === LUNETTE SAILLANCE-DANGER (P5, opt-in SYLVAN_WP_SALIENCY=ckpt — docs/design_purete_hjepa.md §P5) ===
+        # Perception par la CONSÉQUENCE : « dangereux » = ce qui a précédé mes dégâts, appris sur la
+        # rétine brute (train_danger_saliency). Remplace la règle clé-apparence green_points ET les
+        # marges-géométrie-pilier : green_margin → ρ̂ (portée-morsure VÉCUE), tangent_margin → ρ̂+0.4
+        # (le +0.4 = dégagement de CONCEPTION, relation structurelle conservée). Défaut OFF =
+        # bit-identique (règle verte + marges main). W (block_weight) et hystérésis : INTOUCHÉS.
+        self.saliency = None
+        _sal = os.environ.get("SYLVAN_WP_SALIENCY")
+        if _sal:
+            import torch as _torch
+            from scripts.train_danger_saliency import SAL_THR, DangerSaliency
+            _sk = _torch.load(_sal, map_location="cpu", weights_only=True)
+            self.saliency = DangerSaliency()
+            self.saliency.load_state_dict(_sk["state_dict"])
+            self.saliency.eval()
+            self._sal_thr = float(_sk.get("thr", SAL_THR))
+            _rho = float(_sk["rho_hat"])
+            self.cfg.green_margin = _rho
+            self.cfg.tangent_margin = _rho + 0.4
+            print(f"[waypoint] LUNETTE SAILLANCE active : {Path(_sal).name} "
+                  f"(AUC={_sk.get('auc_cv', 0):.3f}) — perception danger APPRISE du vécu ; "
+                  f"marges ρ̂={_rho:.2f} m / tangent={_rho + 0.4:.2f} m (mesurées, plus la "
+                  f"géométrie pilier)", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
         self.reset()
+
+    def _lens(self, retina: list[float]) -> list[tuple[float, float]]:
+        """Points-obstacles perçus : lunette APPRISE (saillance-conséquence) si active, sinon la
+        règle verte codée-main — UN seul point de dispatch, decide/guard le partagent."""
+        if self.saliency is not None:
+            from scripts.train_danger_saliency import saliency_points
+            return saliency_points(self.saliency, retina, self._sal_thr)
+        return green_points(retina)
 
     def reset(self) -> None:
         self.wp: tuple[float, float] | None = None
@@ -423,7 +454,7 @@ class WaypointLayer:
         via decide, target_id='guard'). Ligne dégagée → None (croisière normale, zéro churn)."""
         if not self.guard_enable or self.active():
             return None
-        greens = green_points(retina)
+        greens = self._lens(retina)
         if not greens:
             return None
         virtual = (0.0, self.guard_lookahead)
@@ -436,7 +467,7 @@ class WaypointLayer:
                retina: list[float]) -> dict:
         """Candidats direct + anneau, score lignes-vertes, hystérésis pro-direct, commit éventuel."""
         cfg = self.cfg
-        greens = green_points(retina)
+        greens = self._lens(retina)
         # candidats INDEXÉS : 0 = DIRECT (wp = la cible), puis l'anneau, puis les TANGENTS (posés
         # au-delà des bords du nuage vert — seuls capables de dégager le 2ᵉ segment quand la cible
         # est loin derrière le gardien ; G1 v0 : best_wp≈direct sur toutes les décisions bloquées).
