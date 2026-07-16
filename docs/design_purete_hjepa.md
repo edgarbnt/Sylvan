@@ -97,6 +97,24 @@ Gates PRÉ-ENREGISTRÉS :
 Budget dur : 1 train + 1 re-train diagnostiqué. Échec → remise conservée, W reste l'ancre, négatif
 commité (et la piste ε-conditionné-blessé devient le préalable).
 
+## ⭐⭐ VERDICT P2-bis (2026-07-17) : G-kill ÉCHOUÉ → W RECLASSÉ PRÉFÉRENCE DU CORPS (clôture)
+Tête P(mort|s,c) : **G-death PASSÉ** (AUC CV-4 0.839, monotonie santé nette 0.140/0.052/0.009 —
+le gradient de risque de mort EST appris ; label died_danger corrigé au passage : santé finale
+par épisode, 207 positifs — h_at(end−1) débordait sur la vie suivante). G-res-v2 ✅ (76≥72),
+G-consist-v2 ✅ (7.0 ≤ 7.8). MAIS **G-kill-decisions ❌ : refus 0 %→3 % (gate +30) sur les 102
+décisions-tueuses tenues**. Cause MATHÉMATIQUE, pas un défaut de tête : la tarification
+RISQUE-NEUTRE (prime = P̂mort·κ·100 ≈ 130 pas à P̂mort=0.15) ne dépasse jamais le bénéfice-repas
+(~500 pas) — en espérance, traverser reste rentable même à 15 % de mort. Survivre exige de
+l'AVERSION (utilité non-linéaire) ; un multiplicateur d'aversion fitté serait un raccourci
+interdit (§2), et aucun re-train ne change l'algèbre → STOP per pré-enregistrement, budget rendu.
+**CLÔTURE DE LA QUESTION DE PURETÉ (proposée) : W = PRÉFÉRENCE DU CORPS**, pas de la
+connaissance-du-monde — l'attitude face au risque est une propriété de conception (catégorie
+drives, §3 ; l'IC de LeCun câble les attitudes). La décomposition finale honnête :
+`W·intr ≈ létalité (APPRISE : douleur̂, P̂mort — les deux têtes existent et sont bonnes)
+× aversion (CORPS : constante de conception déclarée)`. La forme-remise (45/8) reste le vivant ;
+les têtes douleur̂/P̂mort restent bankées pour tout futur usage (la mort est désormais PRÉDITE,
+même si la préférence reste câblée). Acquis : on sait séparer ce que W contient.
+
 ## P4 — Reclassement (fait avec P1)
 Les constantes de la machine à états sont déclarées CONSTANTES DE CONCEPTION en carte (comme les
 drains des drives) — elles sortent du décompte de dette d'échafaudage.

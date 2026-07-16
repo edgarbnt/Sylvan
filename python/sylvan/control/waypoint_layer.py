@@ -297,9 +297,10 @@ class WaypointLayer:
             from scripts.train_waypoint_pain import PainCritic as _Pain
             _ck = _torch.load(_sc, map_location="cpu", weights_only=True)
             self._sprint_form = _ck.get("form")
-            if self._sprint_form not in ("q_regression", "composed_v1", "composed_pure_v1"):
+            if self._sprint_form not in ("q_regression", "composed_v1", "composed_pure_v1",
+                                         "composed_pure_v2"):
                 raise ValueError(f"ckpt sprint-critic de forme inattendue : {self._sprint_form!r} "
-                                 "(attendu q_regression / composed_v1 / composed_pure_v1)")
+                                 "(attendu q_regression / composed_v1 / composed_pure_v1/v2)")
             # constantes MESURÉES portées par le ckpt (forme composée) — jamais fittées ici
             self._sc_kappa = float(_ck.get("kappa_data", 0.0))
             self._sc_drain = float(_ck.get("drain", 0.05))
@@ -307,6 +308,12 @@ class WaypointLayer:
             self.sprint_critic = SprintCritic()
             self.sprint_critic.load_state_dict(_ck["state_dict"])
             self.sprint_critic.eval()
+            # tête P(mort|s,c) (P2-bis) : la prime de risque non-linéaire APPRISE des morts vécues
+            self._sprint_death = None
+            if self._sprint_form == "composed_pure_v2":
+                self._sprint_death = SprintCritic()
+                self._sprint_death.load_state_dict(_ck["death_state_dict"])
+                self._sprint_death.eval()
             # la feature douleur vient du checkpoint bankée DANS le ckpt sprint (parité train/déploiement)
             _pk = _torch.load(_ck["pain_ckpt"], map_location="cpu", weights_only=True)
             self._sprint_pain = _Pain()
@@ -444,24 +451,34 @@ class WaypointLayer:
         # verte → seuls les candidats à intrusion>0 bougent, jamais en aggravation ; l'intrusion
         # GÉOMÉTRIQUE (scored[i][1]) reste intacte pour l'aval. Sans drives connus ou cible
         # non-ressource (guard) : remise=0 ⇒ analytique pur.
-        if self.sprint_critic is not None and greens and self._sprint_form == "composed_pure_v1":
-            # P2 — TARIFICATION DU VERT 100 % APPRISE (docs/design_purete_hjepa.md, gates offline
-            # 3/3) : score = longueur + 0.02·max(0, κ·douleur̂·100 − P̂·bénéfice). W/green_margin
-            # SORTENT du chemin décisionnel (ils ne survivent que dans le proposeur tangent).
-            # Sans drives/cible-ressource : bénéfice=0 → pénalité = risque appris seul.
+        if (self.sprint_critic is not None and greens
+                and self._sprint_form in ("composed_pure_v1", "composed_pure_v2")):
+            # P2/P2-bis — TARIFICATION DU VERT 100 % APPRISE (docs/design_purete_hjepa.md) :
+            # score = longueur + 0.02·max(0, κ·douleur̂·100 + P̂mort·κ·100 − P̂·bénéfice).
+            # W/green_margin SORTENT du chemin décisionnel (survivent dans le proposeur tangent).
+            # v1 (sans terme mort) = négatif jugé (49 repas mais 14 morts) ; v2 ajoute la prime de
+            # risque APPRISE (tête P(mort), G-death 0.839). Sans drives/cible-ressource :
+            # bénéfice=0 et terme mort omis → pénalité = risque linéaire appris seul.
             import torch as _torch
             with _torch.no_grad():
                 _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
                 _bonus = [0.0] * len(feats)
+                _mort = [0.0] * len(feats)
                 if self._drives is not None and target_id in ("food", "water"):
                     from scripts.train_sprint_critic import sprint_inputs
-                    _p = self.sprint_critic.p(sprint_inputs(feats, self._drives, _pain.tolist()))
+                    _x = sprint_inputs(feats, self._drives, _pain.tolist())
+                    _p = self.sprint_critic.p(_x)
                     _drive = self._drives[0] if target_id == "food" else self._drives[1]
                     _ben = min(self._sc_restore, 100.0 - _drive) / self._sc_drain
                     _bonus = [float(_p[i]) * _ben for i in range(len(feats))]
+                    if self._sprint_death is not None:
+                        _pm = self._sprint_death.p(_x)
+                        # prix de la mort = vie restante à l'ancre mesurée (κ·100 ≈ 920 pas)
+                        _mort = [float(_pm[i]) * self._sc_kappa * 100.0 for i in range(len(feats))]
             scored = [(math.hypot(w[0], w[1])
                        + math.hypot(target_pos[0] - w[0], target_pos[1] - w[1])
-                       + 0.02 * max(0.0, self._sc_kappa * float(_pain[i]) * 100.0 - _bonus[i]),
+                       + 0.02 * max(0.0, self._sc_kappa * float(_pain[i]) * 100.0
+                                    + _mort[i] - _bonus[i]),
                        scored[i][1])
                       for i, w in enumerate(cands)]
         elif (self.sprint_critic is not None and self._drives is not None and greens

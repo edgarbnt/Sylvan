@@ -229,7 +229,8 @@ def _pain_of(pain_model: PainCritic, feats: list[list[float]]) -> list[float]:
 
 
 def simulate_choice(r: dict, critic: SprintCritic | None, pain_model: PainCritic | None, *,
-                    composed: bool = False, pure: bool = False, kappa: float = 0.0,
+                    composed: bool = False, pure: bool = False,
+                    death_model: SprintCritic | None = None, kappa: float = 0.0,
                     drain: float = 0.05, restore: float = 40.0) -> bool:
     """Rejoue la règle de choix de decide() (argmin + hystérésis pro-direct) sur les candidats
     loggés → True si le choix TRAVERSE (intr>ε). critic=None ⇒ scoreur analytique pur.
@@ -246,8 +247,12 @@ def simulate_choice(r: dict, critic: SprintCritic | None, pain_model: PainCritic
         with torch.no_grad():
             if pure:
                 p = critic.p(x)
+                mort = [0.0] * len(costs)
+                if death_model is not None:                 # P2-bis : prime de mort apprise
+                    pm = death_model.p(x)
+                    mort = [float(pm[i]) * kappa * 100.0 for i in range(len(costs))]
                 costs = [f[6] * _LEN_CAP
-                         + 0.02 * max(0.0, kappa * pains[i] * 100.0 - float(p[i]) * ben)
+                         + 0.02 * max(0.0, kappa * pains[i] * 100.0 + mort[i] - float(p[i]) * ben)
                          for i, f in enumerate(r["feats_all"])]
                 intr = r["intr_all"]
                 best_i = min(range(1, len(costs)), key=lambda i: costs[i])
