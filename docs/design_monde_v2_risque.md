@@ -43,3 +43,18 @@ Monde v2 de référence : `SYLVAN_HAZARD_COUNT=1, ENGULF_P=0.5, HEALTH_REGEN=0.0
 ## Ce qu'on ne touche pas
 WM (zéro retrain), dims, command_planner.py, corps cinématique. Monde v1 bit-identique (tout
 défaut OFF). main.gd jamais stagé.
+
+## ⭐ VERDICT DE SESSION (2026-07-16 nuit) : G-PLACE NON CONCLU — LA RÉSOLUTION DE L'INSTRUMENT EST LE VERROU
+
+Runs (12 vies/bras, monde v2 P=0.5 regen=0.05) : géométrie 10/2 (s1) et 6/1 (s2) ; oracle-v1 14/2 (s1)
+et 9/4 (s2 — 2 noyades sur vies SANS bouffe engouffrée → sonde affûtée v2 : sprint seulement si cible
+<3 m) ; oracle-v2 **12/2 (s2 : +6 repas ✓✓)** mais **7/3 (s1 : −3 ✗)**. Incohérence expliquée par la
+DÉCOUVERTE de la nuit : **variance run-à-run ±5 repas À SEED IDENTIQUE** (jumeaux seed-3 : 15 vs 10 —
+timing TCP → trajectoires non déterministes). **Un critère à ±4 repas sur 12 vies vit DANS le bruit.**
+Le monde v2 est construit, smoké, vivant ; le signal directionnel existe (3 comparaisons sur 4
+favorables à la politique santé/drive-consciente, dégâts s1 : 331 vs 704) mais N=12 ne peut pas le
+prouver. REPRISE (à trancher owner) : (i) gates à N≥24 vies/bras ou médianes de runs répétés pour
+TOUT critère à ±4 repas — le coût de la preuve a doublé, c'est le prix de l'honnêteté ; (ii)
+instrumenter les bras oracle (debug) — possible artefact de phase d'approche de la sonde v2 (cible
+engouffrée >3 m : le sprint ne se déverrouille qu'en dessous) ; (iii) garde sans-cible : 5→3 morts
+(sa classe soldée), attribution des 3 restantes (classe frôlements-direct) à sonder.
