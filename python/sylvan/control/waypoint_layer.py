@@ -256,6 +256,17 @@ class WaypointLayer:
         if self.oracle_sprint:
             print("[waypoint] ORACLE-SPRINT actif (sonde G-place, échafaudage) : bouffe bloquée + "
                   "santé>60 + énergie<50 → direct malgré le vert", flush=True)
+        # === GARDE SANS-CIBLE (dette Phase 0 MESURÉE) ===
+        # Sans cible, le bas croise TOUT DROIT (no_food_command) et personne ne regarde le vert →
+        # vies noyées sans une seule décision (seed 3 : vie de 250 ticks toute collée au vert, 115
+        # ticks sans cible). Ici : cible VIRTUELLE droit devant ; si sa ligne est intruse de vert →
+        # commit du meilleur candidat évasif. ÉVITEMENT PUR, pas de recherche (≠ CHERCHER).
+        # Opt-in SYLVAN_WP_GUARD=1 (défaut OFF), jugé sur re-run seed 3 : morts 5→≤2 attendu.
+        self.guard_enable = os.environ.get("SYLVAN_WP_GUARD", "0") == "1"
+        self.guard_lookahead = float(os.environ.get("SYLVAN_WP_GUARD_AHEAD", "4.0"))
+        if self.guard_enable:
+            print(f"[waypoint] GARDE SANS-CIBLE active : croisière + vert intrusant la ligne avant "
+                  f"({self.guard_lookahead} m) → wp évasif", flush=True)
         # === CRITIQUE-DOULEUR (SYLVAN_WP_PAIN_CRITIC=ckpt, gates v2 passés : AUC 0.881, monotone) ===
         # Quand chargé, le scoreur remplace les termes verts CODÉS-MAIN (marges 1.0/1.4, W=25) par la
         # douleur APPRISE des morsures vécues : coût = longueur + κ·Q_douleur(candidat). κ = taux
@@ -367,6 +378,21 @@ class WaypointLayer:
         if not due:
             return None
         return self.decide(target_id, target_pos, retina)
+
+    def maybe_guard(self, retina: list[float]) -> dict | None:
+        """À appeler au replan quand RIEN n'est visible (aucune cible) et pas de leg en cours.
+        Cible virtuelle droit devant : ligne intruse de vert → décision évasive (commit tangent/anneau
+        via decide, target_id='guard'). Ligne dégagée → None (croisière normale, zéro churn)."""
+        if not self.guard_enable or self.active():
+            return None
+        greens = green_points(retina)
+        if not greens:
+            return None
+        virtual = (0.0, self.guard_lookahead)
+        _, intr = route_cost(virtual, virtual, greens, self.cfg)
+        if intr <= 0.0:
+            return None
+        return self.decide("guard", virtual, retina)
 
     def decide(self, target_id: str, target_pos: tuple[float, float],
                retina: list[float]) -> dict:

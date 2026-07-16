@@ -636,14 +636,21 @@ class _PlannerService:
         lay = self.waypoint
         assert lay is not None and lay.wp is not None
         slots = self._slot_positions(retina)
-        other_id = "water" if lay.target_id == "food" else "food"
-        other = slots.get(other_id)
-        if other is None:
-            # autre ressource inconnue → duplique le wp : water=None routerait plan() vers la
-            # branche plan_wm_slot (l.421) qui IGNORE l'override. Même destination → distorsion
-            # bornée aux niveaux imaginés, flaggée (rare en 1+1 : rétine 360°, portée 10 m).
-            other = lay.wp
-        food_ov, water_ov = (lay.wp, other) if lay.target_id == "food" else (other, lay.wp)
+        # LEG DE GARDE (sans-cible) : les deux overrides = wp (rien de réel à poursuivre) ; dès
+        # qu'une ressource redevient visible → abort → la décision normale reprend au replan suivant.
+        if lay.target_id == "guard":
+            if slots.get("food") is not None or slots.get("water") is not None:
+                lay.abort("target_appeared")
+            food_ov = water_ov = lay.wp
+        else:
+            other_id = "water" if lay.target_id == "food" else "food"
+            other = slots.get(other_id)
+            if other is None:
+                # autre ressource inconnue → duplique le wp : water=None routerait plan() vers la
+                # branche plan_wm_slot (l.421) qui IGNORE l'override. Même destination → distorsion
+                # bornée aux niveaux imaginés, flaggée (rare en 1+1 : rétine 360°, portée 10 m).
+                other = lay.wp
+            food_ov, water_ov = (lay.wp, other) if lay.target_id == "food" else (other, lay.wp)
         saved = {k: os.environ.get(k) for k in ("SYLVAN_MULTI_SLOT2", "SYLVAN_MULTI_FOOD_SLOT")}
         os.environ["SYLVAN_MULTI_SLOT2"] = "0"
         os.environ["SYLVAN_MULTI_FOOD_SLOT"] = "0"
@@ -660,8 +667,10 @@ class _PlannerService:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
-        # bascule de cible : avorte seulement si elle PERSISTE (patience anti-flicker, cf layer)
-        lay.note_first_target(plan_res.get("first_target"))
+        # bascule de cible : avorte seulement si elle PERSISTE (patience anti-flicker, cf layer).
+        # Les legs de GARDE en sont exempts (terminaison = reached/timeout/target_appeared).
+        if lay.target_id != "guard":
+            lay.note_first_target(plan_res.get("first_target"))
         # marquage honnêteté corpus : food/water de CE plan sont des overrides (wp), pas la perception
         plan_res["wp"] = {"pos": [round(lay.wp[0], 2), round(lay.wp[1], 2)] if lay.wp else None,
                           "target": lay.target_id, "leg_steps": lay.leg_steps}
@@ -678,7 +687,10 @@ class _PlannerService:
             if plan_res.get("food") is not None:
                 ft, pos = "food", plan_res["food"]
             else:
-                return                                 # rien de visible → rien à décider
+                # rien de visible → GARDE SANS-CIBLE (dette Phase 0) : ne pas croiser
+                # aveuglément dans le vert. No-op si SYLVAN_WP_GUARD=0 (défaut).
+                self.waypoint.maybe_guard(retina)
+                return
         self.waypoint.maybe_decide(ft, (float(pos[0]), float(pos[1])), retina, drives=drives)
 
     def reset(self) -> None:

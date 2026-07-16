@@ -180,6 +180,23 @@ def main() -> None:
         _os2.environ.pop("SYLVAN_WP_ORACLE_SPRINT", None)
     print("L. oracle-sprint : affamé+sain→direct malgré vert ; repu→détour ✓")
 
+    # M. garde sans-cible : vert intrusant la ligne avant + AUCUNE cible → wp évasif commité ;
+    #    vert hors-axe → None (croisière normale) ; désactivée par défaut → None.
+    lay = WaypointLayer(cfg)
+    assert lay.maybe_guard(retina_with_greens([(0.0, 2.0)])) is None, "garde OFF par défaut"
+    _os2.environ["SYLVAN_WP_GUARD"] = "1"
+    try:
+        lay = WaypointLayer(cfg)
+        rg = lay.maybe_guard(retina_with_greens([(-0.3, 2.0), (0.2, 2.2)]))
+        assert rg is not None and rg["choice"] == "waypoint" and lay.active(), rg
+        assert lay.target_id == "guard" and abs(lay.wp[0]) > 0.5, (lay.target_id, lay.wp)
+        lay2 = WaypointLayer(cfg)
+        assert lay2.maybe_guard(retina_with_greens([(4.0, 1.0)])) is None and not lay2.active()
+        assert lay2.maybe_guard(retina_with_greens([])) is None
+    finally:
+        _os2.environ.pop("SYLVAN_WP_GUARD", None)
+    print(f"M. garde sans-cible : vert devant→wp évasif (target=guard), hors-axe→croisière, OFF défaut ✓")
+
     print("\nSMOKE OK — l'étage waypoint est géométriquement et machinalement sain (offline).")
 
 
