@@ -17,7 +17,17 @@ Pré-enregistrement avant tout run ; diag gratuit avant tout train ; budget 1 tr
 diagnostiqué ; juge closed-loop poolé (bruit ±5 repas/24 vies) ; négatif = commité ; promotion à
 ≥3 seeds (dette historique à résorber au passage) ; carte à jour dans le même commit.
 
-## Les chantiers, dans l'ordre
+## ⚠️ ORDRE RÉVISÉ (2026-07-17, owner) — voir `docs/design_monde_incremental.md`
+L'objectif COURANT = **zéro connaissance du monde codée-main dans l'entité**. Vis-à-vis de CET
+objectif, l'ordre ci-dessous est FAUX : jour/nuit (chantier 2) est orthogonal à la pureté (il
+re-consolide des têtes déjà apprises, ne touche aucun reste codé-main). Le chemin DIRECT =
+rouvrir la reconnaissance des types via l'ingrédient « apparences variées » (un « v3 simplifié » :
+mêmes 3 types, objets variés). Il n'y a pas de « monde v3 » monolithique — une PILE d'ingrédients
+découplés, chacun gaté sur son chantier. Jour/nuit reste valable mais sur sa propre piste (cycle
+de vie), pas sur le chemin de la pureté. Détail + plan de réouverture + gate-capacité + sources :
+`docs/design_monde_incremental.md`.
+
+## Les chantiers, dans l'ordre (⚠️ ordre pré-révision — lire l'encart ci-dessus)
 
 ### 1. Perception par la CONSÉQUENCE (EN COURS, branche feat/perception-consequence)
 « Dangereux = ce qui a précédé mes dégâts ». État au 2026-07-17 : la lunette saillance-danger
