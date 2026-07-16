@@ -25,11 +25,14 @@ APPRISE du vécu est VALIDÉE offline (MIL max-pool sur rétine brute, labels = 
 identique à la règle verte sur 100 % des 14 003 décisions, portée ρ̂=0.63 m apprise) et les têtes
 dg sont dé-contaminées à l'EXACT (0 ligne divergente). Le juge du remplacement-des-MARGES a dit
 NON (29/14) : le standoff 1.0 est une PRÉFÉRENCE DU CORPS (jumeau spatial de P2-bis : survivre
-exige l'aversion, pas l'espérance vécue) ; lunette innocentée. Bras vivant visé = MIXTE :
-lunette apprise + marges-standoff du corps (licencié owner). Reste ensuite le volet 2 (licence
-séparée) : « nourrissant = ce qui a soulagé le drive », les requêtes-couleur des slots WM.
-**Sortie : plus aucune variable clé-apparence dans la boucle décisionnelle.** Prérequis de TOUT
-enrichissement du monde. Juge : parité avec la réf vivante (≥40 repas ET ≤10 morts poolés).
+exige l'aversion, pas l'espérance vécue) ; lunette innocentée. **VOLET DANGER CLOS (2026-07-17
+soir) : bras MIXTE (lunette apprise + marges-standoff du corps) JUGÉ PASS 41/9** (s1 23/3 bat le
+vivant 19/5 ; poolé vs gate ≥40/≤10, réf 45/8) → **PROMU** : `SYLVAN_WP_SALIENCY` +
+`sprint_critic_decont` = config vivante, green_points = secours, `saillance_danger` = pur en
+carte. Caveat : promotion seeds 1+2 (le seed-3 de la règle ≥3 = dette à payer). Reste le volet 2
+(licence séparée) : « nourrissant = ce qui a soulagé le drive », les requêtes-couleur des slots
+WM. **Sortie : plus aucune variable clé-apparence dans la boucle décisionnelle.** Prérequis de
+TOUT enrichissement du monde.
 
 ### 2. Jour/nuit v1 — têtes seules (le plus petit cycle qui VIT)
 Jour = vies avec ε au MANAGER (machinerie existante ; la collecte déterministe est prouvée
