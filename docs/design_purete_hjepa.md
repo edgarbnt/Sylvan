@@ -187,6 +187,18 @@ diagnostiqué par tête, puis STOP négatif commité)** :
 morts-danger ≤ 10** (réf vivante 45/8, bruit ±5) ; KILL précoce seed 1 < 14 repas. Échec →
 négatif commité, green_points conservé (lunette déclarée-datée), W/marges restent l'ancre.
 
+### ⭐ VERDICT G0 (2026-07-17, `diag_saliency_corpus.py`, 0 train) : **PASSÉ 4/4**
+183 onsets (≥150 ✓) ; visibilité verte **100 %** de 23 091 ticks-dégâts (✓ — le label vécu est
+propre, zéro morsure aveugle) ; contraste 146 194 ticks proche-sans-dégât dont **96 115 rouge/bleu
+proche** (✓ — le confond « bouffe au cœur » est massivement testable) ; secteurs avant 149 /
+flanc 33 / arrière 1 (✓ ≥2 peuplés ; l'arrière rare = attendu, le corps avance — la lunette est
+apparence-seule, insensible au bearing). **Mesure ρ̂ vécue** : onsets méd 0.39 / q90 0.57 /
+q95 0.59 m ; tous ticks-dégâts méd 0.30 / q95 0.50 m → bande G-ρ effective = **[0.39, 0.89] m**.
+⚠️ CONSIGNÉ AVANT LE TRAIN : la marge-main 1.0 est AU-DELÀ de la morsure vécue — elle porte un
+headroom de sécurité que les données de dégâts ne justifient pas seules. Si le juge échoue sur
+les MORTS avec un ρ̂ ~0.5-0.7, le diagnostic pré-écrit est « la marge contient une préférence de
+sécurité du corps au-delà du vécu » (même famille que W=25, P2-bis) — pas un défaut de la tête.
+
 ## Critère de succès = le BUT
 Chaque purification est jugée closed-loop contre la référence vivante (jamais un proxy offline
 seul), au plancher de bruit ±5 repas/24-total, morts comprises. Un retrait qui coûte du forage ou
