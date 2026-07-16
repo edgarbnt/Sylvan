@@ -110,6 +110,41 @@ def main() -> None:
     assert not lay.active() and lay.n_aborts == 1
     print("H. patience de bascule (1 flip=bruit conservé, 2 consécutifs=abort) ✓")
 
+    # I. featurizer critique-waypoint : INVARIANCE MIROIR par construction (canonicalisation)
+    from sylvan.control.waypoint_layer import WP_FEAT_DIM, candidate_features
+    wp_c, tg_c, gr_c = (-1.8, 1.2), (0.5, 4.0), [(-0.7, 2.1), (0.4, 2.6)]
+    f1 = candidate_features(wp_c, tg_c, gr_c)
+    f2 = candidate_features((-wp_c[0], wp_c[1]), (-tg_c[0], tg_c[1]), [(-x, z) for x, z in gr_c])
+    assert len(f1) == WP_FEAT_DIM and all(abs(a - b) < 1e-9 for a, b in zip(f1, f2)), (f1, f2)
+    fd = candidate_features(tg_c, tg_c, gr_c)
+    assert fd[-1] == 1.0 and f1[-1] == 0.0, (fd, f1)          # flag is_direct
+    print("I. featurizer : miroir-invariant + flag direct ✓")
+
+    # J. exploration + log : ε=1 → tout choix est exploré, uniforme, loggé, reproductible par seed
+    import json as _json
+    import os as _os
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        _os.environ["SYLVAN_WP_EXPLORE_EPS"] = "1.0"
+        _os.environ["SYLVAN_WP_EXPLORE_SEED"] = "7"
+        _os.environ["SYLVAN_WP_LOG"] = td
+        try:
+            lay = WaypointLayer(cfg)
+            chosen = []
+            for _ in range(30):
+                lay.decide("food", (0.0, 5.0), retina_with_greens([(0.0, 2.5)]))
+                chosen.append(lay.wp)
+            rows = [_json.loads(l) for l in open(f"{td}/decisions.jsonl")]
+        finally:
+            for k in ("SYLVAN_WP_EXPLORE_EPS", "SYLVAN_WP_EXPLORE_SEED", "SYLVAN_WP_LOG"):
+                _os.environ.pop(k, None)
+    assert len(rows) == 30 and all(r["explore"] for r in rows)
+    assert len({r["chosen"] for r in rows}) >= 5, "exploration pas assez uniforme"
+    assert all(len(r["feats"]) == len(r["costs"]) and len(r["feats"][0]) == WP_FEAT_DIM for r in rows)
+    assert any(r["chosen"] == 0 for r in rows), "le DIRECT doit aussi être explorable"
+    print(f"J. exploration ε=1 : 30 décisions loggées, {len({r['chosen'] for r in rows})} candidats "
+          f"distincts choisis, feats {WP_FEAT_DIM}-d ✓")
+
     print("\nSMOKE OK — l'étage waypoint est géométriquement et machinalement sain (offline).")
 
 

@@ -35,9 +35,12 @@ Opt-in serveur : SYLVAN_WAYPOINT=1 (défaut OFF = zéro régression).
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import random
 from dataclasses import dataclass
+from pathlib import Path
 
 N_RAY = 36
 RETINA_RANGE_M = 10.0    # MAX_RANGE (perception.gd)
@@ -178,6 +181,39 @@ def route_cost(wp: tuple[float, float], target: tuple[float, float],
     return leg1 + leg2 + cfg.block_weight * intr, intr
 
 
+def candidate_features(wp: tuple[float, float], target: tuple[float, float],
+                       greens: list[tuple[float, float]]) -> list[float]:
+    """Features d'un candidat pour le CRITIQUE-WAYPOINT (docs/design_critique_waypoint.md).
+
+    ⚠️ Ce featurizer est LE point de parité train=déploiement : l'entraînement l'importe d'ici.
+    SYMÉTRIE MIROIR PAR CONSTRUCTION (leçon token |sin| : une symétrie connue s'IMPOSE) :
+    canonicalisation — si wp_x < 0, miroir de TOUTES les x (wp, cible, verts) → le côté est aboli,
+    la géométrie RELATIVE wp↔cible↔verts est préservée (contrairement à |sin| par objet, qui la
+    perdrait : contourner à gauche d'un vert à droite ≠ à gauche d'un vert à gauche).
+    d_vert_leg1/2 = distance BRUTE du vert perçu le plus proche à chaque segment, SANS marge : les
+    constantes codées-main (green_margin 1.0 / bord létal 0.39) SORTENT des features — le critique
+    apprend la distance létale de ses morts vécues, pas de la géométrie connue du monde."""
+    if wp[0] < 0.0:
+        wp = (-wp[0], wp[1])
+        target = (-target[0], target[1])
+        greens = [(-gx, gz) for gx, gz in greens]
+    d_wp = math.hypot(wp[0], wp[1])
+    d_tg = math.hypot(target[0], target[1])
+    leg2 = math.hypot(target[0] - wp[0], target[1] - wp[1])
+    dg1 = dg2 = 10.0
+    for gx, gz in greens:
+        dg1 = min(dg1, _seg_point_dist(0.0, 0.0, wp[0], wp[1], gx, gz))
+        if leg2 > 1e-6:
+            dg2 = min(dg2, _seg_point_dist(wp[0], wp[1], target[0], target[1], gx, gz))
+    is_direct = 1.0 if leg2 < 1e-6 else 0.0
+    return [min(d_wp, 10.0) / 10.0, wp[0] / (d_wp + 1e-6), wp[1] / (d_wp + 1e-6),
+            min(d_tg, 10.0) / 10.0, target[0] / (d_tg + 1e-6), target[1] / (d_tg + 1e-6),
+            min(d_wp + leg2, 20.0) / 20.0, dg1 / 10.0, dg2 / 10.0, is_direct]
+
+
+WP_FEAT_DIM = 10
+
+
 class WaypointLayer:
     """État du niveau haut : décision, commitment, odométrie du waypoint, événements.
 
@@ -192,6 +228,27 @@ class WaypointLayer:
     def __init__(self, cfg: WaypointConfig | None = None) -> None:
         self.cfg = cfg or WaypointConfig.from_env()
         self.debug = os.environ.get("SYLVAN_WAYPOINT_DEBUG", "0") == "1"
+        # === EXPLORATION À L'ÉTAGE WAYPOINT (docs/design_critique_waypoint.md) ===
+        # COLLECTE SEULEMENT (défaut 0 = OFF, déploiement déterministe). Avec prob ε par décision,
+        # commettre un candidat UNIFORME (y compris les mauvais : le critique doit voir « à travers
+        # le vert = mort »). Sans elle, le corpus est AUTO-CONFIRMANT (leçon 2026-07-08) — le
+        # critique n'apprendrait que les choix du scoreur analytique. Leçon Director : l'exploration
+        # au MANAGER (varier les waypoints), jamais au worker (le bruit de commande comprimait les vies).
+        self.explore_eps = max(0.0, float(os.environ.get("SYLVAN_WP_EXPLORE_EPS", "0")))
+        self._rng = random.Random(int(os.environ.get("SYLVAN_WP_EXPLORE_SEED", "0")))
+        # Log de décisions (SYLVAN_WP_LOG=dir) : 1 ligne jsonl par décision — tick global (clé de
+        # jointure avec le flux BC pour drives + issue vécue), features PAR CANDIDAT (le featurizer
+        # candidate_features = parité train/déploiement), coûts analytiques, choix, flag explore.
+        _log_dir = os.environ.get("SYLVAN_WP_LOG")
+        self._log_file = None
+        if _log_dir:
+            p = Path(_log_dir)
+            p.mkdir(parents=True, exist_ok=True)
+            self._log_file = open(p / "decisions.jsonl", "w", buffering=1)
+        self._global_ticks = 0               # jamais remis à zéro (jointure sur le flux BC continu)
+        if self.explore_eps > 0.0:
+            print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
+                  f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
         self.reset()
 
     def reset(self) -> None:
@@ -216,6 +273,7 @@ class WaypointLayer:
     def tick(self, cmd: tuple[float, float]) -> None:
         """Dead-reckon le waypoint commité d'un tick sous la commande exécutée (calibrée PASS :
         0.22 m @150 pas). Détecte atteinte/timeout — l'événement force une re-décision au replan."""
+        self._global_ticks += 1              # compte TOUS les ticks (clé de jointure du log décisions)
         if self.wp is None:
             return
         dfwd = self.cfg.k_fwd * cmd[0]
@@ -282,36 +340,48 @@ class WaypointLayer:
         """Candidats direct + anneau, score lignes-vertes, hystérésis pro-direct, commit éventuel."""
         cfg = self.cfg
         greens = green_points(retina)
-        cost_direct, intr_direct = route_cost(target_pos, target_pos, greens, cfg)
-        candidates = [(cfg.ring_radius * math.sin(2.0 * math.pi * i / cfg.ring_n),
-                       cfg.ring_radius * math.cos(2.0 * math.pi * i / cfg.ring_n))
-                      for i in range(cfg.ring_n)]
-        # candidats TANGENTS : posés au-delà des bords du nuage vert (à côté de l'OBSTACLE, pas de
-        # l'entité) — seuls capables de dégager le 2ᵉ segment quand la cible est loin derrière le
-        # gardien (G1 v0 : best_wp≈direct sur toutes les décisions bloquées, anneau seul).
-        candidates += tangent_candidates(greens, cfg.tangent_margin)
-        best_wp: tuple[float, float] | None = None
-        best_cost = float("inf")
-        for wp in candidates:
-            cost, _ = route_cost(wp, target_pos, greens, cfg)
-            if cost < best_cost:
-                best_cost, best_wp = cost, wp
+        # candidats INDEXÉS : 0 = DIRECT (wp = la cible), puis l'anneau, puis les TANGENTS (posés
+        # au-delà des bords du nuage vert — seuls capables de dégager le 2ᵉ segment quand la cible
+        # est loin derrière le gardien ; G1 v0 : best_wp≈direct sur toutes les décisions bloquées).
+        cands: list[tuple[float, float]] = [target_pos]
+        cands += [(cfg.ring_radius * math.sin(2.0 * math.pi * i / cfg.ring_n),
+                   cfg.ring_radius * math.cos(2.0 * math.pi * i / cfg.ring_n))
+                  for i in range(cfg.ring_n)]
+        cands += tangent_candidates(greens, cfg.tangent_margin)
+        scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
+        cost_direct, intr_direct = scored[0]
+        best_i = min(range(1, len(cands)), key=lambda i: scored[i][0])
         # HYSTÉRÉSIS pro-direct : un détour ne s'engage que s'il bat nettement la ligne droite.
-        commit = best_wp is not None and best_cost < cost_direct * (1.0 - cfg.hysteresis)
+        chosen = best_i if scored[best_i][0] < cost_direct * (1.0 - cfg.hysteresis) else 0
+        # EXPLORATION (collecte seulement, ε=0 en déploiement) : candidat UNIFORME, y compris les
+        # mauvais — le critique doit voir « à travers le vert = mort » (corpus contrasté, anti
+        # boucle auto-confirmante). L'hystérésis est court-circuitée : c'est le but.
+        explored = self.explore_eps > 0.0 and self._rng.random() < self.explore_eps
+        if explored:
+            chosen = self._rng.randrange(len(cands))
+        commit = chosen != 0
         self.n_decisions += 1
         self._replans_since_decision = 0
         self._target_at_decision = target_pos
         self.target_id = target_id
         self.leg_steps = 0
         self._flip_streak = 0
-        self.wp = best_wp if commit else None
+        self.wp = cands[chosen] if commit else None
         if commit:
             self.n_commits += 1
         rec = {"choice": "waypoint" if commit else "direct", "target": target_id,
                "target_pos": (round(target_pos[0], 2), round(target_pos[1], 2)),
                "wp": (round(self.wp[0], 2), round(self.wp[1], 2)) if commit else None,
-               "cost_direct": round(cost_direct, 2), "cost_best_wp": round(best_cost, 2),
-               "intr_direct": round(intr_direct, 2), "greens": len(greens)}
+               "cost_direct": round(cost_direct, 2), "cost_best_wp": round(scored[best_i][0], 2),
+               "intr_direct": round(intr_direct, 2), "greens": len(greens), "explore": explored}
+        if self._log_file is not None:
+            self._log_file.write(json.dumps({
+                "tick": self._global_ticks, "target": target_id, "chosen": chosen,
+                "explore": explored, "n_greens": len(greens),
+                "costs": [round(s[0], 3) for s in scored],
+                "feats": [[round(v, 4) for v in candidate_features(w, target_pos, greens)]
+                          for w in cands],
+            }) + "\n")
         if self.debug:
             print(f"[waypoint] DÉCISION {rec}", flush=True)
         return rec
