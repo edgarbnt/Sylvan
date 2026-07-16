@@ -204,6 +204,27 @@ comptage (ρ̂) d'un seul geste de FORME ; (2) **prior de parcimonie** λ=0.01·
 (constante de conception, pas fittée — protège au changement de monde, le but du chantier).
 Mêmes gates, aucun seuil déplacé.
 
+### ⭐⭐ VERDICT PHASE D (2026-07-17) : JUGE ÉCHOUÉ **29/14** — LA LUNETTE EST INNOCENTÉE,
+### LA MARGE EST UNE PRÉFÉRENCE DU CORPS (négatif per pré-enregistrement)
+2×24 vies seeds 1+2, bannières du bras vérifiées (ρ̂=0.63/tangent 1.03 + têtes décont) :
+s1 **14 repas/5 morts-danger** (vivant 19/5 — KILL frôlé à =14), s2 **15/9** (vivant 26/3) →
+POOLÉ **29/14** vs gate ≥40 ET ≤10 : ÉCHEC sur les DEUX axes. Per pré-enregistrement :
+**green_points + marges main RESTENT le vivant**, lunette déclarée-datée, négatif commité.
+Décomposition (sonde gratuite steps/vies) : temps vécu −10 % (morts-danger ×1.75) ET **taux de
+forage en vie −25 %** (0.41-0.49 vs 0.54-0.70 repas/1000 pas) — les marges ρ̂ ne font pas que
+tuer plus : elles dégradent les ROUTES (tangentes qui rasent le nuage à 1.03 m ; pénalité max
+W·ρ divisée par ~1.6 → traversées longues non payantes remplacent les contournements).
+**DIAGNOSTIC (pré-écrit au G0, confirmé et affûté)** : ρ̂=0.63 mesure « où ça mord » ; ce que
+green_margin=1.0 encode n'est PAS cela — c'est une DISTANCE DE SÉCURITÉ (standoff) au-delà du
+vécu = **préférence du corps (aversion)**, même clôture que W=25 (P2-bis : survivre exige
+l'aversion, pas l'espérance vécue — ici la version SPATIALE du même théorème). La tête est
+INNOCENTÉE : offline 4/4, lunette ≡ verte sur 100 % des 14 003 décisions.
+**VOIE RESTANTE (hypothèse nouvelle, licence owner requise)** : bras « lunette APPRISE + marges
+du CORPS » (green_margin=1.0/tangent=1.4 reclassées constantes de conception, comme W) —
+dissoudrait la clé-APPARENCE (le but du chantier) en gardant le standoff déclaré ; vu la parité
+de lunette 100 %, parité juge attendue. Décomposition finale candidate : apparence = APPRISE
+(saillance), létalité = APPRISE (douleur̂/P̂mort), standoff + aversion = CORPS (déclarés).
+
 ### ⭐ VERDICT PHASE C (2026-07-17) : DÉ-CONTAMINATION EXACTE — PARITÉ **4/4**
 Filtre lunette (`decontaminate_heads.py`) : **0 décision écartée sur les 13 runs** (lunettes
 identiques sur 100 % des décisions, wpx compris) → re-trains à corpus identique + mêmes seeds =
