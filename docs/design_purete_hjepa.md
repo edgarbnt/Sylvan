@@ -337,6 +337,14 @@ KILL précoce seed 1 < 14. PASS → promotion : **plus aucune variable clé-appa
 décisionnelle** (sortie du chantier 1 de la roadmap). Échec → requêtes main conservées, négatif
 commité.
 
+### ⭐ VERDICT G0 P6 (2026-07-17, `diag_relief_corpus.py`, 0 train) : **PASSÉ 3/3**
+Soulagements avec percept proche : énergie **201** / soif **277** (≥100/≥100 ✓) ; repas engouffrés
+**160** (≥30 ✓) ; contraste **124 883** (≥500 ✓). Census (oracle d'éval) : énergie → rouge 94 %,
+**vert 80 %** (le confond miroir est MASSIF : on mange le plus souvent dans le danger), bleu 4 % ;
+soif → bleu 100 %, vert 10 %, rouge 2 %. Le MIL max-pool + les 124k contrastes (vert proche sans
+soulagement = ultra-fréquent) doivent écraser s_food(vert) — exactement le mécanisme qui a écrasé
+s(rouge) côté danger en P5.
+
 ## Critère de succès = le BUT
 Chaque purification est jugée closed-loop contre la référence vivante (jamais un proxy offline
 seul), au plancher de bruit ±5 repas/24-total, morts comprises. Un retrait qui coûte du forage ou
