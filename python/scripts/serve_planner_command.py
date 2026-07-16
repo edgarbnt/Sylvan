@@ -112,6 +112,9 @@ def _plan_target_record(plan_res: dict) -> dict:
     if "order_scores" in plan_res:               # instrumentation committment (écarts d'ordre)
         out["sf"], out["sw"] = (round(float(v), 1) for v in plan_res["order_scores"])
         out["first"] = plan_res.get("first_target")
+    if "wp" in plan_res:                         # ÉTAGE WAYPOINT : pendant un leg, food/water du plan
+        out["wp"] = plan_res["wp"]               # sont des OVERRIDES (wp) — marquer le record (honnêteté
+                                                 # corpus : un lecteur critique doit pouvoir les écarter)
     food = plan_res.get("food")
     water = plan_res.get("water")
     pmf = plan_res.get("pred_min_food")
@@ -328,6 +331,20 @@ class _PlannerService:
         if self.search_enable:
             print(f"[planner-cmd] CHERCHER actif : τ={self.search_tau} scan={self.search_scan}×(vx{self.search_vx},"
                   f"ω{self.search_omega}) wander={self.search_wander} patience={self.search_patience}")
+        # === ÉTAGE WAYPOINT — « petit H-JEPA » v0 (2026-07-16, ÉCHAFAUDAGE DÉCLARÉ) ===
+        # Niveau HAUT à 2 niveaux (docs/recherche_hjepa_waypoint.md §6) : propose cible-directe +
+        # anneau de waypoints, score par lignes-dégagées-de-vert (rétine brute), COMMIT le gagnant
+        # comme CIBLE du niveau bas (le planner MPC, INCHANGÉ) jusqu'à atteinte/timeout. Répare le
+        # verrou d'élimination (la fente MPC ~0.8 m ne compose pas un contournement, 8a3d80a).
+        # Opt-in SYLVAN_WAYPOINT=1, défaut OFF = chemin byte-identique. Trace SYLVAN_WAYPOINT_DEBUG=1.
+        self.waypoint = None
+        if os.environ.get("SYLVAN_WAYPOINT", "0") == "1":
+            from sylvan.control.waypoint_layer import WaypointLayer
+            self.waypoint = WaypointLayer()
+            _wc = self.waypoint.cfg
+            print(f"[planner-cmd] ÉTAGE WAYPOINT actif : ring={_wc.ring_n}×R{_wc.ring_radius}m "
+                  f"reach={_wc.reach_m}m timeout={_wc.timeout_steps} hysteresis={_wc.hysteresis} "
+                  f"block_w={_wc.block_weight} (échafaudage niveau-2, planner bas INTOUCHÉ)", flush=True)
         print(f"[planner-cmd] WM={wm_ckpt.name} residual={residual_ckpt.name} | replan_every={self.replan_every} "
               f"| horizon={cfg.horizon} grid={len(cfg.vx_grid)}x{len(cfg.omega_grid)}")
         if _OCCLUDE_FOV_DEG < 360.0:
@@ -439,6 +456,14 @@ class _PlannerService:
                     # CHERCHER (perception active) : si rien d'engageant n'est perçu, explorer au lieu de suivre
                     # un argmax plat ; handoff auto au mode-avant latent dès qu'une cible entre dans le cône avant.
                     self._cmd = self._apply_search(res) if self.search_enable else res["command"]
+                elif (self.waypoint is not None and self.waypoint.active()
+                      and len(retina) == RETINA_DIM):
+                    # ÉTAGE WAYPOINT, LEG EN COURS : le niveau bas reçoit le WAYPOINT comme cible
+                    # (override), l'autre ressource reste vivante → l'arbitrage bouffe/eau continue.
+                    plan_res = self._plan_waypoint_leg(wm_obs, energy, thirst, retina)
+                    self._cmd = self._explore(plan_res["command"])
+                    self._last_plan = plan_res
+                    self._plan_fresh = True
                 elif self.localizer is not None:
                     # LOCALISATION = perception APPRISE (slot pur si chargé, sinon retina_head). water override seulement
                     # si la tête gère l'eau ; sinon on garde l'EMA radar eau (2ᵉ pulsion non encore rétinisée).
@@ -482,8 +507,17 @@ class _PlannerService:
                     self._cmd = self._explore(plan_res["command"])
                     self._last_plan = plan_res
                     self._plan_fresh = True
+                    # ÉTAGE WAYPOINT (pas de leg en cours) : la cible fraîche du plan alimente la
+                    # décision du niveau haut (spawn / cible changée / re-check). Si un wp COMMIT,
+                    # l'override s'applique à partir du prochain replan (~10 ticks, ≈0.2 m).
+                    if self.waypoint is not None and len(retina) == RETINA_DIM:
+                        self._waypoint_maybe_decide(plan_res, retina)
             self._ticks += 1
             vx, om = self._cmd
+            # ÉTAGE WAYPOINT : odométrie du wp commité sous la commande EXÉCUTÉE ce tick (calibrée
+            # PASS 0.22 m @150 pas, diag_waypoint_deadreckon) + détection atteinte/timeout.
+            if self.waypoint is not None:
+                self.waypoint.tick((float(vx), float(om)))
             if self.hud_enable:
                 self.hud_ts += 1
                 fields = {"command": [float(vx), float(om)], "energy": float(energy), "thirst": float(thirst)}
@@ -567,6 +601,83 @@ class _PlannerService:
             return (self.search_vx, self.search_omega)  # scan : balaye le cap (sens fixe, undirected)
         return (0.7, 0.0)                               # errance : avance vers un nouveau point de vue
 
+    # ------------------------------------------------------------------ ÉTAGE WAYPOINT (helpers)
+    def _slot_positions(self, retina: list[float]) -> dict[str, tuple[float, float] | None]:
+        """Lecture DIRECTE des slots du WM (readout géométrique + gate de visibilité, MÊMES seuils
+        que plan(), command_planner.py:564-571). Utilisée pendant un leg : le readout interne de
+        plan() est débranché par l'override → l'étage haut lit lui-même la perception fraîche."""
+        wm = self.planner.world_model
+        out: dict[str, tuple[float, float] | None] = {"food": None, "water": None}
+        if not getattr(wm, "with_slot", False):
+            return out
+        ret_t = torch.tensor(retina, dtype=torch.float32)
+        with torch.no_grad():
+            vis = wm.slot_encoder.visibility(ret_t)        # [R] quasi-binaire
+            pos = wm.slot_encoder.positions(ret_t)         # [R, 2] (x_right, z_fwd) m
+        fi = int(getattr(wm, "food_idx", 0) or 0)
+        wi = getattr(wm, "water_idx", None)
+        if float(vis[fi]) > 1e-3:
+            out["food"] = (float(pos[fi, 0]), float(pos[fi, 1]))
+        if wi is not None and float(vis[int(wi)]) > 1e-3:
+            out["water"] = (float(pos[int(wi), 0]), float(pos[int(wi), 1]))
+        return out
+
+    def _plan_waypoint_leg(self, wm_obs: torch.Tensor, energy: float, thirst: float,
+                           retina: list[float]) -> dict:
+        """Niveau bas pendant un LEG : la cible poursuivie = le WAYPOINT commité (override), l'autre
+        ressource reste VIVANTE (lecture slot directe) → l'arbitrage bouffe/eau continue et un
+        first_target qui bascule = événement « changement de cible » (abort → re-décision).
+        ⚠️ MÉCANIQUE : les readouts slot INTERNES de plan() écrasent food/water_override
+        (command_planner.py:544-574) → on les débranche pour CET appel via les flags existants
+        (SYLVAN_MULTI_SLOT2/SYLVAN_MULTI_FOOD_SLOT lus par appel), restaurés en finally. Contenu
+        au serveur, planner INTOUCHÉ. Échafaudage déclaré (comme tout l'étage v0)."""
+        lay = self.waypoint
+        assert lay is not None and lay.wp is not None
+        slots = self._slot_positions(retina)
+        other_id = "water" if lay.target_id == "food" else "food"
+        other = slots.get(other_id)
+        if other is None:
+            # autre ressource inconnue → duplique le wp : water=None routerait plan() vers la
+            # branche plan_wm_slot (l.421) qui IGNORE l'override. Même destination → distorsion
+            # bornée aux niveaux imaginés, flaggée (rare en 1+1 : rétine 360°, portée 10 m).
+            other = lay.wp
+        food_ov, water_ov = (lay.wp, other) if lay.target_id == "food" else (other, lay.wp)
+        saved = {k: os.environ.get(k) for k in ("SYLVAN_MULTI_SLOT2", "SYLVAN_MULTI_FOOD_SLOT")}
+        os.environ["SYLVAN_MULTI_SLOT2"] = "0"
+        os.environ["SYLVAN_MULTI_FOOD_SLOT"] = "0"
+        try:
+            plan_res = self.planner.plan(
+                wm_obs, self._radar_ema,
+                water_radar=self._water_ema,
+                energy=energy / 100.0, thirst=thirst / 100.0,
+                override_pos=True, food_override=food_ov, water_override=water_ov,
+            )
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        ft = plan_res.get("first_target")
+        if ft is not None and ft != lay.target_id:
+            lay.abort("target_change")
+        # marquage honnêteté corpus : food/water de CE plan sont des overrides (wp), pas la perception
+        plan_res["wp"] = {"pos": [round(lay.wp[0], 2), round(lay.wp[1], 2)] if lay.wp else None,
+                          "target": lay.target_id, "leg_steps": lay.leg_steps}
+        return plan_res
+
+    def _waypoint_maybe_decide(self, plan_res: dict, retina: list[float]) -> None:
+        """Après un replan NORMAL (pas de leg) : cible courante du plan → décision du niveau haut.
+        first_target vient de la branche survie ; fallback bouffe seule (mono-ressource visible)."""
+        ft = plan_res.get("first_target")
+        pos = plan_res.get("food") if ft == "food" else plan_res.get("water")
+        if ft is None or pos is None:
+            if plan_res.get("food") is not None:
+                ft, pos = "food", plan_res["food"]
+            else:
+                return                                 # rien de visible → rien à décider
+        self.waypoint.maybe_decide(ft, (float(pos[0]), float(pos[1])), retina)
+
     def reset(self) -> None:
         with self._lock:
             self._ticks = 0
@@ -580,6 +691,8 @@ class _PlannerService:
             self._searching = False
             self._explore_age = 0            # nouvelle vie → redraw immédiat du biais d'exploration
             self._explore_off = (0.0, 0.0)   # (chaque vie explore indépendamment, pas de fuite inter-épisode)
+            if self.waypoint is not None:    # ÉTAGE WAYPOINT : nouvelle vie = état haut vierge
+                self.waypoint.reset()
             # MÉMOIRE SPATIALE (Task 3) : réinitialiser le belief entre épisodes
             if self.slot_memory is not None:
                 self.slot_memory.reset()
