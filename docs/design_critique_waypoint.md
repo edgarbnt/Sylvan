@@ -63,6 +63,20 @@ LÉTALITÉ devient apprise (flaggé).
    danger : **repas > 10 ET morts ≤ 2 ET ≥ bras analytique (14/1)**. Échec = analytique conservé,
    négatif commité.
 
+## ⭐ VERDICT A/B (2026-07-16 soir) : ÉCHEC — analytique CONSERVÉ, douleur BANKÉE non branchée
+Gate 1 (offline) PASSÉ (AUC 0.881, monotone 39.4/3.1/0.0 sans marges main). Gate 2 (closed-loop)
+**ÉCHOUÉ** : bras douleur **7 repas / 1 mort / 18 boissons** vs analytique **14 / 1 / 14**. Le
+critique égale la main en SÉCURITÉ (9 vies zéro dégât) mais divise le forage par 2 — le troc
+évitement↔repas re-rentre. Causes diagnostiquées (pas devinées) : (a) **myopie du label** —
+douleur@200 ticks ≈ un leg → un wp qui RETARDE la traversée paraît indolore (vu au smoke K : wp
+commité DEVANT le gardien), puis à courte portée tout fait mal → détours dispendieux (aborts 32
+vs 14) ; (b) **κ=100 pas/dégât ~3× plus averse** que la main (39 dégâts → 78 m vs ~25 m max) → la
+bouffe gardée ne vaut plus le risque → morts de faim 7, re-campement eau (18 boissons, signature
+mur-vert@600). PISTES pour la reprise (hypothèses NOUVELLES, pas du tuning) : label à attribution
+de route (douleur par leg parcouru, pas fenêtre fixe) ; κ CALIBRÉ des données (pas vécus perdus
+par dégât, mesurable du corpus) ; re-A/B seulement après. Checkpoint bankée :
+`data/checkpoints/waypoint_pain/pain_best.pt` (opt-in SYLVAN_WP_PAIN_CRITIC, jamais défaut).
+
 ## Gates v1 (HISTORIQUE — survie ; le gate 1 a échoué, cf amendement)
 1. **G-gap (licence, gratuit post-collecte)** : les issues divergent-elles selon le choix ? Critère :
    écart médian de survie-après-décision entre legs exploratoires et legs argmin, à états comparables,
