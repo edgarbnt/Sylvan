@@ -377,6 +377,34 @@ Gates INCHANGÉS : G-q (cos ≥ 0.98, zéro fuite post-0.55), G-slot-parité (�
 smoke 3 vies, juge 2×24 vies ≥36/≤11. Échec G-q/parité → négatif DÉFINITIF du volet (pas de
 3ᵉ forme), requêtes main conservées.
 
+### ⭐⭐ VERDICT FINAL P6 (2026-07-17) : NÉGATIF DÉFINITIF — 3 CAUSES CARTOGRAPHIÉES, REQUÊTES
+### MAIN CONSERVÉES (déclarées-datées)
+P6-bis (mesure) : q̂_danger = vert vrai EXACT (attribution 100 %, cos 0.9805 vs vert pur) ;
+**q̂_water = la couleur VRAIE de l'eau AU MILLIÈME** ([0.183 0.458 0.870] = médiane mesurée des
+rayons bleus du monde) — LA MESURE MARCHE là où le gradient échouait. Mais le volet clôt NÉGATIF :
+1. **Oracle G-q mal calibré (corrigé À DÉCOUVERT, verdict inchangé)** : les couleurs RENDUES ne
+   sont pas les canaux purs (rouge vrai [0.93 0.31 0.21], bleu vrai teal). Avec l'oracle corrigé
+   (couleurs vraies mesurées), water/danger = cos 1.000 ✓✓ — mais le verdict du volet ne change
+   pas, cf 2-3 (aucun seuil déplacé) ;
+2. **Attribution food contaminée par la géométrie engouffrée** : le rayon le plus proche au
+   soulagement est VERT dans 65 % des repas (piliers plus proches que la boule) — et 49/71 de ces
+   événements ont des dégâts CO-OCCURRENTS : le vert attribué est exactement ce que la conséquence
+   dégâts explique déjà. Le fix principiel = EXPLAINING-AWAY séquentiel (exclure les rayons
+   expliqués par q̂_danger) = 3ᵉ forme → interdite per pré-enregistrement (pas payée) ;
+3. **Le verrou structurel : les requêtes main sont des SÉPARATEURS IDÉALISÉS, pas les couleurs du
+   monde.** cos(bleu-vrai, vert-vrai) = 0.61 > seuil 0.55 → même une requête-eau PARFAITE fuit
+   vers le danger ; les requêtes pures main sont PLUS séparées que le monde rendu ne l'est — c'est
+   une propriété d'APPAREIL (sélectivité du capteur), pas une connaissance d'apparence. La
+   parité échoue structurellement (masque 72.8 %) quel que soit le fitting.
+**ACQUIS BANKÉS** : les apparences-conséquence sont MESURABLES du vécu (2 requêtes exactes sur 3) ;
+la leçon « une géométrie se mesure, ne se fitte pas » confirmée une 4ᵉ fois ; le chemin de
+purification futur est PRÉCIS : (a) attribution par conséquences multiples (explaining-away),
+(b) sélectivité par-slot apprise/mesurée (le seuil 0.55 devient une marge par requête), l'un et
+l'autre = licence owner, idéalement AVEC monde v3 (apparences variables = le contraste qui rend
+le chantier décidable). Requêtes main = clé-apparence DÉCLARÉE-DATÉE au lieu de dissoute.
+Ckpt : drive_queries/queries_best.pt (measured_median, gates_pass=False). Le juge n'a jamais
+été payé (gaté, 0 vie dépensée sur P6).
+
 ### ⭐ VERDICT G0 P6 (2026-07-17, `diag_relief_corpus.py`, 0 train) : **PASSÉ 3/3**
 Soulagements avec percept proche : énergie **201** / soif **277** (≥100/≥100 ✓) ; repas engouffrés
 **160** (≥30 ✓) ; contraste **124 883** (≥500 ✓). Census (oracle d'éval) : énergie → rouge 94 %,

@@ -29,10 +29,17 @@ exige l'aversion, pas l'espérance vécue) ; lunette innocentée. **VOLET DANGER
 soir) : bras MIXTE (lunette apprise + marges-standoff du corps) JUGÉ PASS 41/9** (s1 23/3 bat le
 vivant 19/5 ; poolé vs gate ≥40/≤10, réf 45/8) → **PROMU** : `SYLVAN_WP_SALIENCY` +
 `sprint_critic_decont` = config vivante, green_points = secours, `saillance_danger` = pur en
-carte. Caveat : promotion seeds 1+2 (le seed-3 de la règle ≥3 = dette à payer). Reste le volet 2
-(licence séparée) : « nourrissant = ce qui a soulagé le drive », les requêtes-couleur des slots
-WM. **Sortie : plus aucune variable clé-apparence dans la boucle décisionnelle.** Prérequis de
-TOUT enrichissement du monde.
+carte. Caveat : promotion seeds 1+2 (le seed-3 de la règle ≥3 = dette à payer). **VOLET 2 « nourrissant »
+JOUÉ ET CLOS EN NÉGATIF INSTRUCTIF (2026-07-17 soir, 3 causes cartographiées §P6)** : le fit
+gradient n'identifie pas une requête (jauge/init) ; la MESURE retrouve 2 apparences vraies sur 3
+(eau au millième) mais food = contaminé par la géométrie engouffrée (explaining-away = forme non
+licenciée) et surtout VERROU STRUCTUREL : les requêtes main sont des SÉPARATEURS idéalisés plus
+écartés que les couleurs vraies (cos(bleu-vrai, vert-vrai)=0.61 > 0.55) — propriété d'appareil,
+pas d'apparence. Requêtes main = déclarées-datées ; à rouvrir avec le monde v3 (apparences
+variables = le contraste qui rend le chantier décidable), formes candidates précises notées.
+**Sortie du build 1 RÉVISÉE : la clé-apparence DANGER est dissoute (l'étage décisionnel) ; les
+requêtes-ressource restent le dernier échafaudage d'apparence, déclaré.** Le monde v3 volet
+« apparences variables » devra attendre leur purification — ou la forcer.
 
 ### 2. Jour/nuit v1 — têtes seules (le plus petit cycle qui VIT)
 Jour = vies avec ε au MANAGER (machinerie existante ; la collecte déterministe est prouvée
