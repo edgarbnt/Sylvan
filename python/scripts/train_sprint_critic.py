@@ -17,7 +17,11 @@ GATES OFFLINE PRÉ-ENREGISTRÉS (design §gates — opérationnalisés ici, écr
                empiriquement meilleure du bucket (santé×énergie×dist) : corrigé ≥ analytique
                + 10 pts, sur décisions TENUES (modèles des plis) ;
   3. G-consist : replay des séquences intra-poursuite — taux de bascule du choix simulé corrigé
-               ≤ 1.2× celui de l'analytique (le gate anti-flottement que v2/v3 n'avaient pas).
+               ≤ 1.2× celui de l'analytique (le gate anti-flottement que v2/v3 n'avaient pas) ;
+  4. G-mono   : (correction owner du volet blessés G0, 2026-07-16 — le monde montre un GRADIENT,
+               pas une inversion au seuil oracle) p̂ moyen des traversées STRICTEMENT croissant par
+               bande de santé [0,30)/[30,60)/[60,100] ET strictement décroissant par tercile de
+               profondeur d'intrusion.
 Échec d'un gate → NE PAS brancher (négatif commité). Le juge reste le closed-loop (2×24 vies).
 
 Usage :
@@ -321,6 +325,25 @@ def train(args: argparse.Namespace) -> None:
     print(f"[sprint] G-consist : {n_pairs} paires | bascule analytique {100 * rate_ana:.1f}% "
           f"vs corrigé {100 * rate_cor:.1f}%")
 
+    # GATE 4 — G-mono (correction owner G0) : le gradient appris doit suivre le gradient vécu —
+    # p̂ croît avec la santé (bandes 0-30/30-60/60+) et décroît avec la profondeur d'intrusion.
+    with torch.no_grad():
+        p_all = critic.p(X)
+    h_bands = [(lo, hi) for lo, hi in ((0.0, 30.0), (30.0, 60.0), (60.0, 101.0))]
+    p_by_h = []
+    for lo, hi in h_bands:
+        m = torch.tensor([lo <= r["h"] < hi for r in cross])
+        p_by_h.append(float(p_all[m].mean()) if m.any() else float("nan"))
+    depths = [r["intr_chosen"] for r in cross]
+    cuts = st.quantiles(depths, n=3)
+    p_by_d = []
+    for lo, hi in ((0.0, cuts[0]), (cuts[0], cuts[1]), (cuts[1], 1e9)):
+        m = torch.tensor([lo <= r["intr_chosen"] < hi for r in cross])
+        p_by_d.append(float(p_all[m].mean()) if m.any() else float("nan"))
+    g_mono = (p_by_h[0] < p_by_h[1] < p_by_h[2]) and (p_by_d[0] > p_by_d[1] > p_by_d[2])
+    print(f"[sprint] G-mono : p̂ par santé {['%.2f' % v for v in p_by_h]} (croissant ?) | "
+          f"p̂ par profondeur {['%.2f' % v for v in p_by_d]} (décroissant ?)")
+
     g_rank = auc > 0.70
     g_res = acc_cor >= acc_ana + 0.10
     g_consist = rate_cor <= 1.2 * rate_ana + 1e-9
@@ -329,13 +352,16 @@ def train(args: argparse.Namespace) -> None:
           f"[{', '.join(f'{a:.3f}' for a in aucs)}]")
     print(f"[sprint] G-res     : {100 * acc_cor:.0f}% ≥ {100 * acc_ana:.0f}% + 10 pts → {'✅' if g_res else '❌'}")
     print(f"[sprint] G-consist : {100 * rate_cor:.1f}% ≤ 1.2×{100 * rate_ana:.1f}% → {'✅' if g_consist else '❌'}")
-    verdict = g_rank and g_res and g_consist
+    print(f"[sprint] G-mono    : santé {'↑' if p_by_h[0] < p_by_h[1] < p_by_h[2] else '✗'} "
+          f"profondeur {'↓' if p_by_d[0] > p_by_d[1] > p_by_d[2] else '✗'} → {'✅' if g_mono else '❌'}")
+    verdict = g_rank and g_res and g_consist and g_mono
     print(f"[sprint] {'✅ GATES PASSÉS → juge closed-loop (2×24 vies seeds 1+2)' if verdict else '❌ GATE ÉCHOUÉ → ne pas brancher, commiter le négatif'}")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     torch.save(make_checkpoint(critic, args.pain, auc_cv=auc, acc_ana=acc_ana, acc_cor=acc_cor,
-                               flip_ana=rate_ana, flip_cor=rate_cor, kappa_data=kappa,
+                               flip_ana=rate_ana, flip_cor=rate_cor, p_by_health=p_by_h,
+                               p_by_depth=p_by_d, kappa_data=kappa,
                                drain=drain, label="linear_pursuit", runs=list(args.runs),
                                gates_pass=bool(verdict)),
                out / "sprint_best.pt")

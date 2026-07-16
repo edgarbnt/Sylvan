@@ -93,6 +93,21 @@ intrusion exacte reconstruite de costs−longueur) sur g24×4 :
   plancher-mort, sain-repu et blessé changent de signe — hypothèse de secours DIAGNOSTIQUÉE si
   G-rank échoue, à ne rouvrir que sur trace.
 
+## ⭐ PHASE B FAITE + CORRECTION DU G0 À DÉCOUVERT (2026-07-16, décision owner)
+Collecte ε livrée : spx3 792 déc (ε 15 %) + spx4 617 (ε 14 %), 24 vies chacune, monde v2, seeds
+3+4. G0 complet : volumes ✓ (1939 traversées / 298 refus), direction sains-affamés ✓ (516>346),
+**volet blessés CONTREDIT (317 > 267)** — diagnostic gratuit : le critère supposait une INVERSION
+de signe au seuil h=60 de l'oracle (une constante-triche, pas une vérité du monde) ; les données
+montrent un GRADIENT CONTINU (morts en traversée : 21 % à h<30 → 7 % au-dessus ; U̅ 271→338→400
+par bande de santé) et le sous-bucket refus-blessés est structurellement vide (n=27 même avec ε).
+Vérifié aussi : le label LINÉAIRE ne ment pas (149 traversées mortes → 0 U positif ; le
+plancher-mort tariferait à −919 les morts MÉTABOLIQUES pendant poursuite → bruit) → pin conservé.
+**Correction owner (précédent G-place, angle mort corrigé ouvertement)** : le volet
+inversion-blessés est REMPLACÉ par un gate falsifiable aligné sur le signal réel —
+**G-mono (pré-enregistré avant le train)** : sur les traversées, p̂ moyen STRICTEMENT croissant
+par bande de santé [0,30)/[30,60)/[60,100] ET strictement décroissant par tercile de profondeur
+d'intrusion. Le JUGE closed-loop reste INCHANGÉ (repas poolés ≥42 ET morts ≤13 — jamais déplacé).
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.
