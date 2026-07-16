@@ -162,6 +162,20 @@ Juge closed-loop INCHANGÉ : 2×24 vies seeds 1+2, repas poolés ≥ 42 ET morts
 plafond 47/9). Interdits reconduits : pas de distillation de l'oracle (blanchiment), pas de
 constante ajustée pour passer.
 
+## ⭐ RÉSULTAT REPRISE n°2 (2026-07-16) — 2/4 GATES, JUGE LICENCIÉ PAR L'OWNER (correction à découvert)
+Train composé (P̂ AUC-folds 0.662-0.725) : **G-mono v2 ✅ PREMIÈRE FOIS** (santé|profond ↑
+244→305→389 ET profondeur|blessé ↓ 331→312→259 — le gradient de risque est appris) ;
+**G-consist ✅ 3ᵉ fois** (6.9 % ≤ 7.8 %) ; G-res ❌ mais meilleur (+4 pts, 76 vs 72) ;
+G-rank ❌ **0.683 = 3ᵉ convergence indépendante vers ~0.68** (signe 0.684, magnitude 0.649) —
+signature d'un PLAFOND DE BRUIT DU LABEL (énergie seule : 0.66-0.79 selon pli), pas d'un défaut
+de modèle. Comportement simulé : licence concentrée au bon bucket (+8 pts sains-affamés — là où
+l'oracle gagnait — vs +2-3 pts blessés ; satiété fait décroître le bénéfice exactement).
+**DÉCISION OWNER (précédent G-place, à découvert)** : G-rank>0.70 testait le label, pas le modèle
+→ le juge closed-loop est PAYÉ sur l'évidence qualitative (gradient ✓, consistance ✓, licence au
+bon endroit). Juge INCHANGÉ et strict : 2×24 vies seeds 1+2, **repas poolés ≥ 42 ET morts ≤ 13**
+(réfs 34/11 ; s1 19/6, s2 15/5 ; plafond 47/9) ; KILL précoce : premier seed < géométrie−5 repas.
+Échec = négatif DÉFINITIF du chantier.
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.
