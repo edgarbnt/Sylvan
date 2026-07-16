@@ -108,6 +108,19 @@ inversion-blessés est REMPLACÉ par un gate falsifiable aligné sur le signal r
 par bande de santé [0,30)/[30,60)/[60,100] ET strictement décroissant par tercile de profondeur
 d'intrusion. Le JUGE closed-loop reste INCHANGÉ (repas poolés ≥42 ET morts ≤13 — jamais déplacé).
 
+## ⭐ NÉGATIF n°1 (2026-07-16) — BCE sur le SIGNE de U : gates échoués, cause DIAGNOSTIQUÉE
+Train 1 (BCE, y=1[U>0], 1939 traversées) : G-rank 0.684 ✗ (plis 0.63/0.63/0.74/0.74) ;
+G-res +3 pts ✗ ; **G-consist ✅ (6.5 % = 6.5 % — la forme modulation ne flotte PAS, le tueur de
+v2/v3 est absent)** ; G-mono ✗ (profondeur inversée). Diagnostic sur trace (gratuit) :
+1. **y==got à 97.6 %** — le gain (799 pas) écrase κ·dégâts (~250) → le SIGNE de U ≡ « repas
+   obtenu » ; le signal risque/santé est JETÉ par le seuillage (AUC(santé)=0.510 sur y).
+   La MAGNITUDE, elle, le porte : U̅|repas = 557/591/716 par bande de santé.
+2. **Profondeur ⊥confondue avec proximité** (intr>0.7 → cible 2.1 m, 62 % payants ; <0.35 →
+   3.3 m, 52 %) → le volet profondeur de G-mono (non conditionné) est invérifiable dans ce monde.
+3. Plafond du label : l'énergie SEULE fait 0.66-0.79 selon pli — le gate 0.70 bute sur le label,
+   pas sur la capacité (le modèle 14-d fait 0.684 ≈ niveau 1-feature).
+Le checkpoint (gates_pass=False) reste sur disque, non branché.
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.
