@@ -126,6 +126,25 @@ def scan_run(run: Path, life_base: int, keep_neg: int = 3,
     return X, ys, lives
 
 
+def measure_query(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, dict[str, float]]:
+    """REQUÊTE MESURÉE (P6-bis, licence owner — zéro gradient, statut κ_data) : rayon touchant le
+    PLUS PROCHE à chaque événement (MIL dur), q̂ = normalize(médiane PAR CANAL des rgbn attribués)
+    — la médiane est robuste au confond engouffré (<50 %). → (q̂, census d'attribution)."""
+    r = X[y.bool()].view(-1, N_RAY, 4)
+    d, rgb = r[..., 0], r[..., 1:]
+    d = torch.where(d < 0.999, d, torch.full_like(d, 2.0))      # non-touchant = jamais argmin
+    idx = d.argmin(-1)                                          # [P] rayon attribué
+    rgbn = rgb[torch.arange(len(r)), idx]
+    rgbn = rgbn / (rgbn.norm(dim=-1, keepdim=True) + 1e-6)
+    q = rgbn.median(dim=0).values
+    q = q / (q.norm() + 1e-8)
+    census = {}
+    for name, target in PURE.items():
+        t = torch.tensor(target)
+        census[name] = float(((rgbn @ (t / t.norm())) > 0.9).float().mean())
+    return q, census
+
+
 def fit(X: torch.Tensor, y: torch.Tensor, iters: int, seed: int) -> DriveQuery:
     torch.manual_seed(seed)
     m = DriveQuery()
@@ -176,6 +195,9 @@ def main() -> None:
     ap.add_argument("--iters", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--parity-ticks", type=int, default=20000)
+    ap.add_argument("--measured", action="store_true",
+                    help="P6-bis (licence owner) : requête MESURÉE (médiane par canal du rayon "
+                         "le plus proche aux événements) — zéro gradient, statut κ_data")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
     if args.selfcheck:
@@ -203,17 +225,24 @@ def main() -> None:
     g_q = True
     for d in DRIVES:
         y = torch.tensor(ysl[d])
-        aucs = []
-        for k in range(4):                       # AUC CV-4 par vie (contexte, G = G-q/parité)
-            te = (life % 4 == k)
-            if int(y[te].sum()) == 0:
-                continue
-            m_k = fit(X[~te], y[~te], args.iters, args.seed)
-            with torch.no_grad():
-                aucs.append(_auc(m_k.parts(X[te])[0], y[te].bool()))
-        m = fit(X, y, args.iters, args.seed)
-        heads[d] = m
-        q = m.query().detach()
+        if args.measured:
+            # P6-bis (licence owner) : la requête se MESURE — le fit par gradient ne l'identifie
+            # pas (négatifs n°1/n°2 : jauge puis init-dominée). Même leçon que slot_calib.
+            q, census = measure_query(X, y)
+            extra = f"attribution={ {k: f'{100 * v:.0f}%' for k, v in census.items()} }"
+        else:
+            aucs = []
+            for k in range(4):                   # AUC CV-4 par vie (contexte, G = G-q/parité)
+                te = (life % 4 == k)
+                if int(y[te].sum()) == 0:
+                    continue
+                m_k = fit(X[~te], y[~te], args.iters, args.seed)
+                with torch.no_grad():
+                    aucs.append(_auc(m_k.parts(X[te])[0], y[te].bool()))
+            m = fit(X, y, args.iters, args.seed)
+            heads[d] = m
+            q = m.query().detach()
+            extra = (f"AUC CV-4={sum(aucs) / max(len(aucs), 1):.3f} ρ̂={float(m.rho):.2f}")
         queries.append(q)
         pure = torch.tensor(PURE[d])
         cos = float(q @ (pure / pure.norm()))
@@ -223,8 +252,7 @@ def main() -> None:
         ok = cos >= 0.98 and not leak
         g_q = g_q and ok
         print(f"[queries] {d:6s} : q̂=[{q[0]:+.3f} {q[1]:+.3f} {q[2]:+.3f}] "
-              f"cos(canal pur)={cos:.4f} fuite croisée={'OUI' if leak else 'non'} "
-              f"AUC CV-4={sum(aucs) / max(len(aucs), 1):.3f} ρ̂={float(m.rho):.2f} → "
+              f"cos(canal pur)={cos:.4f} fuite croisée={'OUI' if leak else 'non'} {extra} → "
               f"{'✅' if ok else '❌'}")
 
     Q = torch.stack(queries)
@@ -242,7 +270,8 @@ def main() -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"queries": Q, "drives": list(DRIVES),
-                "state_dicts": {d: heads[d].state_dict() for d in DRIVES},
+                "form": "measured_median" if args.measured else "mil_gradient",
+                "state_dicts": {d: heads[d].state_dict() for d in heads},
                 "mask_parity": mask_ok, "pos_parity": pos_ok,
                 "runs": list(args.runs), "gates_pass": bool(verdict)},
                out / "queries_best.pt")
@@ -263,6 +292,17 @@ def selfcheck() -> None:
     _, s, touch = m.parts(torch.tensor([ret], dtype=torch.float32))
     assert float(s[0, 0]) > 0.9 > 0.1 > float(s[0, 1]), (float(s[0, 0]), float(s[0, 1]))
     assert int(touch.sum()) == 2
+    # requête MESURÉE : 3 événements plus-proche-rouge + 1 vert → la médiane reste rouge pur
+    ev = []
+    for near in ("rouge", "rouge", "rouge", "vert"):
+        ret = [1.0, 0.0, 0.0, 0.0] * N_RAY
+        ret[0:4] = [0.05, 1.0, 0.0, 0.0] if near == "rouge" else [0.05, 0.0, 1.0, 0.0]
+        ret[4:8] = [0.30, 0.0, 1.0, 0.0]             # vert plus loin (jamais argmin)
+        ev.append(ret)
+    q, census = measure_query(torch.tensor(ev, dtype=torch.float32),
+                              torch.ones(len(ev)))
+    assert torch.allclose(q, torch.tensor([1.0, 0.0, 0.0]), atol=1e-6), q
+    assert census["food"] == 0.75 and census["danger"] == 0.25, census
     # parité slot : requêtes IDENTIQUES aux mains ⇒ masque et positions strictement égaux
     if Path(WM_LIVING).exists():
         hand = _load_living_slot_head()

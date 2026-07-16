@@ -366,6 +366,17 @@ MESURÉE — centroïde rgbn du rayon le plus proche aux événements-conséquen
 épistémique que κ_data/drain/restore : constante mesurée du vécu, re-mesurable si le monde
 change ; zéro gradient, mêmes gates G-q/G-slot-parité/smoke/juge inchangés).
 
+### P6-bis — REQUÊTE MESURÉE (licenciée owner 2026-07-17, pré-enregistrée AVANT exécution)
+Procédure PINNÉE (mesure, zéro gradient — statut κ_data) : par drive, sur les MÊMES événements
+vécus que le trainer (soulagement à t+1/percept à t pour food/water ; tick-dégâts pour danger) :
+rayon ATTRIBUÉ = le rayon touchant LE PLUS PROCHE au percept (MIL dur : la conséquence a une
+source, la plus proche — cohérent max-pool P5 + prior distance du slot) ; **q̂_d = normalize(
+médiane PAR CANAL des rgbn attribués)** (médiane = robuste au confond engouffré < 50 %).
+Census d'attribution rapporté (part des événements par couleur pure — honnêteté du confond).
+Gates INCHANGÉS : G-q (cos ≥ 0.98, zéro fuite post-0.55), G-slot-parité (≥99.9 %/≥99.9 %),
+smoke 3 vies, juge 2×24 vies ≥36/≤11. Échec G-q/parité → négatif DÉFINITIF du volet (pas de
+3ᵉ forme), requêtes main conservées.
+
 ### ⭐ VERDICT G0 P6 (2026-07-17, `diag_relief_corpus.py`, 0 train) : **PASSÉ 3/3**
 Soulagements avec percept proche : énergie **201** / soif **277** (≥100/≥100 ✓) ; repas engouffrés
 **160** (≥30 ✓) ; contraste **124 883** (≥500 ✓). Census (oracle d'éval) : énergie → rouge 94 %,
