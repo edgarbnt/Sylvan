@@ -246,6 +246,26 @@ class WaypointLayer:
             p.mkdir(parents=True, exist_ok=True)
             self._log_file = open(p / "decisions.jsonl", "w", buffering=1)
         self._global_ticks = 0               # jamais remis à zéro (jointure sur le flux BC continu)
+        # === CRITIQUE-DOULEUR (SYLVAN_WP_PAIN_CRITIC=ckpt, gates v2 passés : AUC 0.881, monotone) ===
+        # Quand chargé, le scoreur remplace les termes verts CODÉS-MAIN (marges 1.0/1.4, W=25) par la
+        # douleur APPRISE des morsures vécues : coût = longueur + κ·Q_douleur(candidat). κ = taux
+        # d'échange pas/dégât (SYLVAN_WP_PAIN_KAPPA, défaut 100 ; ancre : 100 dégâts = mort ≈ vie
+        # restante — constante d'échafaudage flaggée, jugée par l'A/B). Le vert reste un PERCEPT dans
+        # les features (distances brutes) ; sa LÉTALITÉ est ce qui est appris.
+        self.pain_critic = None
+        self.pain_kappa_m = 0.0
+        _pc = os.environ.get("SYLVAN_WP_PAIN_CRITIC")
+        if _pc:
+            import torch as _torch
+            from scripts.train_waypoint_pain import PainCritic
+            _ck = _torch.load(_pc, map_location="cpu", weights_only=False)
+            self.pain_critic = PainCritic()
+            self.pain_critic.load_state_dict(_ck["state_dict"])
+            self.pain_critic.eval()
+            _kappa = float(os.environ.get("SYLVAN_WP_PAIN_KAPPA", "100"))     # pas / dégât
+            self.pain_kappa_m = _kappa * 0.02                                 # → mètres / dégât
+            print(f"[waypoint] CRITIQUE-DOULEUR actif : {Path(_pc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
+                  f"κ={_kappa} pas/dégât → les marges vertes codées-main SORTENT du scoring", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
@@ -348,7 +368,18 @@ class WaypointLayer:
                    cfg.ring_radius * math.cos(2.0 * math.pi * i / cfg.ring_n))
                   for i in range(cfg.ring_n)]
         cands += tangent_candidates(greens, cfg.tangent_margin)
-        scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
+        feats = [candidate_features(w, target_pos, greens) for w in cands]
+        if self.pain_critic is not None:
+            # MODE DOULEUR APPRISE : coût = longueur + κ·Q_douleur — zéro marge verte codée-main.
+            import torch as _torch
+            with _torch.no_grad():
+                pain = self.pain_critic.pain(_torch.tensor(feats, dtype=_torch.float32)) * 100.0
+            scored = []
+            for i, w in enumerate(cands):
+                length = math.hypot(w[0], w[1]) + math.hypot(target_pos[0] - w[0], target_pos[1] - w[1])
+                scored.append((length + self.pain_kappa_m * float(pain[i]), float(pain[i])))
+        else:
+            scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
         cost_direct, intr_direct = scored[0]
         best_i = min(range(1, len(cands)), key=lambda i: scored[i][0])
         # HYSTÉRÉSIS pro-direct : un détour ne s'engage que s'il bat nettement la ligne droite.
@@ -379,8 +410,7 @@ class WaypointLayer:
                 "tick": self._global_ticks, "target": target_id, "chosen": chosen,
                 "explore": explored, "n_greens": len(greens),
                 "costs": [round(s[0], 3) for s in scored],
-                "feats": [[round(v, 4) for v in candidate_features(w, target_pos, greens)]
-                          for w in cands],
+                "feats": [[round(v, 4) for v in f] for f in feats],
             }) + "\n")
         if self.debug:
             print(f"[waypoint] DÉCISION {rec}", flush=True)

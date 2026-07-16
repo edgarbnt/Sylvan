@@ -39,7 +39,31 @@ seulement, déploiement déterministe.
 - **Log décision** : `SYLVAN_WP_LOG=dir` → jsonl par décision {tick, cible, drives, features par
   candidat, coûts analytiques, choisi, explore}. Issue jointe par tick au flux BC.
 
-## Gates PRÉ-ENREGISTRÉS (écrits avant toute collecte/entraînement — on ne déplace pas les poteaux)
+## ⭐ AMENDEMENT (2026-07-16, post-collecte) — G-GAP ÉCHOUÉ → LE LABEL DEVIENT LA DOULEUR (owner)
+Le gate 1 tel qu'enregistré (écart de survie-après > +100 pas) a **ÉCHOUÉ** (gap −345, commit
+`f0a6dc6`) : la santé est du SLACK — une traversée coûte 15-30 dégâts, la mort vient de
+l'ACCUMULATION → le label survie DILUE structurellement le signal danger (+ biais de phase). La
+sonde causale raffinée (Δsanté@200 ticks, jointure logs Godot) montre le signal réel et MONOTONE :
+à-travers-vert **28 %** touchés (moy −3.1) / intermédiaire **5 %** / dégagé **0 %**. Arbitrage
+owner : **label = DOULEUR (dégâts dans les 200 ticks suivant la décision)**. Gain conceptuel : la
+santé gagne enfin un LECTEUR (mesuré : rien ne la lit avant 0), et la « distance létale » codée-main
+sort du scoreur — apprise des morsures vécues. Le vert reste dans les FEATURES (percept), sa
+LÉTALITÉ devient apprise (flaggé).
+- **Entraînement** : Q_douleur(features candidat 10-d) → dégâts@200/100, MSE, mêmes conventions CV.
+- **Déploiement (si gates)** : `score(c) = longueur(c) + κ·Q_douleur(c)` — les termes verts main
+  (marges 1.0/1.4, W=25) SORTENT du chemin vivant. κ = taux d'échange pas/dégât (ancre : 100 dégâts
+  = mort ≈ vie restante ~1400 pas → 14 pas/dégât ; l'aversion au risque multiplie) — **constante
+  d'échafaudage flaggée**, défaut κ=100 pas/dégât, jugée par l'A/B.
+
+## Gates PRÉ-ENREGISTRÉS v2 — DOULEUR (écrits AVANT l'entraînement)
+1. **G-pain** : AUC(« prendra ≥1 dégât dans les 200 ticks ») > **0.80** sur décisions TENUES
+   (CV 4 plis par VIE) ; ET **monotonie** de la douleur prédite sur les buckets de dégagure
+   (retrouver 28/5/0 sans les marges main). Échec → ne pas brancher.
+2. **A/B closed-loop** (si 1) : scoreur analytique vs longueur+κ·Q_douleur, 12 vies seed 1, monde
+   danger : **repas > 10 ET morts ≤ 2 ET ≥ bras analytique (14/1)**. Échec = analytique conservé,
+   négatif commité.
+
+## Gates v1 (HISTORIQUE — survie ; le gate 1 a échoué, cf amendement)
 1. **G-gap (licence, gratuit post-collecte)** : les issues divergent-elles selon le choix ? Critère :
    écart médian de survie-après-décision entre legs exploratoires et legs argmin, à états comparables,
    **> 100 pas** ; ET morts-danger surreprésentées dans les choix à-travers-vert. Écarts ≈ 0 → **KILL

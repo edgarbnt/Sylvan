@@ -145,6 +145,26 @@ def main() -> None:
     print(f"J. exploration ε=1 : 30 décisions loggées, {len({r['chosen'] for r in rows})} candidats "
           f"distincts choisis, feats {WP_FEAT_DIM}-d ✓")
 
+    # K. mode DOULEUR APPRISE (si le checkpoint des gates v2 existe) : mêmes comportements
+    #    qualitatifs que l'analytique, SANS marge verte codée-main dans le scoring.
+    import os as _os2
+    ck = "data/checkpoints/waypoint_pain/pain_best.pt"
+    if _os2.path.exists(ck):
+        _os2.environ["SYLVAN_WP_PAIN_CRITIC"] = ck
+        try:
+            lay = WaypointLayer(cfg)
+            assert lay.pain_critic is not None
+            r_flat = lay.decide("food", (0.0, 4.0), retina_with_greens([]))
+            assert r_flat["choice"] == "direct", r_flat            # plat → direct (douleur ~0 partout)
+            lay2 = WaypointLayer(cfg)
+            r_blk = lay2.decide("food", (0.0, 7.0), retina_with_greens(cloud))
+            assert r_blk["choice"] == "waypoint" and lay2.active(), r_blk   # gardé → détour
+        finally:
+            _os2.environ.pop("SYLVAN_WP_PAIN_CRITIC", None)
+        print(f"K. mode douleur : plat→direct, cible gardée→wp commité (zéro marge main) ✓  wp={lay2.wp}")
+    else:
+        print("K. (sauté : pas de checkpoint waypoint_pain)")
+
     print("\nSMOKE OK — l'étage waypoint est géométriquement et machinalement sain (offline).")
 
 
