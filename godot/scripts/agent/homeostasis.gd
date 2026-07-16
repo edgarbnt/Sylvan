@@ -8,6 +8,7 @@ class_name Homeostasis
 # pas d'un biais de drain). L'eau (water_manager) restaure la soif comme la bouffe restaure l'énergie.
 @export var max_thirst := 100.0
 @export var passive_thirst_drain := 0.15
+var health_regen := 0.0      # MONDE v2 : regen lente de santé (SYLVAN_HEALTH_REGEN, défaut 0 = OFF)
 var thirst_enabled := false  # la soif ne draine/tue QUE si l'eau existe (main.gd l'active selon SYLVAN_WATER_COUNT) —
                              # sinon un run bouffe-seule mourrait de soif sans pouvoir boire.
 # PHASE C — the intrinsic DRIVE is now ON. Energy drains every step (metabolism); the
@@ -49,6 +50,13 @@ func reset_state() -> void:
 	var _td := OS.get_environment("SYLVAN_THIRST_DRAIN")
 	if _td != "":
 		passive_thirst_drain = maxf(0.0, float(_td))
+	# MONDE v2 (2026-07-16, décision owner) : RÉGÉNÉRATION lente de santé — la santé devient une
+	# ÉCONOMIE cyclique (encaisser un sprint douloureux, récupérer, recommencer) au lieu d'un budget
+	# à sens unique. ~10× plus lent que les dégâts hazard (0.05 vs 0.5/pas → un sprint de ~27 dégâts
+	# se récupère en ~540 pas). Défaut 0 = OFF, corps inchangé.
+	var _hr := OS.get_environment("SYLVAN_HEALTH_REGEN")
+	if _hr != "":
+		health_regen = maxf(0.0, float(_hr))
 
 
 func apply_metabolism(effort_cost: float = 0.0) -> void:
@@ -57,6 +65,8 @@ func apply_metabolism(effort_cost: float = 0.0) -> void:
 		thirst = maxf(0.0, thirst - passive_thirst_drain)  # soif draine passivement (pas d'effort-cost : boire ≠ marcher)
 	if effort_cost > 0.9:
 		health = maxf(0.0, health - (effort_cost - 0.9) * 0.2)
+	if health_regen > 0.0 and health > 0.0:
+		health = minf(max_health, health + health_regen)   # regen lente (monde v2) ; un mort ne régénère pas
 
 
 func restore_energy(amount: float) -> void:

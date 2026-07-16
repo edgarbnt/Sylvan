@@ -392,6 +392,7 @@ class _PlannerService:
         # → thirst plein (pas de pression) → coût identique à avant.
         water_fine = list(payload.get("vision_water") or [])
         thirst = float(payload.get("thirst", 100.0))
+        health = float(payload.get("health", 100.0))   # MONDE v2 : additif (ancien Godot → 100 = plein)
         with self._lock:
             # MÉMOIRE SPATIALE (Task 3) : mise à jour du belief par tick (dead-reckon + re-ground si saillant).
             # Doit s'exécuter AVANT le bloc de replan pour que belief soit à jour quand le planner est appelé.
@@ -545,6 +546,7 @@ class _PlannerService:
                         "proprio": proprio,
                         "energy":  float(energy),
                         "thirst":  float(thirst),
+                        "health":  float(health),   # MONDE v2 : additif (lecteurs existants intacts)
                     },
                     "wm": {
                         "retina0": retina,

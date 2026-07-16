@@ -35,6 +35,10 @@ var _damage := 0.5                        # santé/pas dedans. 0.5 = niveau LÉT
                                           # dessous (0.1-0.35) la santé est du slack (la faim tue avant) → non
                                           # conséquent. diagnostics/diag_hazard_gate.py.
 var _frac := 0.55                         # position sur le segment spawn→bouffe (0=spawn, 1=bouffe)
+var _engulf_p := 0.0                      # MONDE v2 (2026-07-16) : prob que la zone 0 soit centrée SUR la
+                                          # bouffe (spawn ET respawn) → plus de détour possible, il faut
+                                          # ARBITRER un sprint douloureux (drives+santé). Défaut 0 = OFF,
+                                          # monde v1 bit-identique. docs/design_monde_v2_risque.md.
 var _count := 0
 var _pillars := 7                         # nb de piliers par zone (1 centre + anneau) — assez pour VOIR, peu pour ne PAS occulter
 var _pillar_r := 0.08                     # rayon d'un pilier (fin → les rayons passent entre)
@@ -48,6 +52,8 @@ var _ep := -1
 var _steps_in := 0
 var _dmg_done := 0.0
 var _entered := false
+var _engulfs := 0                         # placements « bouffe au cœur » cet épisode (spawn + respawns)
+var _engulf_skips := 0                    # re-centrages refusés par la garde anti-injustice
 
 
 func _init() -> void:
@@ -55,6 +61,7 @@ func _init() -> void:
 	_radius = _envf("SYLVAN_HAZARD_RADIUS", _radius)
 	_damage = _envf("SYLVAN_HAZARD_DAMAGE", _damage)
 	_frac = _envf("SYLVAN_HAZARD_FRAC", _frac)
+	_engulf_p = _envf("SYLVAN_HAZARD_ENGULF_P", _engulf_p)
 	_pillars = int(_env("SYLVAN_HAZARD_PILLARS", "7"))       # sweep visibilité↔occlusion
 	_pillar_r = _envf("SYLVAN_HAZARD_PILLAR_R", _pillar_r)
 
@@ -117,12 +124,14 @@ func _ensure_built() -> void:
 # Placer les zones pour le nouvel épisode ET logger les stats de l'épisode PRÉCÉDENT (self-contained).
 func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array) -> void:
 	if _ep >= 0 and active():
-		print("[hazard] ep %d : entré=%s pas_dans_zone=%d dégâts=%.1f"
-			% [_ep, str(_entered), _steps_in, _dmg_done])
+		print("[hazard] ep %d : entré=%s pas_dans_zone=%d dégâts=%.1f engouffrements=%d garde=%d"
+			% [_ep, str(_entered), _steps_in, _dmg_done, _engulfs, _engulf_skips])
 	_ep = episode_index
 	_steps_in = 0
 	_dmg_done = 0.0
 	_entered = false
+	_engulfs = 0
+	_engulf_skips = 0
 	_discs.clear()
 	if not active():
 		return
@@ -136,7 +145,13 @@ func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array
 			best = d
 			nearest = p
 	if best < INF:
-		_discs.append(spawn_pos.lerp(nearest, _frac))
+		# MONDE v2 : avec prob engulf_p, la zone 0 est centrée SUR la bouffe (plus de contournement
+		# possible — eat_radius 1.0 < rayon 1.3 → manger = sprint douloureux ~0.3 m de pénétration).
+		var center := spawn_pos.lerp(nearest, _frac)
+		if _engulf_p > 0.0 and _rng.randf() < _engulf_p:
+			center = nearest
+			_engulfs += 1
+		_discs.append(center)
 	# zones supplémentaires (count>1) : dispersées autour, pour peupler l'arène
 	for i in range(1, _count):
 		var a := _rng.randf_range(0.0, TAU)
@@ -149,6 +164,33 @@ func begin_episode(episode_index: int, spawn_pos: Vector3, food_positions: Array
 			_visuals[i].visible = true
 		else:
 			_visuals[i].visible = false
+
+
+# MONDE v2 : le dilemme se REJOUE — au respawn de la bouffe (mangée), avec prob engulf_p la zone 0
+# SUIT la nouvelle bouffe. Appelé depuis main.gd après une consommation réussie (hook local 1 ligne).
+# GARDE ANTI-INJUSTICE : jamais re-centrer une zone sur/près de l'agent (le respawn est à 2-4.5 m de
+# lui — la garde couvre le bord du tirage). food_positions : avec FC=1 (les mondes v2) il n'y a qu'une
+# bouffe ; à FC>1 on prend la plus proche de l'agent (= celle qui vient de respawner près de lui).
+func on_food_respawn(food_positions: Array, agent_pos: Vector3) -> void:
+	if not active() or _discs.is_empty() or _engulf_p <= 0.0 or food_positions.is_empty():
+		return
+	if _rng.randf() >= _engulf_p:
+		return
+	var ground_agent := Vector3(agent_pos.x, 0.0, agent_pos.z)
+	var target: Vector3 = food_positions[0]
+	var best := INF
+	for p in food_positions:
+		var d: float = ground_agent.distance_to(Vector3(p.x, 0.0, p.z))
+		if d < best:
+			best = d
+			target = p
+	if best < _radius + 0.5:
+		_engulf_skips += 1
+		return
+	_discs[0] = target
+	if _visuals.size() > 0:
+		_visuals[0].global_position = Vector3(target.x, 0.0, target.z)
+	_engulfs += 1
 
 
 # Dégâts à appliquer à cette position (0 si hors zone). Appelé chaque pas depuis la boucle de main.gd.

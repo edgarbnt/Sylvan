@@ -96,6 +96,8 @@ func predict_planner(obs: Dictionary) -> Dictionary:
 		"energy": obs.get("energy", 0.0),
 		"vision_water": obs.get("vision_water", []), # 2ᵉ pulsion: fine WATER radar (planner-only, hors WM)
 		"thirst": obs.get("thirst", 0.0),            # 2ᵉ pulsion: niveau de soif 0..100 (planner-only)
+		"health": obs.get("health", 100.0),          # MONDE v2 : santé 0..100 (l'arbitrage du sprint
+		                                             # douloureux en a besoin ; additif, serveur tolérant)
 		"retina": obs.get("retina", []),             # RÉTINE étage 1: rayons couleur bruts → localisation apprise
 		# Signal EXPLICITE de frontière d'épisode (Mode-1 collecte RL) : additif, ignoré par les autres
 		# serveurs. episode_step = index de pas DANS l'épisode (remis à 0 au respawn) ; prev_term = raison
