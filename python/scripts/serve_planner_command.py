@@ -512,7 +512,7 @@ class _PlannerService:
                     # décision du niveau haut (spawn / cible changée / re-check). Si un wp COMMIT,
                     # l'override s'applique à partir du prochain replan (~10 ticks, ≈0.2 m).
                     if self.waypoint is not None and len(retina) == RETINA_DIM:
-                        self._waypoint_maybe_decide(plan_res, retina)
+                        self._waypoint_maybe_decide(plan_res, retina, (energy, thirst, health))
             self._ticks += 1
             vx, om = self._cmd
             # ÉTAGE WAYPOINT : odométrie du wp commité sous la commande EXÉCUTÉE ce tick (calibrée
@@ -667,9 +667,11 @@ class _PlannerService:
                           "target": lay.target_id, "leg_steps": lay.leg_steps}
         return plan_res
 
-    def _waypoint_maybe_decide(self, plan_res: dict, retina: list[float]) -> None:
+    def _waypoint_maybe_decide(self, plan_res: dict, retina: list[float],
+                               drives: tuple[float, float, float] | None = None) -> None:
         """Après un replan NORMAL (pas de leg) : cible courante du plan → décision du niveau haut.
-        first_target vient de la branche survie ; fallback bouffe seule (mono-ressource visible)."""
+        first_target vient de la branche survie ; fallback bouffe seule (mono-ressource visible).
+        drives = (énergie, soif, santé) 0-100 — consommés par la sonde oracle-sprint (monde v2)."""
         ft = plan_res.get("first_target")
         pos = plan_res.get("food") if ft == "food" else plan_res.get("water")
         if ft is None or pos is None:
@@ -677,7 +679,7 @@ class _PlannerService:
                 ft, pos = "food", plan_res["food"]
             else:
                 return                                 # rien de visible → rien à décider
-        self.waypoint.maybe_decide(ft, (float(pos[0]), float(pos[1])), retina)
+        self.waypoint.maybe_decide(ft, (float(pos[0]), float(pos[1])), retina, drives=drives)
 
     def reset(self) -> None:
         with self._lock:

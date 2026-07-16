@@ -246,6 +246,16 @@ class WaypointLayer:
             p.mkdir(parents=True, exist_ok=True)
             self._log_file = open(p / "decisions.jsonl", "w", buffering=1)
         self._global_ticks = 0               # jamais remis à zéro (jointure sur le flux BC continu)
+        # === ORACLE-SPRINT (SONDE Phase-2 monde v2, ÉCHAFAUDAGE DÉCLARÉ ET JETABLE) ===
+        # Question du gate G-place : une politique santé/drive-consciente SIMPLE bat-elle la
+        # géométrie pure quand la bouffe est AU CŒUR du danger ? Règle-cheat : cible bouffe BLOQUÉE
+        # (intrusion directe > 0) ET santé > 60 ET énergie < 50 → SPRINT (direct malgré le vert).
+        # = plafond atteignable ; si oracle ≥ analytique +4 repas → la place existe pour l'APPRIS.
+        self.oracle_sprint = os.environ.get("SYLVAN_WP_ORACLE_SPRINT", "0") == "1"
+        self._drives: tuple[float, float, float] | None = None    # (énergie, soif, santé) 0-100
+        if self.oracle_sprint:
+            print("[waypoint] ORACLE-SPRINT actif (sonde G-place, échafaudage) : bouffe bloquée + "
+                  "santé>60 + énergie<50 → direct malgré le vert", flush=True)
         # === CRITIQUE-DOULEUR (SYLVAN_WP_PAIN_CRITIC=ckpt, gates v2 passés : AUC 0.881, monotone) ===
         # Quand chargé, le scoreur remplace les termes verts CODÉS-MAIN (marges 1.0/1.4, W=25) par la
         # douleur APPRISE des morsures vécues : coût = longueur + κ·Q_douleur(candidat). κ = taux
@@ -342,9 +352,12 @@ class WaypointLayer:
 
     # ------------------------------------------------------------------ décision
     def maybe_decide(self, target_id: str, target_pos: tuple[float, float],
-                     retina: list[float]) -> dict | None:
+                     retina: list[float],
+                     drives: tuple[float, float, float] | None = None) -> dict | None:
         """À appeler à chaque replan SANS commitment. Décide si : première fois / cible changée /
         cible téléportée (respawn) / re-check périodique. Retourne le dict décision, ou None."""
+        if drives is not None:
+            self._drives = drives            # (énergie, soif, santé) — consommé par l'oracle-sprint
         self._replans_since_decision += 1
         jumped = (self._target_at_decision is not None and self.target_id == target_id
                   and math.hypot(target_pos[0] - self._target_at_decision[0],
@@ -390,6 +403,12 @@ class WaypointLayer:
         explored = self.explore_eps > 0.0 and self._rng.random() < self.explore_eps
         if explored:
             chosen = self._rng.randrange(len(cands))
+        # ORACLE-SPRINT (sonde G-place, échafaudage) : bouffe bloquée + affamé + en bonne santé →
+        # SPRINT direct malgré le vert. Le plafond qu'une valeur santé/drive-consciente peut viser.
+        if (self.oracle_sprint and not explored and target_id == "food"
+                and self._drives is not None and intr_direct > 0.0
+                and self._drives[2] > 60.0 and self._drives[0] < 50.0):
+            chosen = 0
         commit = chosen != 0
         self.n_decisions += 1
         self._replans_since_decision = 0

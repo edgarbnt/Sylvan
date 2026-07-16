@@ -165,6 +165,21 @@ def main() -> None:
     else:
         print("K. (sauté : pas de checkpoint waypoint_pain)")
 
+    # L. oracle-sprint (sonde G-place monde v2) : bouffe bloquée + affamé + sain → DIRECT malgré
+    #    le vert ; repu → détour normal. Drives = (énergie, soif, santé).
+    _os2.environ["SYLVAN_WP_ORACLE_SPRINT"] = "1"
+    try:
+        lay = WaypointLayer(cfg)
+        ret_blk = retina_with_greens([(-0.4, 2.0), (0.0, 2.0), (0.4, 2.0)])
+        r1 = lay.maybe_decide("food", (0.0, 2.2), ret_blk, drives=(30.0, 80.0, 90.0))
+        assert r1 is not None and r1["choice"] == "direct" and r1["intr_direct"] > 0, r1
+        lay2 = WaypointLayer(cfg)
+        r2 = lay2.maybe_decide("food", (0.0, 4.0), ret_blk, drives=(90.0, 80.0, 90.0))
+        assert r2 is not None and r2["choice"] == "waypoint", r2
+    finally:
+        _os2.environ.pop("SYLVAN_WP_ORACLE_SPRINT", None)
+    print("L. oracle-sprint : affamé+sain→direct malgré vert ; repu→détour ✓")
+
     print("\nSMOKE OK — l'étage waypoint est géométriquement et machinalement sain (offline).")
 
 
