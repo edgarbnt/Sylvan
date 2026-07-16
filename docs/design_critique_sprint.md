@@ -141,6 +141,27 @@ appris (chaque tête a un SNR bien meilleur que U net : douleur AUC 0.894 déjà
 (b) collecte ciblée blessé-profond (ε conditionné à l'état — machinerie à écrire) ;
 (c) réduire la variance du label par agrégation par-poursuite (une poursuite = un exemple).
 
+## ⭐⭐ REPRISE n°2 (2026-07-16, LICENCE OWNER) — TÊTES COMPOSÉES (pré-enregistré AVANT tout train)
+Hypothèse NOUVELLE issue du diagnostic des 2 négatifs : le label U net mélange deux questions
+(« vais-je manger ? » crie 799, « vais-je payer ? » chuchote κ·dmg) → SÉPARER les liens appris et
+rendre la valuation au CORPS (principe §3 : les drives sont définis à la conception ; ce qui
+s'apprend = le lien perception→issue). Forme au déploiement :
+    remise(c) = min(W·intr(c), 0.02 · max(0, P̂(repas|s,c) · bénéfice(drive) − κ_data · douleur̂(c)·100))
+- **P̂(repas|s,c)** = SEULE tête à entraîner : BCE sur `got` (repas/boisson obtenu pendant la
+  poursuite — cible binaire PROPRE, plus de magnitude bimodale), entrées 14-d INCHANGÉES
+  (`sprint_inputs`), corpus = TOUTES les décisions labellisées (~6.4k, pas seulement traversées).
+  La santé y entre naturellement : mourir avant de manger ⇒ got=0.
+- **bénéfice(drive)** = ANALYTIQUE-mesuré : min(restore_mesuré 40, 100−drive_de_la_cible)/drain —
+  la satiété devient exacte au lieu d'apprise (énergie si food, soif si water).
+- **douleur̂(c)** = pain_v3 GELÉ (AUC 0.894, calibré 26.0 vs réel 27.3) ; κ_data mesuré (9.2).
+  ZÉRO constante fittée ; 0.02 m/pas = corps calibré. Cap W·intr : adoucir seulement.
+Gates PRÉ-ENREGISTRÉS (identiques au chantier, score = composé) : G-rank AUC(score composé ordonne
+les traversées payantes) > 0.70 CV-4 par vie ; G-res +10 pts ; G-consist ≤ 1.2× ; G-mono v2
+(conditionné). Budget dur : 1 train + 1 re-train sur diagnostic ; échec → négatif commité + STOP.
+Juge closed-loop INCHANGÉ : 2×24 vies seeds 1+2, repas poolés ≥ 42 ET morts ≤ 13 (réfs 34/11,
+plafond 47/9). Interdits reconduits : pas de distillation de l'oracle (blanchiment), pas de
+constante ajustée pour passer.
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.
