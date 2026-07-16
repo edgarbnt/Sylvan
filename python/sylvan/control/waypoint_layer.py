@@ -327,10 +327,13 @@ class WaypointLayer:
                   f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
         # === LUNETTE SAILLANCE-DANGER (P5, opt-in SYLVAN_WP_SALIENCY=ckpt — docs/design_purete_hjepa.md §P5) ===
         # Perception par la CONSÉQUENCE : « dangereux » = ce qui a précédé mes dégâts, appris sur la
-        # rétine brute (train_danger_saliency). Remplace la règle clé-apparence green_points ET les
-        # marges-géométrie-pilier : green_margin → ρ̂ (portée-morsure VÉCUE), tangent_margin → ρ̂+0.4
-        # (le +0.4 = dégagement de CONCEPTION, relation structurelle conservée). Défaut OFF =
-        # bit-identique (règle verte + marges main). W (block_weight) et hystérésis : INTOUCHÉS.
+        # rétine brute (train_danger_saliency). Remplace la règle clé-apparence green_points — et
+        # SEULEMENT elle. ⚠️ Les MARGES restent celles du CORPS (green_margin/tangent_margin défauts) :
+        # le juge P5 (2026-07-17, poolé 29/14 vs réf 45/8) a RÉFUTÉ « marge = portée-morsure vécue » —
+        # ρ̂=0.63 mesure où ça mord, la marge 1.0 encode un STANDOFF de prudence au-delà du vécu =
+        # préférence du corps (jumeau spatial de W=25/P2-bis). ρ̂ reste porté par le ckpt comme MESURE.
+        # (Le bras réfuté se rejoue via SYLVAN_WP_GREEN_MARGIN/SYLVAN_WP_TANGENT_MARGIN, pas de bouton
+        # dédié.) Défaut OFF = bit-identique. W (block_weight) et hystérésis : INTOUCHÉS.
         self.saliency = None
         _sal = os.environ.get("SYLVAN_WP_SALIENCY")
         if _sal:
@@ -341,13 +344,11 @@ class WaypointLayer:
             self.saliency.load_state_dict(_sk["state_dict"])
             self.saliency.eval()
             self._sal_thr = float(_sk.get("thr", SAL_THR))
-            _rho = float(_sk["rho_hat"])
-            self.cfg.green_margin = _rho
-            self.cfg.tangent_margin = _rho + 0.4
             print(f"[waypoint] LUNETTE SAILLANCE active : {Path(_sal).name} "
-                  f"(AUC={_sk.get('auc_cv', 0):.3f}) — perception danger APPRISE du vécu ; "
-                  f"marges ρ̂={_rho:.2f} m / tangent={_rho + 0.4:.2f} m (mesurées, plus la "
-                  f"géométrie pilier)", flush=True)
+                  f"(AUC={_sk.get('auc_cv', 0):.3f}) — perception danger APPRISE du vécu "
+                  f"(ρ̂ mesuré={float(_sk.get('rho_hat', 0)):.2f} m) ; marges du CORPS conservées "
+                  f"({self.cfg.green_margin:.2f}/{self.cfg.tangent_margin:.2f} m, standoff déclaré)",
+                  flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)

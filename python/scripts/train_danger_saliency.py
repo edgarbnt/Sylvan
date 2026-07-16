@@ -344,9 +344,9 @@ def selfcheck() -> None:
     assert _hausdorff([(0.0, 0.0)], [(0.0, 0.0)]) == 0.0
     assert _hausdorff([(0.0, 0.0)], []) == float("inf")
 
-    # Intégration waypoint_layer : OFF = règle verte + marges main (bit-identique) ; ON avec
-    # s≡vert ET ρ̂=1.0 → décision EXACTEMENT identique (tangent 1.0+0.4 = défaut 1.4) ; ρ̂=0.5
-    # → l'intrusion suit la marge APPRISE ((ρ̂−0)⁺ sur un vert posé sur la ligne).
+    # Intégration waypoint_layer : OFF = règle verte (bit-identique) ; ON avec s≡vert → décision
+    # EXACTEMENT identique QUEL QUE SOIT ρ̂ — les marges restent celles du CORPS (standoff déclaré,
+    # verdict juge P5 : « marge = portée vécue » RÉFUTÉ, poolé 29/14). Seule la LUNETTE change.
     import os
     import tempfile
 
@@ -364,20 +364,17 @@ def selfcheck() -> None:
                     m.rho.fill_(rho)
                 torch.save({"state_dict": m.state_dict(), "thr": SAL_THR, "rho_hat": rho},
                            Path(td) / f"{name}.pt")
-            os.environ["SYLVAN_WP_SALIENCY"] = str(Path(td) / "same.pt")
-            lay = WaypointLayer()
-            rec = lay.decide("food", target, scene)
-            assert (rec["choice"], rec["cost_direct"], rec["cost_best_wp"], rec["intr_direct"],
-                    rec["greens"]) == (rec0["choice"], rec0["cost_direct"], rec0["cost_best_wp"],
-                                       rec0["intr_direct"], rec0["greens"]), (rec, rec0)
-            os.environ["SYLVAN_WP_SALIENCY"] = str(Path(td) / "short.pt")
-            lay = WaypointLayer()
-            rec = lay.decide("food", target, scene)
-            assert abs(rec["intr_direct"] - 0.5) < 1e-6, rec       # (0.5 − 0)⁺, un seul leg
+            for name in ("same", "short"):           # ρ̂ ne doit PAS influencer la décision
+                os.environ["SYLVAN_WP_SALIENCY"] = str(Path(td) / f"{name}.pt")
+                lay = WaypointLayer()
+                rec = lay.decide("food", target, scene)
+                assert (rec["choice"], rec["cost_direct"], rec["cost_best_wp"], rec["intr_direct"],
+                        rec["greens"]) == (rec0["choice"], rec0["cost_direct"], rec0["cost_best_wp"],
+                                           rec0["intr_direct"], rec0["greens"]), (name, rec, rec0)
         finally:
             os.environ.pop("SYLVAN_WP_SALIENCY", None)
     print("[selfcheck] OK — g décroissante, ρ̂=g⁻¹(0.5), lecture ≡ green_points, intégration "
-          "waypoint (OFF bit-identique, ρ̂=1.0 identique, ρ̂ court suivi)")
+          "waypoint (OFF bit-identique ; ON s≡vert identique ∀ρ̂, marges du corps)")
 
 
 if __name__ == "__main__":

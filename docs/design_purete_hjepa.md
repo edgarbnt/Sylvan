@@ -225,6 +225,20 @@ dissoudrait la clé-APPARENCE (le but du chantier) en gardant le standoff décla
 de lunette 100 %, parité juge attendue. Décomposition finale candidate : apparence = APPRISE
 (saillance), létalité = APPRISE (douleur̂/P̂mort), standoff + aversion = CORPS (déclarés).
 
+### P5-MIXTE — bras « lunette APPRISE + marges du CORPS » (licencié owner 2026-07-17,
+### pré-enregistré AVANT le run)
+Hypothèse issue du diagnostic D : l'échec vivait dans les MARGES, pas la lunette → bras =
+`SYLVAN_WP_SALIENCY` (lunette seule) avec **green_margin=1.0 / tangent_margin=1.4 CONSERVÉS et
+reclassés CONSTANTES DE CONCEPTION** (standoff = préférence du corps, catégorie drives — comme
+W=25). Le code saillance ne touche plus aux marges (le bras réfuté reste reproductible via les
+overrides env, pas de bouton dédié). Attendu : parité stricte (lunette ≡ verte sur 100 % des
+décisions mesurées) — mais on ne promeut JAMAIS sur un attendu.
+Gates : 1) smoke 3 vies seed 3 (bannières, décisions loggées, zéro crash, comportement de forage
+présent) ; 2) juge INCHANGÉ : 2×24 vies seeds 1+2, **repas poolés ≥ 40 ET morts-danger ≤ 10**
+(réf 45/8), KILL seed 1 < 14. Si PASS → PROMOTION : la lunette saillance devient le défaut de la
+config vivante (la clé-apparence danger est dissoute) ; échec → clôture définitive du volet danger
+(green_points conservé), pas de 3ᵉ bras.
+
 ### ⭐ VERDICT PHASE C (2026-07-17) : DÉ-CONTAMINATION EXACTE — PARITÉ **4/4**
 Filtre lunette (`decontaminate_heads.py`) : **0 décision écartée sur les 13 runs** (lunettes
 identiques sur 100 % des décisions, wpx compris) → re-trains à corpus identique + mêmes seeds =
