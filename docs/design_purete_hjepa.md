@@ -291,8 +291,11 @@ headroom de sécurité que les données de dégâts ne justifient pas seules. Si
 les MORTS avec un ρ̂ ~0.5-0.7, le diagnostic pré-écrit est « la marge contient une préférence de
 sécurité du corps au-delà du vécu » (même famille que W=25, P2-bis) — pas un défaut de la tête.
 
-## P6 — VOLET « NOURRISSANT » : requêtes de slot APPRISES du soulagement vécu (ouvert 2026-07-17
-## soir, licencié owner — gates pré-enregistrés ICI avant tout diag/train)
+## P6 — RECONNAISSANCE DES TYPES D'OBJETS : requêtes de slot APPRISES de la conséquence vécue
+## (ouvert 2026-07-17 soir, licencié owner — gates pré-enregistrés ICI avant tout diag/train)
+> Nommage corrigé (owner) : le chantier est GÉNÉRAL — c'est la brique « qu'est-ce que c'est ? »
+> de la vision (un filtre par TYPE d'objet). Bouffe/eau/danger = les 3 types actuels du monde,
+> pas le périmètre du mécanisme (« nourrissant » n'était que le premier volet ressource).
 **Mission** : dissoudre la DERNIÈRE clé-apparence de la boucle décisionnelle — les requêtes-couleur
 des slots WM (« bouffe=rouge, eau=bleu, danger=vert », `slot_head.py color_queries`). La perception
 ressource entière passe par ces 9 nombres écrits à la main. Forme cible : « nourrissant = ce qui a
