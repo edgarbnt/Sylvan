@@ -266,7 +266,8 @@ def main() -> None:
     print(f"[pain] anti-myopie B2   : {'OUI' if anti_myopie else 'NON'} "
           f"(prédite ≥ 50% du réel ET ≫ dégagé)")
     if auc > 0.80 and mono and anti_myopie:
-        print(f"[pain] ✅ GATES PASSÉS → A/B closed-loop avec SYLVAN_WP_PAIN_KAPPA={kappa_data:.0f}.")
+        print(f"[pain] ✅ GATES PASSÉS — tête douleur utilisable comme FEATURE du critique-sprint "
+              f"composé (le mode scoreur-remplacement est RETIRÉ, hygiène 2026-07-16 ; κ_data={kappa_data:.0f}).")
     else:
         print("[pain] ❌ GATE ÉCHOUÉ → ne pas brancher ; commiter le négatif.")
     out = Path(args.out)

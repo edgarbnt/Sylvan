@@ -268,26 +268,15 @@ class WaypointLayer:
         if self.guard_enable:
             print(f"[waypoint] GARDE SANS-CIBLE active : croisière + vert intrusant la ligne avant "
                   f"({self.guard_lookahead} m) → wp évasif", flush=True)
-        # === CRITIQUE-DOULEUR (SYLVAN_WP_PAIN_CRITIC=ckpt, gates v2 passés : AUC 0.881, monotone) ===
-        # Quand chargé, le scoreur remplace les termes verts CODÉS-MAIN (marges 1.0/1.4, W=25) par la
-        # douleur APPRISE des morsures vécues : coût = longueur + κ·Q_douleur(candidat). κ = taux
-        # d'échange pas/dégât (SYLVAN_WP_PAIN_KAPPA, défaut 100 ; ancre : 100 dégâts = mort ≈ vie
-        # restante — constante d'échafaudage flaggée, jugée par l'A/B). Le vert reste un PERCEPT dans
-        # les features (distances brutes) ; sa LÉTALITÉ est ce qui est appris.
-        self.pain_critic = None
-        self.pain_kappa_m = 0.0
-        _pc = os.environ.get("SYLVAN_WP_PAIN_CRITIC")
-        if _pc:
-            import torch as _torch
-            from scripts.train_waypoint_pain import PainCritic
-            _ck = _torch.load(_pc, map_location="cpu", weights_only=False)
-            self.pain_critic = PainCritic()
-            self.pain_critic.load_state_dict(_ck["state_dict"])
-            self.pain_critic.eval()
-            _kappa = float(os.environ.get("SYLVAN_WP_PAIN_KAPPA", "100"))     # pas / dégât
-            self.pain_kappa_m = _kappa * 0.02                                 # → mètres / dégât
-            print(f"[waypoint] CRITIQUE-DOULEUR actif : {Path(_pc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
-                  f"κ={_kappa} pas/dégât → les marges vertes codées-main SORTENT du scoring", flush=True)
+        # === MODE DOULEUR-REMPLACEMENT : RETIRÉ (hygiène 2026-07-16) ===
+        # SYLVAN_WP_PAIN_CRITIC (coût = longueur + κ·Q_douleur, marges main SORTIES) a été REFUSÉ
+        # 2× par son A/B (v2 7/1, v3 8/5 vs analytique 14/1 — le remplacement fait flotter les
+        # choix). La douleur apprise (pain_v3, AUC 0.894) VIT comme FEATURE du critique-sprint
+        # composé ci-dessous — plus jamais comme scoreur. Erreur bruyante si le flag traîne :
+        if os.environ.get("SYLVAN_WP_PAIN_CRITIC"):
+            raise ValueError("SYLVAN_WP_PAIN_CRITIC est RETIRÉ (remplacement refusé 2× par A/B, "
+                             "hygiène 2026-07-16) — la douleur vit comme FEATURE du critique-sprint "
+                             "composé (SYLVAN_WP_SPRINT_CRITIC)")
         # === CRITIQUE-SPRINT (SYLVAN_WP_SPRINT_CRITIC=ckpt — chantier IC+TC, docs/design_critique_sprint.md) ===
         # Forme D1 reprise v2 (owner 2026-07-16) : remise(c) = min(W·intr(c), 2·max(0, Q̂(s,c))),
         # score(c) = route_cost(c) − remise. Q̂ = U prédit de la traversée (pas/100, MAGNITUDE — le
@@ -300,9 +289,9 @@ class WaypointLayer:
         self._sprint_pain = None
         _sc = os.environ.get("SYLVAN_WP_SPRINT_CRITIC")
         if _sc:
-            if self.pain_critic is not None or self.oracle_sprint:
-                raise ValueError("SYLVAN_WP_SPRINT_CRITIC est exclusif de SYLVAN_WP_PAIN_CRITIC et "
-                                 "SYLVAN_WP_ORACLE_SPRINT (modes de scoring concurrents)")
+            if self.oracle_sprint:
+                raise ValueError("SYLVAN_WP_SPRINT_CRITIC est exclusif de SYLVAN_WP_ORACLE_SPRINT "
+                                 "(la sonde historique n'est pas un mode combinable)")
             import torch as _torch
             from scripts.train_sprint_critic import SprintCritic
             from scripts.train_waypoint_pain import PainCritic as _Pain
@@ -448,44 +437,33 @@ class WaypointLayer:
                   for i in range(cfg.ring_n)]
         cands += tangent_candidates(greens, cfg.tangent_margin)
         feats = [candidate_features(w, target_pos, greens) for w in cands]
-        if self.pain_critic is not None:
-            # MODE DOULEUR APPRISE : coût = longueur + κ·Q_douleur — zéro marge verte codée-main.
+        scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
+        # CORRECTION SPRINT (IC+TC, juge PASS 2026-07-16 : 45/8 poolé) : remise capée à la pénalité
+        # verte → seuls les candidats à intrusion>0 bougent, jamais en aggravation ; l'intrusion
+        # GÉOMÉTRIQUE (scored[i][1]) reste intacte pour l'aval. Sans drives connus ou cible
+        # non-ressource (guard) : remise=0 ⇒ analytique pur.
+        if (self.sprint_critic is not None and self._drives is not None and greens
+                and target_id in ("food", "water")):
             import torch as _torch
+            from scripts.train_sprint_critic import sprint_inputs
             with _torch.no_grad():
-                pain = self.pain_critic.pain(_torch.tensor(feats, dtype=_torch.float32)) * 100.0
-            scored = []
-            for i, w in enumerate(cands):
-                length = math.hypot(w[0], w[1]) + math.hypot(target_pos[0] - w[0], target_pos[1] - w[1])
-                scored.append((length + self.pain_kappa_m * float(pain[i]), float(pain[i])))
-        else:
-            scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
-            # CORRECTION SPRINT (IC+TC, reprise v2) : remise = min(W·intr, 2·max(0, Q̂)) — le
-            # bénéfice net PRÉDIT de la traversée en mètres (0.02 m/pas calibré × Q̂·100), capé à
-            # la pénalité verte → seuls les candidats à intrusion>0 bougent, jamais en aggravation ;
-            # l'intrusion GÉOMÉTRIQUE (scored[i][1]) reste intacte pour l'aval. Sans drives connus
-            # ou cible non-ressource (guard) : remise=0 ⇒ analytique pur.
-            if (self.sprint_critic is not None and self._drives is not None and greens
-                    and target_id in ("food", "water")):
-                import torch as _torch
-                from scripts.train_sprint_critic import sprint_inputs
-                with _torch.no_grad():
-                    _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
-                    _x = sprint_inputs(feats, self._drives, _pain.tolist())
-                    if self._sprint_form == "composed_v1":
-                        # remise = P̂(repas)·bénéfice(drive) − κ·douleur̂ (en pas → ×0.02 m/pas) :
-                        # liens APPRIS (P̂, douleur̂ gelée), valuation du CORPS (restore/drain/κ mesurés)
-                        _drive = self._drives[0] if target_id == "food" else self._drives[1]
-                        _ben = min(self._sc_restore, 100.0 - _drive) / self._sc_drain
-                        _p = self.sprint_critic.p(_x)
-                        _vals = [0.02 * max(0.0, float(_p[i]) * _ben
-                                            - self._sc_kappa * float(_pain[i]) * 100.0)
-                                 for i in range(len(feats))]
-                    else:
-                        _q = self.sprint_critic.q(_x)
-                        _vals = [2.0 * max(0.0, float(_q[i])) for i in range(len(feats))]
-                scored = [(c - min(cfg.block_weight * intr, _vals[i]), intr)
-                          if intr > 0.0 else (c, intr)
-                          for i, (c, intr) in enumerate(scored)]
+                _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
+                _x = sprint_inputs(feats, self._drives, _pain.tolist())
+                if self._sprint_form == "composed_v1":
+                    # remise = P̂(repas)·bénéfice(drive) − κ·douleur̂ (en pas → ×0.02 m/pas) :
+                    # liens APPRIS (P̂, douleur̂ gelée), valuation du CORPS (restore/drain/κ mesurés)
+                    _drive = self._drives[0] if target_id == "food" else self._drives[1]
+                    _ben = min(self._sc_restore, 100.0 - _drive) / self._sc_drain
+                    _p = self.sprint_critic.p(_x)
+                    _vals = [0.02 * max(0.0, float(_p[i]) * _ben
+                                        - self._sc_kappa * float(_pain[i]) * 100.0)
+                             for i in range(len(feats))]
+                else:
+                    _q = self.sprint_critic.q(_x)
+                    _vals = [2.0 * max(0.0, float(_q[i])) for i in range(len(feats))]
+            scored = [(c - min(cfg.block_weight * intr, _vals[i]), intr)
+                      if intr > 0.0 else (c, intr)
+                      for i, (c, intr) in enumerate(scored)]
         cost_direct, intr_direct = scored[0]
         best_i = min(range(1, len(cands)), key=lambda i: scored[i][0])
         # HYSTÉRÉSIS pro-direct : un détour ne s'engage que s'il bat nettement la ligne droite.
@@ -526,7 +504,6 @@ class WaypointLayer:
         if self._log_file is not None:
             # champs ADDITIFS drives/intr (2026-07-16) : les corpus post-Phase-A n'ont plus besoin
             # ni de la jointure tick (drives) ni de la reconstruction costs−longueur (intrusion).
-            # ⚠️ en mode pain-critic, s[1] est la douleur, pas l'intrusion (piège documenté).
             self._log_file.write(json.dumps({
                 "tick": self._global_ticks, "target": target_id, "chosen": chosen,
                 "explore": explored, "n_greens": len(greens),
