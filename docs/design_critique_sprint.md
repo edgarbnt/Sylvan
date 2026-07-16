@@ -121,6 +121,26 @@ v2/v3 est absent)** ; G-mono ✗ (profondeur inversée). Diagnostic sur trace (g
    pas sur la capacité (le modèle 14-d fait 0.684 ≈ niveau 1-feature).
 Le checkpoint (gates_pass=False) reste sur disque, non branché.
 
+## ⭐⭐ NÉGATIF n°2 + VERDICT DE CHANTIER (2026-07-16) — BUDGET RE-TRAIN ÉPUISÉ → STOP
+Re-train unique (régression U, arbitré owner) : G-rank **0.649** ✗ (plis 0.649/0.554/0.687/0.704 —
+pire que le signe 0.684) ; G-res +3 pts ✗ ; **G-consist ✅ encore (6.7 % ≤ 7.8 %)** ; G-mono v2 :
+profondeur|blessé **✓ apprise** (Q̂ 3.56→2.46→2.37 — le modèle sait « traverser profond coûte
+quand fragile ») mais santé|profond ✗ (2.46/2.41/3.63 : bandes basses indiscernables).
+**Ce qui est ACQUIS (2 trains concordants)** : la forme IC+TC modulation-plafonnée NE FLOTTE PAS
+(G-consist passé 2×) — le mode d'échec qui a tué v2/v3 est résolu PAR LA FORME. **Ce qui bloque** :
+le LABEL vécu par-décision n'a pas le rapport signal/bruit — U est bimodal (repas 799 ou rien),
+dominé par l'obtention du repas ; les états blessés-profonds restent trop rares même avec ε
+(205 déc.) ; plafond 1-feature ≈ 0.70 = le gate. Ce n'est ni la capacité, ni la forme, ni les
+gates : c'est le CONTRASTE DU CORPUS et la VARIANCE du label par-décision.
+**Per pré-enregistrement : STOP.** Analytique = défaut (34/11) ; oracle-sprint reste une SONDE
+opt-in déclarée (jamais défaut) ; hook déploiement + trainer + checkpoints BANKÉS (gates_pass=False,
+non branchés). Le juge closed-loop n'a jamais été payé (gaté, comme prévu).
+**Pistes FUTURES (hypothèses nouvelles, licence owner requise)** : (a) têtes composées —
+P(repas|s,c) × bénéfice_mesuré − κ·douleur_v3 : algèbre aux constantes mesurées sur composants
+appris (chaque tête a un SNR bien meilleur que U net : douleur AUC 0.894 déjà bankée) ;
+(b) collecte ciblée blessé-profond (ε conditionné à l'état — machinerie à écrire) ;
+(c) réduire la variance du label par agrégation par-poursuite (une poursuite = un exemple).
+
 ## Critère de succès = le BUT
 Le juge du §4 (repas ET morts, poolés, seeds du juge) — jamais un proxy offline. Offline-PASS ne
 préjuge de rien (leçon v2/v3) ; les gates 0-3 ne servent qu'à ne pas payer un A/B perdu d'avance.
