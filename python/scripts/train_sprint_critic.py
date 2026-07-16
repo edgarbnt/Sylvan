@@ -13,6 +13,14 @@ Label PINNÉ (Phase 0) : U = gain_observé/drain − κ_data·dégâts_de_poursu
 plancher-mort non retenu, 3 % < 10 %). Le négatif n°1 a prouvé que la magnitude porte la santé
 (U̅|repas 557/591/716 par bande) là où le signe ne porte que « repas obtenu ».
 
+REPRISE n°2 — TÊTES COMPOSÉES (owner 2026-07-16, `--form composed`, DÉFAUT) : après les 2 négatifs
+(signe = risque jeté ; magnitude = variance bimodale), SÉPARER les liens appris :
+    remise(c) = min(W·intr(c), 0.02 · max(0, P̂(repas|s,c)·bénéfice(drive) − κ_data·douleur̂_v3(c)·100))
+P̂ = seule tête entraînée (BCE sur `got`, TOUTES les décisions — la santé y entre par
+mourir-avant-de-manger) ; bénéfice = min(restore_mesuré, 100−drive)/drain (satiété EXACTE) ;
+douleur̂ = pain_v3 GELÉ. U reste le CRITÈRE des gates (y = U>0), plus le label d'entraînement.
+La forme q (régression U) reste disponible (`--form q`) pour reproduire le négatif n°2.
+
 GATES OFFLINE PRÉ-ENREGISTRÉS (design §gates — opérationnalisés ici, écrits AVANT le re-train) :
   1. G-rank  : AUC(Q̂ ordonne les traversées payantes > non-payantes) > 0.70, CV-4 par VIE ;
   2. G-res   : précision du choix simulé (traverser/refuser, hystérésis incluse) vs l'action
@@ -71,6 +79,10 @@ class SprintCritic(nn.Module):
     def q(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
 
+    def p(self, x: torch.Tensor) -> torch.Tensor:
+        """Lecture sigmoïde (forme composée : P̂(repas) ∈ (0,1))."""
+        return torch.sigmoid(self.net(x).squeeze(-1))
+
 
 def sprint_inputs(feats: list[list[float]], drives: tuple[float, float, float],
                   pain: list[float]) -> torch.Tensor:
@@ -86,11 +98,13 @@ def sprint_inputs(feats: list[list[float]], drives: tuple[float, float, float],
     return x
 
 
-def make_checkpoint(critic: SprintCritic, pain_ckpt: str, **meta) -> dict:
+def make_checkpoint(critic: SprintCritic, pain_ckpt: str, form: str = "q_regression",
+                    **meta) -> dict:
     """Format de checkpoint unique (déploiement : waypoint_layer recharge pain_ckpt d'ici —
-    la parité de la feature douleur est portée par le chemin bankée, pas par une convention)."""
+    la parité de la feature douleur est portée par le chemin bankée, pas par une convention).
+    form ∈ {q_regression, composed_v1} — décide la lecture (q vs p) et l'algèbre de remise."""
     return {"state_dict": critic.state_dict(), "in_dim": SPRINT_IN_DIM,
-            "form": "q_regression", "pain_ckpt": pain_ckpt, **meta}
+            "form": form, "pain_ckpt": pain_ckpt, **meta}
 
 
 # ------------------------------------------------------------------ corpus (partagé avec le diag)
@@ -197,22 +211,32 @@ def _pain_of(pain_model: PainCritic, feats: list[list[float]]) -> list[float]:
         return pain_model.pain(torch.tensor(feats, dtype=torch.float32)).tolist()
 
 
-def simulate_choice(r: dict, critic: SprintCritic | None,
-                    pain_model: PainCritic | None) -> bool:
+def simulate_choice(r: dict, critic: SprintCritic | None, pain_model: PainCritic | None, *,
+                    composed: bool = False, kappa: float = 0.0, drain: float = 0.05,
+                    restore: float = 40.0) -> bool:
     """Rejoue la règle de choix de decide() (argmin + hystérésis pro-direct) sur les candidats
-    loggés → True si le choix TRAVERSE (intr>ε). critic=None ⇒ scoreur analytique pur."""
+    loggés → True si le choix TRAVERSE (intr>ε). critic=None ⇒ scoreur analytique pur.
+    composed=False : remise = min(W·intr, 2·max(0, Q̂)) ; composed=True : remise =
+    min(W·intr, 0.02·max(0, P̂·bénéfice(drive) − κ·douleur̂·100)) — parité déploiement."""
     costs = list(r["costs"])
     if critic is not None:
-        x = sprint_inputs(r["feats_all"], (r["e"], r["t"], r["h"]),
-                          _pain_of(pain_model, r["feats_all"]))
+        pains = _pain_of(pain_model, r["feats_all"])
+        x = sprint_inputs(r["feats_all"], (r["e"], r["t"], r["h"]), pains)
         with torch.no_grad():
-            q = critic.q(x)
-        # remise = min(W·intr, 2·max(0, Q̂)) — 2 = 0.02 m/pas × 100 (Q̂ en pas/100), parité déploiement
+            if composed:
+                drive = r["e"] if r["target"] == "food" else r["t"]
+                ben = min(restore, 100.0 - drive) / drain
+                p = critic.p(x)
+                vals = [0.02 * max(0.0, float(p[i]) * ben - kappa * pains[i] * 100.0)
+                        for i in range(len(costs))]
+            else:
+                q = critic.q(x)
+                vals = [2.0 * max(0.0, float(q[i])) for i in range(len(costs))]
         new_costs = []
         for i, c in enumerate(costs):
             intr_i = r["intr_all"][i]
             if intr_i == intr_i and intr_i > 0.0:
-                c = c - min(_CFG.block_weight * intr_i, 2.0 * max(0.0, float(q[i])))
+                c = c - min(_CFG.block_weight * intr_i, vals[i])
             new_costs.append(c)
         costs = new_costs
     best_i = min(range(1, len(costs)), key=lambda i: costs[i])
@@ -250,41 +274,73 @@ def train(args: argparse.Namespace) -> None:
     pain_model.load_state_dict(_pk["state_dict"])
     pain_model.eval()
 
-    X = torch.cat([sprint_inputs([r["feats_all"][r["chosen"]]], (r["e"], r["t"], r["h"]),
-                                 _pain_of(pain_model, [r["feats_all"][r["chosen"]]]))
-                   for r in cross])
+    composed = args.form == "composed"
+    got_gains = [r["gain"] for r in rows if r["got"]]
+    restore = st.median(got_gains) if got_gains else 40.0   # valeur d'un repas MESURÉE (≈40 pts)
+
+    def inputs_of(rs: list[dict]) -> torch.Tensor:
+        return torch.cat([sprint_inputs([r["feats_all"][r["chosen"]]], (r["e"], r["t"], r["h"]),
+                                        _pain_of(pain_model, [r["feats_all"][r["chosen"]]]))
+                          for r in rs])
+
+    # éval G-rank : toujours sur les TRAVERSÉES (le set sprint-pertinent) ; y = « la traversée
+    # a payé » (signe de U, inchangé — c'est le CRITÈRE, plus le label d'entraînement).
+    X = inputs_of(cross)
     u = torch.tensor([net_utility(r, kappa, drain) / 100.0 for r in cross], dtype=torch.float32)
     y = (u > 0.0)
     life = torch.tensor([r["life"] for r in cross])
-    print(f"[sprint] label (MAGNITUDE, reprise v2) : U/100 méd={float(u.median()):.2f} "
-          f"q1/q3={float(u.quantile(0.25)):.2f}/{float(u.quantile(0.75)):.2f} | "
-          f"payantes {int(y.sum())}/{len(y)} ({100 * float(y.float().mean()):.0f}%)")
+    # entraînement : forme COMPOSÉE = P̂(repas) BCE sur `got`, TOUTES les décisions labellisées
+    # (cible binaire propre, la santé entre par mourir-avant-de-manger) ; forme q = MSE sur U/100.
+    if composed:
+        Xtr = inputs_of(rows)
+        ttr = torch.tensor([float(r["got"]) for r in rows])
+        life_tr = torch.tensor([r["life"] for r in rows])
+        print(f"[sprint] forme COMPOSÉE : P̂(repas) sur {len(rows)} décisions "
+              f"(got {int(ttr.sum())} = {100 * float(ttr.mean()):.0f}%) | "
+              f"bénéfice = min({restore:.0f}, 100−drive)/{drain:.4f} | douleur = pain_v3 GELÉ")
+    else:
+        Xtr, ttr, life_tr = X, u, life
+        print(f"[sprint] forme q : label U/100 méd={float(u.median()):.2f} "
+              f"q1/q3={float(u.quantile(0.25)):.2f}/{float(u.quantile(0.75)):.2f} | "
+              f"payantes {int(y.sum())}/{len(y)} ({100 * float(y.float().mean()):.0f}%)")
 
     def fit(mask: torch.Tensor) -> SprintCritic:
         torch.manual_seed(args.seed)
         c = SprintCritic()
         opt = torch.optim.Adam(c.parameters(), 2e-3, weight_decay=1e-4)
-        Xt, ut = X[mask], u[mask]
+        Xt, tt = Xtr[mask], ttr[mask]
         for _ in range(args.iters):
             bi = torch.randint(0, len(Xt), (256,))
-            nn.functional.mse_loss(c.q(Xt[bi]), ut[bi]).backward()
+            out = c.net(Xt[bi]).squeeze(-1)
+            loss = (nn.functional.binary_cross_entropy_with_logits(out, tt[bi]) if composed
+                    else nn.functional.mse_loss(out, tt[bi]))
+            loss.backward()
             opt.step()
             opt.zero_grad()
         return c.eval()
 
-    # GATE 1 — G-rank : AUC(Q̂, traversée payante) en CV 4 plis PAR VIE (le gate décisionnel :
-    # ranger les traversées payantes au-dessus des non-payantes, dans le set sprint-pertinent).
+    # score décisionnel par traversée (en pas de vie) — l'objet que les gates jugent.
+    ben_c = torch.tensor([min(restore, 100.0 - (r["e"] if r["target"] == "food" else r["t"])) / drain
+                          for r in cross])
+    pain_c = torch.tensor([_pain_of(pain_model, [r["feats_all"][r["chosen"]]])[0] for r in cross])
+
+    def crossing_scores(model: SprintCritic) -> torch.Tensor:
+        with torch.no_grad():
+            if composed:
+                return model.p(X) * ben_c - kappa * pain_c * 100.0
+            return model.q(X) * 100.0
+
+    # GATE 1 — G-rank : AUC(score, traversée payante) en CV 4 plis PAR VIE (le gate décisionnel).
     aucs, fold_models = [], {}
     for k in range(4):
-        te = (life % 4 == k)
-        if int(y[te].sum()) == 0 or int((~y[te]).sum()) == 0:
+        te_c = (life % 4 == k)
+        if int(y[te_c].sum()) == 0 or int((~y[te_c]).sum()) == 0:
             print(f"[sprint]   pli {k} : classe vide, sauté")
             continue
-        c_k = fit(~te)
+        c_k = fit(~(life_tr % 4 == k))
         fold_models[k] = c_k
-        with torch.no_grad():
-            aucs.append(_auc(c_k.q(X[te]), y[te]))
-        print(f"[sprint]   pli {k} : AUC={aucs[-1]:.3f} (n_te={int(te.sum())}, pay={int(y[te].sum())})")
+        aucs.append(_auc(crossing_scores(c_k)[te_c], y[te_c]))
+        print(f"[sprint]   pli {k} : AUC={aucs[-1]:.3f} (n_te={int(te_c.sum())}, pay={int(y[te_c].sum())})")
     auc = sum(aucs) / max(len(aucs), 1)
 
     # GATE 2 — G-res : le choix SIMULÉ (hystérésis incluse) matche l'action empiriquement meilleure
@@ -308,7 +364,8 @@ def train(args: argparse.Namespace) -> None:
         n_eval += 1
         want = better[_bucket_key(r)]
         acc_ana += simulate_choice(r, None, None) == want
-        acc_cor += simulate_choice(r, fold_models[k], pain_model) == want
+        acc_cor += simulate_choice(r, fold_models[k], pain_model, composed=composed,
+                                   kappa=kappa, drain=drain, restore=restore) == want
     acc_ana = acc_ana / max(n_eval, 1)
     acc_cor = acc_cor / max(n_eval, 1)
     print(f"[sprint] G-res : buckets jugés={len(better)} n_eval={n_eval} | "
@@ -317,11 +374,12 @@ def train(args: argparse.Namespace) -> None:
     # GATE 3 — G-consist : bascules du choix simulé entre décisions CONSÉCUTIVES d'une même
     # poursuite (même run, même cible, gap ≤ 60 ticks). Le flottement des notes MC par état a tué
     # v2/v3 — la correction ne doit pas re-faire flotter le socle analytique.
-    critic = fit(torch.ones(len(X), dtype=torch.bool))
+    critic = fit(torch.ones(len(Xtr), dtype=torch.bool))
     flips_ana = flips_cor = n_pairs = 0
     by_run: dict[str, list[dict]] = {}
     for r in rows:
         by_run.setdefault(r["run"], []).append(r)
+    kw = dict(composed=composed, kappa=kappa, drain=drain, restore=restore)
     for seq in by_run.values():
         seq.sort(key=lambda r: r["tick"])
         for a, b_ in zip(seq, seq[1:]):
@@ -329,8 +387,8 @@ def train(args: argparse.Namespace) -> None:
                 continue
             n_pairs += 1
             flips_ana += simulate_choice(a, None, None) != simulate_choice(b_, None, None)
-            flips_cor += (simulate_choice(a, critic, pain_model)
-                          != simulate_choice(b_, critic, pain_model))
+            flips_cor += (simulate_choice(a, critic, pain_model, **kw)
+                          != simulate_choice(b_, critic, pain_model, **kw))
     rate_ana = flips_ana / max(n_pairs, 1)
     rate_cor = flips_cor / max(n_pairs, 1)
     print(f"[sprint] G-consist : {n_pairs} paires | bascule analytique {100 * rate_ana:.1f}% "
@@ -339,8 +397,7 @@ def train(args: argparse.Namespace) -> None:
     # GATE 4 — G-mono v2 (owner, CONDITIONNÉ où le risque vit — le volet non conditionné était
     # confondu proximité) : Q̂ croissant en santé PARMI les traversées PROFONDES (intr > médiane) ;
     # Q̂ décroissant en profondeur PARMI les BLESSÉS (h<60).
-    with torch.no_grad():
-        q_all = critic.q(X)
+    q_all = crossing_scores(critic)
 
     def _mean_at(idx: list[int]) -> float:
         return float(q_all[torch.tensor(idx)].mean()) if len(idx) >= 15 else float("nan")
@@ -375,11 +432,14 @@ def train(args: argparse.Namespace) -> None:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    torch.save(make_checkpoint(critic, args.pain, auc_cv=auc, acc_ana=acc_ana, acc_cor=acc_cor,
+    torch.save(make_checkpoint(critic, args.pain,
+                               form="composed_v1" if composed else "q_regression",
+                               auc_cv=auc, acc_ana=acc_ana, acc_cor=acc_cor,
                                flip_ana=rate_ana, flip_cor=rate_cor, q_by_health_deep=q_by_h,
-                               q_by_depth_wounded=q_by_d, kappa_data=kappa,
-                               drain=drain, label="linear_pursuit_magnitude", runs=list(args.runs),
-                               gates_pass=bool(verdict)),
+                               q_by_depth_wounded=q_by_d, kappa_data=kappa, drain=drain,
+                               restore=restore,
+                               label="got_bce_composed" if composed else "linear_pursuit_magnitude",
+                               runs=list(args.runs), gates_pass=bool(verdict)),
                out / "sprint_best.pt")
     print(f"[sprint] sauvé → {out / 'sprint_best.pt'}")
 
@@ -428,6 +488,39 @@ def selfcheck() -> None:
             assert rec["choice"] == "direct", rec  # pénalité verte licenciée → direct ≈ 4 m gagne
             assert abs(rec["cost_direct"] - math.hypot(*target)) < 0.2, rec
 
+            # forme COMPOSÉE : P̂≡0 ⇒ remise 0 (bit-identique) ; P̂≡1 ⇒ remise EXACTE recalculée ici
+            for bias, name in ((-20.0, "c0"), (+20.0, "c1")):
+                c = SprintCritic()
+                with torch.no_grad():
+                    c.net[-1].weight.zero_()
+                    c.net[-1].bias.fill_(bias)
+                torch.save(make_checkpoint(c, DEFAULT_PAIN, form="composed_v1", kappa_data=9.2,
+                                           drain=0.05, restore=40.0), Path(td) / f"{name}.pt")
+            os.environ["SYLVAN_WP_SPRINT_CRITIC"] = str(Path(td) / "c0.pt")
+            lay = WaypointLayer()
+            lay.maybe_decide("food", target, retina, drives=(30.0, 70.0, 100.0))
+            rec = lay.decide("food", target, retina)
+            assert (rec["choice"], rec["cost_direct"]) == (rec0["choice"], rec0["cost_direct"]), (rec, rec0)
+
+            os.environ["SYLVAN_WP_SPRINT_CRITIC"] = str(Path(td) / "c1.pt")
+            lay = WaypointLayer()
+            lay.maybe_decide("food", target, retina, drives=(30.0, 70.0, 100.0))
+            rec = lay.decide("food", target, retina)
+            from sylvan.control.waypoint_layer import candidate_features, green_points
+            pain_m = PainCritic()
+            _pk = torch.load(DEFAULT_PAIN, map_location="cpu", weights_only=True)
+            pain_m.load_state_dict(_pk["state_dict"])
+            pain_m.eval()
+            greens = green_points(retina)
+            with torch.no_grad():
+                pain0 = float(pain_m.pain(torch.tensor(
+                    [candidate_features(target, target, greens)], dtype=torch.float32))[0])
+            ben = min(40.0, 100.0 - 30.0) / 0.05          # drives e=30 → 800 pas
+            exp_rebate = min(_CFG.block_weight * rec0["intr_direct"],
+                             0.02 * max(0.0, 1.0 * ben - 9.2 * pain0 * 100.0))
+            assert abs(rec["cost_direct"] - (rec0["cost_direct"] - exp_rebate)) < 0.06, \
+                (rec["cost_direct"], rec0["cost_direct"], exp_rebate)
+
             os.environ["SYLVAN_WP_ORACLE_SPRINT"] = "1"
             try:
                 WaypointLayer()
@@ -447,6 +540,9 @@ def main() -> None:
     ap.add_argument("--out", default="data/checkpoints/sprint_critic")
     ap.add_argument("--iters", type=int, default=4000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--form", choices=("composed", "q"), default="composed",
+                    help="composed = P̂(repas)·bénéfice − κ·douleur̂ (reprise n°2, owner) ; "
+                         "q = régression U (négatif n°2, gardée pour reproduction)")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
     if args.selfcheck:

@@ -306,9 +306,15 @@ class WaypointLayer:
             from scripts.train_sprint_critic import SprintCritic
             from scripts.train_waypoint_pain import PainCritic as _Pain
             _ck = _torch.load(_sc, map_location="cpu", weights_only=True)
-            if _ck.get("form") != "q_regression":
-                raise ValueError(f"ckpt sprint-critic de forme inattendue : {_ck.get('form')!r} "
-                                 "(attendu 'q_regression' — re-entraîner via train_sprint_critic)")
+            self._sprint_form = _ck.get("form")
+            if self._sprint_form not in ("q_regression", "composed_v1"):
+                raise ValueError(f"ckpt sprint-critic de forme inattendue : {self._sprint_form!r} "
+                                 "(attendu 'q_regression' ou 'composed_v1' — re-entraîner via "
+                                 "train_sprint_critic)")
+            # constantes MESURÉES portées par le ckpt (forme composée) — jamais fittées ici
+            self._sc_kappa = float(_ck.get("kappa_data", 0.0))
+            self._sc_drain = float(_ck.get("drain", 0.05))
+            self._sc_restore = float(_ck.get("restore", 40.0))
             self.sprint_critic = SprintCritic()
             self.sprint_critic.load_state_dict(_ck["state_dict"])
             self.sprint_critic.eval()
@@ -317,9 +323,9 @@ class WaypointLayer:
             self._sprint_pain = _Pain()
             self._sprint_pain.load_state_dict(_pk["state_dict"])
             self._sprint_pain.eval()
-            print(f"[waypoint] CRITIQUE-SPRINT actif : {Path(_sc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
-                  f"— remise=min(W·intr, 2·max(0,Q̂)) sur la pénalité verte, analytique intact "
-                  f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
+            print(f"[waypoint] CRITIQUE-SPRINT actif ({self._sprint_form}) : {Path(_sc).name} "
+                  f"(AUC_cv={_ck.get('auc_cv', 0):.3f}) — remise capée sur la pénalité verte, "
+                  f"analytique intact (douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
@@ -463,8 +469,20 @@ class WaypointLayer:
                 from scripts.train_sprint_critic import sprint_inputs
                 with _torch.no_grad():
                     _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
-                    _q = self.sprint_critic.q(sprint_inputs(feats, self._drives, _pain.tolist()))
-                scored = [(c - min(cfg.block_weight * intr, 2.0 * max(0.0, float(_q[i]))), intr)
+                    _x = sprint_inputs(feats, self._drives, _pain.tolist())
+                    if self._sprint_form == "composed_v1":
+                        # remise = P̂(repas)·bénéfice(drive) − κ·douleur̂ (en pas → ×0.02 m/pas) :
+                        # liens APPRIS (P̂, douleur̂ gelée), valuation du CORPS (restore/drain/κ mesurés)
+                        _drive = self._drives[0] if target_id == "food" else self._drives[1]
+                        _ben = min(self._sc_restore, 100.0 - _drive) / self._sc_drain
+                        _p = self.sprint_critic.p(_x)
+                        _vals = [0.02 * max(0.0, float(_p[i]) * _ben
+                                            - self._sc_kappa * float(_pain[i]) * 100.0)
+                                 for i in range(len(feats))]
+                    else:
+                        _q = self.sprint_critic.q(_x)
+                        _vals = [2.0 * max(0.0, float(_q[i])) for i in range(len(feats))]
+                scored = [(c - min(cfg.block_weight * intr, _vals[i]), intr)
                           if intr > 0.0 else (c, intr)
                           for i, (c, intr) in enumerate(scored)]
         cost_direct, intr_direct = scored[0]
