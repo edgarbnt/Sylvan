@@ -75,6 +75,28 @@ tarification convexe apprise de la queue des morts), licence owner requise. Ckpt
 bankée (judge_fail 49/14). Leçon : la frontière actuelle de pureté s'arrête à la remise-capée —
 et on sait désormais EXACTEMENT ce que W contient.
 
+## P2-bis — TÊTE P(mort|s,c) (OUVERT sur licence owner, gates pré-enregistrés AVANT le train)
+Hypothèse (issue du diagnostic P2) : la prime de risque non-linéaire qu'encode W=25 est APPRENABLE —
+    score(c) = longueur + 0.02·max(0, κ·douleur̂(c)·100 + **P̂mort(s,c)·κ·100** − P̂repas·bénéfice)
+Le terme mort tarife la vie restante perdue (D_mort = κ_data·100 ≈ 920 pas — l'ancre déjà mesurée,
+zéro constante nouvelle). P̂mort = MLP 14-d (contrat `sprint_inputs` inchangé), BCE sur
+**died_danger** (poursuite finissant en mort-danger : santé→0 à la fin de vie).
+CORPUS ÉLARGI (mesuré, gratuit) : 10 runs instrumentés (g24×4 + spx×2 + judge×2 + pure×2) =
+**12 306 décisions, 173 positifs** (plis CV [56,27,45,45], 88 en classe cross) — apprenable.
+⚠️ Les runs judge/pure ont des `costs` loggés NON-analytiques (leur forme de scoring) → ils servent
+au TRAIN de la tête (features/intr/drives explicites) mais les replays de gates restent sur les
+6 runs à coûts analytiques. Sans drives au déploiement : terme mort omis (documenté).
+Gates PRÉ-ENREGISTRÉS :
+  1. **G-death** : AUC(P̂mort, died_danger) > **0.80** CV-4 par vie ; ET monotonie santé —
+     P̂mort moyen STRICTEMENT décroissant par bande h [0,30)/[30,60)/[60,100] sur traversées profondes ;
+  2. **G-kill-decisions (le cœur)** : sur les décisions died_danger TENUES de classe cross, la
+     forme v2 refuse la traversée ≥ **+30 pts** plus souvent que pure-v1 (elle doit dire NON aux
+     traversées qui ont réellement tué) ;
+  3. **G-res-v2** ≥ analytique (72 %) et **G-consist-v2** ≤ 1.2× (6 runs analytiques) ;
+  4. **Juge** : 2×24 vies seeds 1+2, **repas poolés ≥ 40 ET morts-danger ≤ 10** ; KILL seed 1 < 14.
+Budget dur : 1 train + 1 re-train diagnostiqué. Échec → remise conservée, W reste l'ancre, négatif
+commité (et la piste ε-conditionné-blessé devient le préalable).
+
 ## P4 — Reclassement (fait avec P1)
 Les constantes de la machine à états sont déclarées CONSTANTES DE CONCEPTION en carte (comme les
 drains des drives) — elles sortent du décompte de dette d'échafaudage.
