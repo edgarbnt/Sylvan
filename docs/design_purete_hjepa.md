@@ -291,6 +291,52 @@ headroom de sécurité que les données de dégâts ne justifient pas seules. Si
 les MORTS avec un ρ̂ ~0.5-0.7, le diagnostic pré-écrit est « la marge contient une préférence de
 sécurité du corps au-delà du vécu » (même famille que W=25, P2-bis) — pas un défaut de la tête.
 
+## P6 — VOLET « NOURRISSANT » : requêtes de slot APPRISES du soulagement vécu (ouvert 2026-07-17
+## soir, licencié owner — gates pré-enregistrés ICI avant tout diag/train)
+**Mission** : dissoudre la DERNIÈRE clé-apparence de la boucle décisionnelle — les requêtes-couleur
+des slots WM (« bouffe=rouge, eau=bleu, danger=vert », `slot_head.py color_queries`). La perception
+ressource entière passe par ces 9 nombres écrits à la main. Forme cible : « nourrissant = ce qui a
+soulagé MON drive » — les requêtes deviennent apprises des CONSÉQUENCES vécues.
+**Le geste est minuscule (anatomie mesurée)** : dans le chemin vivant K>1, le readout du slot est
+GÉOMÉTRIQUE zéro-paramètre (décision 2026-07-04) — la seule connaissance-du-monde est le buffer
+`color_queries` [K,3]. Le seuil 0.55, le softmax masqué, le prior distance, la saillance-saturation
+= appareil perceptif (constantes de conception, déclarées). Remplacer les requêtes par BUILD
+(gabarit build_hazard_slot) ⇒ WM GELÉ, zéro retrain, tous les consommateurs préservés par parité.
+
+**Forme (tranchée avant train)** : par drive d ∈ {énergie→food, soif→water, santé→danger} :
+    P(conséquence_d | rétine) = σ( b_d + max_{rayons k touchants} σ(w_d·rgbn_k + c_d) · g_d(dist_k) )
+— le gabarit P5 (MIL max-pool : la conséquence a UNE source ; prior parcimonie λ=0.01) avec
+l'apparence LINÉAIRE en couleur NORMALISÉE : w_d·rgbn = cosinus × ||w_d|| = exactement la forme de
+l'affinité du slot → **q̂_d = w_d/‖w_d‖ EST la requête**. Labels VÉCUS uniquement :
+- food : soulagement énergie (drv[t]−drv[t−1] > +5), percept = rétine à **t−1** (l'objet est au
+  contact juste avant, consommé/respawné à t) ; water : idem soif ;
+- danger : ticks-dégâts (labels P5 réutilisés, même corpus).
+**Interdits** : pas de distillation des requêtes main (les canaux purs ne servent qu'à l'ÉVAL,
+licite monde-jouet) ; positions oracles = éval seulement ; WM/readout/transport/W/marges/hystérésis
+intouchés. Résidus inventoriés HORS SCOPE (déclarés, pas cachés) : `_retina_food_pos` (sonde
+SYLVAN_MULTI_FOOD_SLOT=0, défaut OFF), eau hors-vue→EMA du replan (frontière CHERCHER), tokens
+color-gatés Mode-1 (branche mode1), `color_masses` (outil build-time, inutilisé à requêtes
+drive-indexées).
+
+**G0 (diag gratuit AVANT tout train — `diag_relief_corpus.py`, 10 runs)** :
+  1. ≥100 soulagements ÉNERGIE et ≥100 SOIF avec rétine à t−1 et ≥1 rayon touchant < 1.5 m ;
+  2. confond miroir testable : ≥30 repas ENGOUFFRÉS (rayon vert proche pendant le soulagement
+     énergie — la requête-faim ne doit pas absorber le vert, symétrique du G-loc P5) ;
+  3. contraste : ≥500 ticks avec rayon coloré proche SANS soulagement ±10 ticks du drive concerné.
+  Échec → collecte ε seeds 3+4 ; re-G0 ; échec encore → STOP.
+**Gates OFFLINE pré-enregistrés (budget : 1 train + 1 re-train diagnostiqué par requête)** :
+  1. **G-q** : cos(q̂_food, rouge pur) ≥ 0.98 ET cos(q̂_water, bleu) ≥ 0.98 ET cos(q̂_danger, vert)
+     ≥ 0.98 (oracle d'éval) ET affinité croisée post-seuil 0.55 = 0 (zéro fuite entre slots) ;
+  2. **G-slot-parité** : slot head avec q̂ vs requêtes main sur ≥20k ticks BC : masque de
+     visibilité identique ≥ 99.9 % ET |Δposition| ≤ 0.05 m sur ≥ 99.9 % des ticks visibles ;
+  3. smoke 3 vies seed 3 (bannières, 0 crash, forage présent).
+**Juge closed-loop (payé si 1-3)** : 2×24 vies seeds 1+2, config vivante (saillance + sprint
+decont) avec `WM_CKPT=wm_objcentric_kin_lq` (requêtes apprises) : **PASS = repas poolés ≥ 36
+(41−5) ET morts-danger ≤ 11 (9+2)** — réf vivante = bras saillance jugé 41/9 (2026-07-17) ;
+KILL précoce seed 1 < 14. PASS → promotion : **plus aucune variable clé-apparence dans la boucle
+décisionnelle** (sortie du chantier 1 de la roadmap). Échec → requêtes main conservées, négatif
+commité.
+
 ## Critère de succès = le BUT
 Chaque purification est jugée closed-loop contre la référence vivante (jamais un proxy offline
 seul), au plancher de bruit ±5 repas/24-total, morts comprises. Un retrait qui coûte du forage ou
