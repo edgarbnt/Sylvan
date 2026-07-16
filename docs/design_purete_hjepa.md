@@ -204,7 +204,22 @@ comptage (ρ̂) d'un seul geste de FORME ; (2) **prior de parcimonie** λ=0.01·
 (constante de conception, pas fittée — protège au changement de monde, le but du chantier).
 Mêmes gates, aucun seuil déplacé.
 
-### ⭐⭐ VERDICT PHASE D (2026-07-17) : JUGE ÉCHOUÉ **29/14** — LA LUNETTE EST INNOCENTÉE,
+### ⭐⭐⭐ VERDICT P5-MIXTE (2026-07-17) : **JUGE PASS 41/9 — LA CLÉ-APPARENCE DANGER EST DISSOUTE**
+Smoke 3 vies ✓ (bannières, 0 crash, forage présent) → juge 2×24 vies seeds 1+2, bras lunette
+APPRISE + marges du CORPS : s1 **23 repas/3 morts-danger** (vivant 19/5 — battu sur les 2 axes),
+s2 **18/6** (vivant 26/3 — dessous), **POOLÉ 41/9 vs gate ≥40 ET ≤10 ✓✓** (réf 45/8 = parité
+dans le bruit ±5/24-vies, gates poolés per pré-enregistrement). **PROMOTION** : la config vivante
+devient `SYLVAN_WP_SALIENCY=data/checkpoints/danger_saliency/saliency_best.pt` +
+`SYLVAN_WP_SPRINT_CRITIC=data/checkpoints/sprint_critic_decont/sprint_best.pt` (la paire JUGÉE :
+têtes dé-contaminées, pain_ckpt→decont) — la règle « danger = vert » sort du chemin vivant
+(green_points = secours déclaré, le défaut sans flag). Décomposition finale du volet danger :
+**apparence = APPRISE (saillance, se ré-apprend du vécu si le monde change) · létalité = APPRISE
+(douleur̂ 0.894, P̂mort 0.839) · standoff + aversion = CORPS (1.0/1.4 et W=25, constantes de
+conception déclarées)**. Caveats honnêtes : s2 sous le vivant au-delà du bruit par-seed (18 vs 26 ;
+le gate est poolé, consigné) ; multi-seed >1+2 = dette héritée ; monde-jouet (3 apparences pures).
+Harnais du bras vivant : `scripts/judge_saliency_p5.sh`.
+
+### ⭐⭐ VERDICT PHASE D (2026-07-17) : JUGE ÉCHOUÉ **29/14** (bras marges-ρ̂) — LA LUNETTE EST INNOCENTÉE,
 ### LA MARGE EST UNE PRÉFÉRENCE DU CORPS (négatif per pré-enregistrement)
 2×24 vies seeds 1+2, bannières du bras vérifiées (ρ̂=0.63/tangent 1.03 + têtes décont) :
 s1 **14 repas/5 morts-danger** (vivant 19/5 — KILL frôlé à =14), s2 **15/9** (vivant 26/3) →
