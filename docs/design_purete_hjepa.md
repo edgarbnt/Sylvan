@@ -337,6 +337,21 @@ KILL précoce seed 1 < 14. PASS → promotion : **plus aucune variable clé-appa
 décisionnelle** (sortie du chantier 1 de la roadmap). Échec → requêtes main conservées, négatif
 commité.
 
+### ⭐ NÉGATIF n°1 P6 (2026-07-17) — direction de requête NON-IDENTIFIÉE (jauge), cause sur trace
+Train 1 : les têtes PRÉDISENT (AUC danger 0.997, food 0.867, water 0.758 ; ρ̂ 0.61-0.63 cohérents
+P5) mais q̂_food/water ≈ **−gris** (tous canaux négatifs), q̂_danger blanchâtre → G-q ✗,
+G-slot-parité ✗ (masque 47.75 %). Cause MATHÉMATIQUE : sur rayons monochromes (rgbn one-hot),
+le comportement ne dépend que des scalaires w_i + c → w est libre le long de 1⃗ (jauge : w+α·1⃗,
+c−α ⇒ comportement identique) ; le prior de parcimonie pousse cette jauge en bloc vers le négatif.
+La requête normalisée est donc non-identifiée alors que la prédiction est bonne — un « résultat
+qui a l'air bon et ment », attrapé par G-q comme prévu.
+**RE-TRAIN pré-enregistré (le seul du budget, par requête)** : **w contraint au CÔNE POSITIF
+(softplus)** — parité de déploiement, pas un fit : l'affinité du slot vit dans le cône positif
+par construction (rgbn ≥ 0, requêtes main = gabarits non-négatifs, seuil cosinus 0.55) ; une
+requête à composantes négatives n'a AUCUN sens dans la forme déployée. La non-négativité casse
+la jauge du bon côté (canal OFF → w_i = 0 au bord actif ; canal ON → toute la masse). Mêmes
+gates, aucun seuil déplacé.
+
 ### ⭐ VERDICT G0 P6 (2026-07-17, `diag_relief_corpus.py`, 0 train) : **PASSÉ 3/3**
 Soulagements avec percept proche : énergie **201** / soif **277** (≥100/≥100 ✓) ; repas engouffrés
 **160** (≥30 ✓) ; contraste **124 883** (≥500 ✓). Census (oracle d'éval) : énergie → rouge 94 %,

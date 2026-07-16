@@ -47,25 +47,34 @@ DRIVES = ("food", "water", "danger")
 
 
 class DriveQuery(nn.Module):
-    """Tête P5 à apparence LINÉAIRE en rgb normalisé — w/‖w‖ = la requête de slot apprise."""
+    """Tête P5 à apparence LINÉAIRE en rgb normalisé — w/‖w‖ = la requête de slot apprise.
+
+    ⚠️ w vit dans le CÔNE POSITIF (softplus — re-train diagnostiqué, négatif n°1 §P6) : sur des
+    rayons monochromes, w est libre le long de 1⃗ (jauge w+α·1⃗/c−α) → direction non-identifiée.
+    La non-négativité est la parité de déploiement (l'affinité slot est un cosinus sur rgbn ≥ 0,
+    requêtes = gabarits non-négatifs) et casse la jauge du bon côté (canal OFF → w_i = 0)."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.w = nn.Parameter(torch.zeros(3))
+        self.u = nn.Parameter(torch.zeros(3))        # w = softplus(u) ≥ 0
         self.c = nn.Parameter(torch.tensor(-1.0))
         self.rho = nn.Parameter(torch.tensor(1.5))
         self.tau_raw = nn.Parameter(torch.tensor(0.5))
         self.bias = nn.Parameter(torch.tensor(-3.0))
 
+    def w(self) -> torch.Tensor:
+        return nn.functional.softplus(self.u)
+
     def s(self, rgbn: torch.Tensor) -> torch.Tensor:
-        return torch.sigmoid(rgbn @ self.w + self.c)
+        return torch.sigmoid(rgbn @ self.w() + self.c)
 
     def g(self, dist_m: torch.Tensor) -> torch.Tensor:
         tau = nn.functional.softplus(self.tau_raw) + 0.05
         return torch.sigmoid((self.rho - dist_m) / tau)
 
     def query(self) -> torch.Tensor:
-        return self.w / (self.w.norm() + 1e-8)
+        w = self.w()
+        return w / (w.norm() + 1e-8)
 
     def parts(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         r = retina.view(-1, N_RAY, 4)
@@ -244,9 +253,10 @@ def selfcheck() -> None:
     torch.manual_seed(0)
     m = DriveQuery()
     with torch.no_grad():
-        m.w.copy_(torch.tensor([8.0, 0.0, 0.0]))     # apparence forcée « rouge »
+        m.u.copy_(torch.tensor([8.0, -20.0, -20.0]))  # softplus → w ≈ [8, 0, 0] (« rouge »)
         m.c.fill_(-4.0)
-    assert torch.allclose(m.query(), torch.tensor([1.0, 0.0, 0.0]), atol=1e-6)
+    assert torch.all(m.w() >= 0.0), "w doit vivre dans le cône positif"
+    assert torch.allclose(m.query(), torch.tensor([1.0, 0.0, 0.0]), atol=1e-4), m.query()
     ret = [1.0, 0.0, 0.0, 0.0] * N_RAY
     ret[0:4] = [0.05, 1.0, 0.0, 0.0]                 # rouge à 0.5 m
     ret[4:8] = [0.05, 0.0, 1.0, 0.0]                 # vert à 0.5 m

@@ -13,7 +13,8 @@ OUT="data/replay_buffer/critic_kin_${TAG}"
 
 [[ -f "$CKPT" ]] || { echo "[judge] ckpt introuvable : $CKPT"; exit 1; }
 
-export WM_CKPT=data/checkpoints/wm_objcentric_kin_haz/wm_best.pt
+# WM surchargeable par l'appelant (juge P6 : WM à requêtes apprises) ; défaut = vivant kin_haz
+export WM_CKPT=${WM_CKPT:-data/checkpoints/wm_objcentric_kin_haz/wm_best.pt}
 export SYLVAN_HAZARD_COUNT=1
 export SYLVAN_HAZARD_ENGULF_P=0.5
 export SYLVAN_HEALTH_REGEN=0.05
