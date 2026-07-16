@@ -56,13 +56,21 @@ class WaypointConfig:
                                  # G1 v0 : 18/27 abandons à 10 pas = flicker d'égalité (scores
                                  # saturés au cap, bruit 1-replan mesuré 2026-07-04) — une vraie
                                  # bascule d'urgence PERSISTE, le bruit non.
-    tangent_margin: float = 1.2  # m de dégagement perpendiculaire des candidats TANGENTS au-delà
+    tangent_margin: float = 1.4  # m de dégagement perpendiculaire des candidats TANGENTS au-delà
                                  # des bords du nuage vert perçu (TangentBug : sous-but = extrémité
                                  # de l'obstacle SENTI ; géométrie capteur pure, zéro centre/rayon).
-    green_margin: float = 0.8    # ρ : marge de sécurité autour d'un point vert perçu (m)
+                                 # ≥ green_margin + 0.39 (bord létal derrière le pilier perçu).
+    green_margin: float = 1.0    # ρ : marge autour d'un point vert PERÇU. ⚠️ Fait mesuré
+                                 # (hazard_manager.gd) : piliers = centre + anneau à 0.7·r=0.91 m,
+                                 # mais le disque de DÉGÂTS va à r=1.3 → le bord létal est 0.39 m
+                                 # AU-DELÀ du pilier le plus externe ; + jitter slot/arc → 1.0.
     block_weight: float = 25.0   # W : mètres de trajet équivalents par mètre d'intrusion (décisif)
     hysteresis: float = 0.15     # un wp ne bat le direct que s'il coûte 15 % de moins (anti-dither)
-    recheck_every: int = 5       # en mode direct, re-décision périodique tous les K replans
+    recheck_every: int = 1       # en mode direct, re-décision tous les K replans. G1 v1 (mesuré) :
+                                 # avec K=5, la fenêtre aveugle de 50 ticks concentrait l'exposition
+                                 # au vert (le bas ne voit PAS le vert ; arcs+jitter dévient de la
+                                 # ligne notée) → K=1. L'hystérésis pro-direct + le commit (aucune
+                                 # décision pendant un leg) préviennent déjà le dithering.
     k_fwd: float = 0.0144        # m/tick par unité de vx  (calibré : 0.8 × dt_eff 0.018)
     k_yaw: float = 0.027         # rad/tick par unité de ω (calibré : 1.5 × 0.018 ; ω>0 = droite)
 
