@@ -135,6 +135,58 @@ même si la préférence reste câblée). Acquis : on sait séparer ce que W con
 Les constantes de la machine à états sont déclarées CONSTANTES DE CONCEPTION en carte (comme les
 drains des drives) — elles sortent du décompte de dette d'échafaudage.
 
+## P5 — CHANTIER « PERCEPTION PAR LA CONSÉQUENCE » : le DANGER d'abord (ouvert 2026-07-17,
+## branche feat/perception-consequence — gates pré-enregistrés ICI avant tout diag/train)
+**Mission** : dissoudre la clé-apparence `green_points` (waypoint_layer.py:95, « danger = vert »)
+en apprenant « dangereux = ce qui a précédé mes dégâts » sur la RÉTINE BRUTE (36 rayons ×
+(d,r,g,b) = 144-d), labels = dégâts VÉCUS (chute de santé par tick, BC `obs.health`). Le volet
+« nourrissant » (requêtes-couleur des slots WM) = chantier SÉPARÉ ultérieur.
+
+**Forme (tranchée avant train — factorisation QUOI × OÙ, une géométrie de conception, pas à fitter)** :
+    P(dégâts au tick t | rétine_t) = σ( b + Σ_{rayons k touchants} s(rgb_k) · g(d_k) )
+- `s(rgb)` ∈ (0,1) = SAILLANCE D'APPARENCE (MLP 3→16→1 sigmoïde — la couleur seule, jamais la
+  distance : l'apparence du danger ne dépend pas d'où il est) ;
+- `g(d) = σ((ρ − 10·d)/τ)` = PORTÉE-MORSURE apprise (ρ, τ appris ; ρ̂ = distance où g=0.5) ;
+- lecture déployée : rayon flaggé ⇔ d<0.999 ET s(rgb_k)>0.5 → mêmes points ego que green_points ;
+  `green_margin` → ρ̂ (la marge devient MESURÉE du vécu, plus la géométrie pilier connue d'avance) ;
+  `tangent_margin` → ρ̂ + 0.4 (le +0.4 = dégagement de CONCEPTION, relation structurelle conservée).
+- Opt-in `SYLVAN_WP_SALIENCY=ckpt` (défaut OFF = bit-identique). W=25, hystérésis, machine à
+  états : INTOUCHÉS (P2-bis : préférence du corps).
+
+**Interdits** : positions hazard des logs = ORACLE D'ÉVALUATION SEULEMENT (jamais entrée/label) ;
+PAS de distillation de green_points (labels = dégâts vécus uniquement — la règle-couleur ne sert
+qu'à l'ÉVAL, le monde-jouet rend cet oracle licite : le vert EST la vérité rendue, cf
+diag_hazard_slot) ; pas de constante ajustée pour passer un gate.
+
+**G0 (diag gratuit AVANT tout train — `diag_saliency_corpus.py`, corpus = 10 runs instrumentés)** :
+  1. ≥150 ONSETS-dégâts (premier tick de morsure après ≥20 ticks sains) avec rétine au tick ;
+  2. visibilité : ≥90 % des ticks-dégâts ont ≥1 rayon vert-règle touchant (sinon label = bruit) ;
+  3. contraste : ≥500 ticks proche-sans-dégât (≥1 rayon touchant <2 m, zéro dégât ±20 ticks) dont
+     ≥100 avec rayon rouge/bleu proche (le confond « bouffe au cœur » doit être testable) ;
+  4. diversité : onsets répartis sur ≥2 des 3 secteurs angulaires (avant/flanc/arrière).
+  Échec → collecte ε seeds 3+4 d'abord (jamais les seeds 1+2 du juge) ; re-G0 ; échec encore → STOP.
+
+**Gates OFFLINE pré-enregistrés (cheaper-first ; CV-4 par VIE ; échec → 1 seul re-train
+diagnostiqué par tête, puis STOP négatif commité)** :
+  1. **G-dmg** : AUC(P̂(dégâts|rétine), tick-dégâts) > **0.90** CV-4 par vie ;
+  2. **G-loc (parité de lunette, le comportement-préservant)** : sur ticks tenus, rappel des
+     rayons verts-règle ≥ **0.95** ET flag des rayons touchants NON-verts ≤ **2 %** (rouge proche
+     pendant repas engouffré = LE test du confond) ;
+  3. **G-ρ** : ρ̂ ∈ [médiane, q95 + 0.3 m] des distances min au point saillant aux ONSETS tenus
+     (la portée apprise couvre la morsure vécue sans sur-couvrir) ;
+  4. **G-feat (dé-contamination dg1/dg2)** : parité des ensembles de points saillance vs verts-règle
+     sur les ticks de décision (Hausdorff ≤ 0.05 m ET même cardinal sur ≥99 %) ⇒ dg reconstruits
+     à ±0.05 m ; puis RE-TRAIN des têtes sur feats recomputées lunette-saillance (repère vrai
+     reconstruit via les candidats-anneau, positions déterministes → cible vraie) : AUC pain′ ≥
+     **0.874** (0.894−0.02), AUC P̂mort′ ≥ **0.819** (0.839−0.02), plis P̂′ à ±0.02 des plis vivants ;
+  5. **G-consist** : replay offline des poursuites — bascule du choix (lunette saillance + têtes
+     ré-entraînées) ≤ **1.2×** l'analytique-vert ;
+  6. smoke bit-identique : flag absent ⇒ decide() identique (selfcheck), garde hazard_manager ≥8.
+**Juge closed-loop (payé SEULEMENT si 1-6)** : 2×24 vies seeds 1+2, monde v2, config vivante
+(waypoint + sprint-critic dé-contaminé + lunette saillance) : **PASS = repas poolés ≥ 40 ET
+morts-danger ≤ 10** (réf vivante 45/8, bruit ±5) ; KILL précoce seed 1 < 14 repas. Échec →
+négatif commité, green_points conservé (lunette déclarée-datée), W/marges restent l'ancre.
+
 ## Critère de succès = le BUT
 Chaque purification est jugée closed-loop contre la référence vivante (jamais un proxy offline
 seul), au plancher de bruit ±5 repas/24-total, morts comprises. Un retrait qui coûte du forage ou
