@@ -91,17 +91,20 @@ def load_sprint_decisions(run: Path) -> list[dict]:
             if drv[t] > drv[t - 1] + 5.0:
                 gain, got = drv[t] - drv[t - 1], True
                 break
-        h0 = h_at(t0)
+        h0 = h_at(t0)                               # baseline dégâts (jointure exacte)
         hmin = min(h_at(t) for t in range(t0, min(t1 + 1, len(es)))) if bc_health else \
             min(h_at(t0), h_at(t1))
-        intr = route_intrusions(d)
+        # corpus post-Phase-A : intrusion exacte + drives VUS par l'étage sont loggés (additif) ;
+        # anciens corpus : reconstruction costs−longueur + jointure tick.
+        intr = d.get("intr") or route_intrusions(d)
+        e0, t0v, h0v = d["drives"] if d.get("drives") else (es[t0], ts[t0], h0)
         chosen_i, direct_i = intr[d["chosen"]], intr[0]
         cls = ("cross" if chosen_i == chosen_i and chosen_i > _INTR_EPS else
                "refuse" if direct_i == direct_i and direct_i > _INTR_EPS else "clear")
         out.append({
             "run": run.name, "tick": t0, "target": d["target"], "explore": bool(d["explore"]),
             "cls": cls, "intr_chosen": chosen_i, "intr_direct": direct_i,
-            "e": es[t0], "t": ts[t0], "h": h0, "d_tg": d["feats"][0][3] * 10.0,
+            "e": e0, "t": t0v, "h": h0v, "d_tg": d["feats"][0][3] * 10.0,
             "got": got, "gain": gain, "dmg": max(0.0, h0 - hmin),
             "died": t1 >= end - 2, "left": max(end - 1 - t0, 0), "steps": t1 - t0,
         })

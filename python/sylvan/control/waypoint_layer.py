@@ -287,6 +287,34 @@ class WaypointLayer:
             self.pain_kappa_m = _kappa * 0.02                                 # → mètres / dégât
             print(f"[waypoint] CRITIQUE-DOULEUR actif : {Path(_pc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
                   f"κ={_kappa} pas/dégât → les marges vertes codées-main SORTENT du scoring", flush=True)
+        # === CRITIQUE-SPRINT (SYLVAN_WP_SPRINT_CRITIC=ckpt — chantier IC+TC, docs/design_critique_sprint.md) ===
+        # Forme D1 (owner 2026-07-16) : score(c) = leg1+leg2 + (W − g(s,c))·intrusion(c), g = W·p ∈ [0, W].
+        # L'ANALYTIQUE COMPLET reste le socle (g=0 ⇒ bit-identique — leçon des 2 A/B perdus par
+        # REMPLACEMENT) ; la correction ne peut qu'ADOUCIR la pénalité verte selon l'état (drives,
+        # santé, douleur prédite) → elle n'apprend QUE la licence de sprint. Si son juge passe
+        # (2×24 vies : ≥ géométrie +8 repas poolés ET morts ≤ +2), la règle-oracle ci-dessus MEURT.
+        self.sprint_critic = None
+        self._sprint_pain = None
+        _sc = os.environ.get("SYLVAN_WP_SPRINT_CRITIC")
+        if _sc:
+            if self.pain_critic is not None or self.oracle_sprint:
+                raise ValueError("SYLVAN_WP_SPRINT_CRITIC est exclusif de SYLVAN_WP_PAIN_CRITIC et "
+                                 "SYLVAN_WP_ORACLE_SPRINT (modes de scoring concurrents)")
+            import torch as _torch
+            from scripts.train_sprint_critic import SprintCritic
+            from scripts.train_waypoint_pain import PainCritic as _Pain
+            _ck = _torch.load(_sc, map_location="cpu", weights_only=True)
+            self.sprint_critic = SprintCritic()
+            self.sprint_critic.load_state_dict(_ck["state_dict"])
+            self.sprint_critic.eval()
+            # la feature douleur vient du checkpoint bankée DANS le ckpt sprint (parité train/déploiement)
+            _pk = _torch.load(_ck["pain_ckpt"], map_location="cpu", weights_only=True)
+            self._sprint_pain = _Pain()
+            self._sprint_pain.load_state_dict(_pk["state_dict"])
+            self._sprint_pain.eval()
+            print(f"[waypoint] CRITIQUE-SPRINT actif : {Path(_sc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
+                  f"— g=W·p module la pénalité verte, analytique intact "
+                  f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
@@ -419,6 +447,19 @@ class WaypointLayer:
                 scored.append((length + self.pain_kappa_m * float(pain[i]), float(pain[i])))
         else:
             scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
+            # CORRECTION SPRINT (IC+TC) : adoucit la pénalité verte selon l'état — seuls les
+            # candidats à intrusion>0 bougent, jamais en aggravation ; l'intrusion GÉOMÉTRIQUE
+            # (scored[i][1]) reste intacte pour l'aval. Sans drives connus ou cible non-ressource
+            # (guard) : g=0 ⇒ analytique pur.
+            if (self.sprint_critic is not None and self._drives is not None and greens
+                    and target_id in ("food", "water")):
+                import torch as _torch
+                from scripts.train_sprint_critic import sprint_inputs
+                with _torch.no_grad():
+                    _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
+                    _p = self.sprint_critic.p(sprint_inputs(feats, self._drives, _pain.tolist()))
+                scored = [(c - cfg.block_weight * float(_p[i]) * intr, intr)
+                          for i, (c, intr) in enumerate(scored)]
         cost_direct, intr_direct = scored[0]
         best_i = min(range(1, len(cands)), key=lambda i: scored[i][0])
         # HYSTÉRÉSIS pro-direct : un détour ne s'engage que s'il bat nettement la ligne droite.
@@ -457,11 +498,16 @@ class WaypointLayer:
                "cost_direct": round(cost_direct, 2), "cost_best_wp": round(scored[best_i][0], 2),
                "intr_direct": round(intr_direct, 2), "greens": len(greens), "explore": explored}
         if self._log_file is not None:
+            # champs ADDITIFS drives/intr (2026-07-16) : les corpus post-Phase-A n'ont plus besoin
+            # ni de la jointure tick (drives) ni de la reconstruction costs−longueur (intrusion).
+            # ⚠️ en mode pain-critic, s[1] est la douleur, pas l'intrusion (piège documenté).
             self._log_file.write(json.dumps({
                 "tick": self._global_ticks, "target": target_id, "chosen": chosen,
                 "explore": explored, "n_greens": len(greens),
                 "costs": [round(s[0], 3) for s in scored],
                 "feats": [[round(v, 4) for v in f] for f in feats],
+                "drives": [round(v, 2) for v in self._drives] if self._drives is not None else None,
+                "intr": [round(s[1], 4) for s in scored],
             }) + "\n")
         if self.debug:
             print(f"[waypoint] DÉCISION {rec}", flush=True)
