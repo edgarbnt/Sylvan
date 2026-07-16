@@ -42,12 +42,24 @@ config sans danger/waypoint. RECLASSEMENT : les hints passent d'« impureté à 
 (hors scope), soit un étage haut qui émet un cap (candidat lointain). Décomposition HW-seul vs
 FAR_ALIGN-seul = sonde optionnelle future (licence owner), pas payée aujourd'hui.
 
-## P2 — Absorber la tarification du vert (pré-enregistrement complet AVANT son train)
-`score = longueur + 0.02·max(0, κ_data·douleur̂(c)·100 − P̂·bénéfice)` — W et green_margin sortent
-du chemin décisionnel (la létalité devient 100 % apprise). ⚠️ Cousin du remplacement tué 2× (v2/v3)
-— différences : forme plafonnée par le bas (max(0,·)), deux têtes VALIDÉES par un juge, G-consist
-obligatoire, KILL précoce strict. Gates détaillés à écrire À L'OUVERTURE du chantier (pas ici) ;
-juge inchangé (2×24 vies, ≥ réf vivante − bruit ET morts ≤ réf+2).
+## P2 — Absorber la tarification du vert (OUVERT 2026-07-16, gates pré-enregistrés ICI avant tout run)
+**Forme pure** : `score(c) = longueur(c) + 0.02·max(0, κ_data·douleur̂(c)·100 − P̂(s,c)·bénéfice(drive))`
+— W=25 et green_margin SORTENT du chemin décisionnel (la létalité devient 100 % apprise ; ils ne
+survivent que dans le PROPOSEUR tangent, scope P3). Sans drives/cible-ressource : bénéfice=0
+(pénalité = risque appris seul). ZÉRO entraînement : mêmes têtes que le juge PASS (ckpt re-taggé
+`composed_pure_v1`, mêmes poids). ⚠️ Cousin du remplacement tué 2× — différences : max(0,·) plancher,
+têtes validées closed-loop, G-consist obligatoire, KILL strict.
+Gates OFFLINE (gratuits — le quantum de ranking P̂·ben−κ·pain̂ est INCHANGÉ, donc G-rank 0.683
+owner-jugé et G-mono ✓ portent) :
+  1. **G-res-pure** : choix simulé (forme pure) vs action empiriquement meilleure du bucket ≥
+     analytique (72 %) — au minimum PARITÉ (le remplacement ne doit pas perdre ce que la remise a) ;
+  2. **G-consist-pure** : bascule ≤ 1.2× analytique (le tueur historique du remplacement) ;
+  3. **G-safe (nouveau)** : taux de traversée simulé sur bloqués BLESSÉS-PROFONDS (h<30 ET
+     intr>médiane) ≤ forme-remise + 10 pts (un remplacement plus doux que W=25 ne doit pas ouvrir
+     les vannes là où ça tue).
+Juge closed-loop (si 1-3) : 2×24 vies seeds 1+2 vs réf vivante 45/8 — **PASS = repas poolés ≥ 40
+ET morts-danger ≤ 10** ; KILL précoce seed 1 < 14. Échec offline OU juge → forme-remise conservée
+(elle est jugée), négatif commité, W reste l'ancre déclarée.
 
 ## P4 — Reclassement (fait avec P1)
 Les constantes de la machine à états sont déclarées CONSTANTES DE CONCEPTION en carte (comme les
