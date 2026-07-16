@@ -431,8 +431,14 @@ class WaypointLayer:
             chosen = self._rng.randrange(len(cands))
         # ORACLE-SPRINT (sonde G-place, échafaudage) : bouffe bloquée + affamé + en bonne santé →
         # SPRINT direct malgré le vert. Le plafond qu'une valeur santé/drive-consciente peut viser.
+        # v2 de la sonde (diagnostic seed-2 : 2 noyades à engouffrements=0 — la règle sprintait à
+        # travers une zone MI-CHEMIN vers une bouffe LOINTAINE = traversée complète 223 ticks = mort,
+        # alors qu'un détour existait). Sprint SEULEMENT si la cible est PROCHE (<3 m) : la douleur
+        # est courte par construction (bouffe engouffrée ~55 ticks), la traversée lointaine reste au
+        # scoreur normal (détour). Distinction sprint-rentable / traversée-suicidaire.
         if (self.oracle_sprint and not explored and target_id == "food"
                 and self._drives is not None and intr_direct > 0.0
+                and math.hypot(target_pos[0], target_pos[1]) < 3.0
                 and self._drives[2] > 60.0 and self._drives[0] < 50.0):
             chosen = 0
         commit = chosen != 0
