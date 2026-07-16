@@ -93,6 +93,22 @@ Gates v3 PRÉ-ENREGISTRÉS :
      dégagé (×5). C'est le cas « différer la traversée » qui a tué l'A/B v2.
   4. A/B closed-loop inchangé : repas > 10 ET morts ≤ 2 ET ≥ analytique (14/1).
 
+## ⭐⭐ VERDICT FINAL v3 (2026-07-16 nuit) : ÉCHEC — AUCUN κ NE REJOINT L'ANALYTIQUE
+A/B v3 (label poursuite + κ=8 MESURÉ + corpus DAgger) : **8 repas / 5 morts** vs analytique 14/1.
+Avec v2 (κ=100 : 7 repas / 1 mort), le tableau est complet : glisser κ de 100→8 parcourt une courbe
+de troc sécurité↔forage qui passe SOUS le point analytique — **le déficit n'est pas le taux
+d'échange, c'est la FORME du scoreur** « longueur + douleur-MC par état » : prédictions bruitées
+par état → choix flottants (36 commits vs 57, 21 aborts vs 14) là où la géométrie analytique est
+CONSISTANTE entre replans (déjà la leçon du critique niveau-bas : le coût designed gagne par
+cohérence cumulative, 2026-07-08). Acquis positifs bankés : la douleur EST apprenable et calibrée
+(AUC 0.894 ; 26.0/4.8/0.2 vs 27.3/3.7/0.2) ; κ risque-neutre mesuré ≈ 8 pas/dégât ; prémisse
+« différer = douleur différée » réfutée (B2 réel = 0 : les continuations contournent).
+**REPRISE FUTURE (hypothèse nouvelle requise)** : cesser de REMPLACER — la voie licenciée reste
+`note = inné + correction` (IC+TC, LeCun) : l'analytique COMPLET reste le socle exact/consistant,
+le critique n'apprend QUE ce que la géométrie ignore (l'erreur systématique du scoreur main sur le
+vécu). Et/ou mécanismes de CONSISTANCE (lissage temporel des notes, commitment de score). Trois
+checkpoints bankés : waypoint_pain (v2), waypoint_pain_v3 ; corpus critic_kin_wpx1/2/3 (+godot.log).
+
 ## Gates v1 (HISTORIQUE — survie ; le gate 1 a échoué, cf amendement)
 1. **G-gap (licence, gratuit post-collecte)** : les issues divergent-elles selon le choix ? Critère :
    écart médian de survie-après-décision entre legs exploratoires et legs argmin, à états comparables,
