@@ -21,7 +21,7 @@ echo "=== CORPUS CRITIQUE (cinématique) tag=$TAG : ep=$NEP seed=$SEED port=$POR
 # Serveur : coût survie + échafaudage ON (pour réussir le loin) + log des replans -> corpus critique.
 # Perception food/eau symétrique par construction (2026-07-07, hygiène train=déploiement) : plus de
 # flag, plus de hack "eau garde sa dernière position" nulle part dans le codebase.
-env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+env SYLVAN_PLANNER_HEADING_W=${HW:-2.0} SYLVAN_PLANNER_URGENCY_W=${UW:-6.0} \
     SYLVAN_PLANNER_COST=${COST:-survival} SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
     SYLVAN_PLANNER_FAR_ALIGN=${FAR_ALIGN:-1} SYLVAN_PLANNER_ALIGN_GAIN=60 \
     SYLVAN_PLANNER_CRITIC=${CRITIC:-data/checkpoints/survival_critic_kin/critic_best.pt} \
