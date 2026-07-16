@@ -658,9 +658,8 @@ class _PlannerService:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
-        ft = plan_res.get("first_target")
-        if ft is not None and ft != lay.target_id:
-            lay.abort("target_change")
+        # bascule de cible : avorte seulement si elle PERSISTE (patience anti-flicker, cf layer)
+        lay.note_first_target(plan_res.get("first_target"))
         # marquage honnêteté corpus : food/water de CE plan sont des overrides (wp), pas la perception
         plan_res["wp"] = {"pos": [round(lay.wp[0], 2), round(lay.wp[1], 2)] if lay.wp else None,
                           "target": lay.target_id, "leg_steps": lay.leg_steps}

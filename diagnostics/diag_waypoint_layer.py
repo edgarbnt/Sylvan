@@ -85,6 +85,31 @@ def main() -> None:
     assert lay.maybe_decide("water", (1.0, 1.0), ret) is not None         # changement de cible
     print("F. cadence maybe_decide (1re / silence / périodique / saut / cible) ✓")
 
+    # G. LA GÉOMÉTRIE DE L'ÉCHEC G1 v0 : cible LOIN (7 m) derrière un NUAGE vert à mi-chemin →
+    #    l'anneau seul donnait best_wp≈direct (le 2ᵉ segment reconverge) ; un candidat TANGENT
+    #    (posé à côté de l'OBSTACLE) doit maintenant gagner avec un 2ᵉ segment réellement dégagé.
+    lay = WaypointLayer(cfg)
+    cloud = [(x, 3.85 + dz) for x in (-1.0, -0.5, 0.0, 0.5, 1.0) for dz in (-0.4, 0.4)]
+    rec = lay.decide("food", (0.0, 7.0), retina_with_greens(cloud))
+    assert rec["choice"] == "waypoint" and lay.active(), rec
+    assert rec["cost_best_wp"] < rec["cost_direct"] * (1 - cfg.hysteresis), rec
+    from sylvan.control.waypoint_layer import route_cost
+    _, intr_committed = route_cost(lay.wp, (0.0, 7.0), green_points(retina_with_greens(cloud)), cfg)
+    assert intr_committed < 0.2, f"le wp commité ne dégage pas la route : intr={intr_committed:.2f} wp={lay.wp}"
+    print(f"G. cible 7 m derrière nuage vert → wp tangent commité, route dégagée ✓  wp={lay.wp} {rec}")
+
+    # H. patience de bascule : 1 replan de flip = bruit (leg conservé) ; 2 consécutifs = abort
+    lay = WaypointLayer(cfg)
+    lay.wp, lay.target_id, lay.leg_steps = (2.0, 2.0), "food", 0
+    lay.note_first_target("water")
+    assert lay.active(), "abort au 1er flip (bruit) : patience non respectée"
+    lay.note_first_target("food")          # retour → streak reset
+    lay.note_first_target("water")
+    assert lay.active(), "abort après flip isolé post-reset"
+    lay.note_first_target("water")         # 2e consécutif → vraie bascule
+    assert not lay.active() and lay.n_aborts == 1
+    print("H. patience de bascule (1 flip=bruit conservé, 2 consécutifs=abort) ✓")
+
     print("\nSMOKE OK — l'étage waypoint est géométriquement et machinalement sain (offline).")
 
 

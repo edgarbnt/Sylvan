@@ -47,8 +47,18 @@ RETINA_RANGE_M = 10.0    # MAX_RANGE (perception.gd)
 class WaypointConfig:
     ring_n: int = 8              # waypoints sur l'anneau (spec : 6-8)
     ring_radius: float = 2.5     # m autour de l'entité (spec : R ≈ 2-3)
-    reach_m: float = 0.9         # seuil d'atteinte du waypoint
+    reach_m: float = 1.2         # seuil d'atteinte du waypoint. ⚠️ DOIT rester ≥ resource_reach
+                                 # (1.0) du niveau bas : sous ce rayon le coût survie considère la
+                                 # cible « atteinte » et cesse de tirer → G1 v0 : 8/11 timeouts
+                                 # groupés à 1.05-1.40 m avec reach=0.9 (near-miss structurel).
     timeout_steps: int = 180     # pas Godot avant re-décision forcée (spec : 150-200)
+    abort_patience: int = 2      # replans CONSÉCUTIFS de bascule de cible avant d'avorter le leg.
+                                 # G1 v0 : 18/27 abandons à 10 pas = flicker d'égalité (scores
+                                 # saturés au cap, bruit 1-replan mesuré 2026-07-04) — une vraie
+                                 # bascule d'urgence PERSISTE, le bruit non.
+    tangent_margin: float = 1.2  # m de dégagement perpendiculaire des candidats TANGENTS au-delà
+                                 # des bords du nuage vert perçu (TangentBug : sous-but = extrémité
+                                 # de l'obstacle SENTI ; géométrie capteur pure, zéro centre/rayon).
     green_margin: float = 0.8    # ρ : marge de sécurité autour d'un point vert perçu (m)
     block_weight: float = 25.0   # W : mètres de trajet équivalents par mètre d'intrusion (décisif)
     hysteresis: float = 0.15     # un wp ne bat le direct que s'il coûte 15 % de moins (anti-dither)
@@ -63,6 +73,7 @@ class WaypointConfig:
         for name, cast in (("ring_n", int), ("ring_radius", float), ("reach_m", float),
                            ("timeout_steps", int), ("green_margin", float), ("block_weight", float),
                            ("hysteresis", float), ("recheck_every", int),
+                           ("abort_patience", int), ("tangent_margin", float),
                            ("k_fwd", float), ("k_yaw", float)):
             v = os.environ.get(f"SYLVAN_WP_{name.upper()}")
             if v is not None:
@@ -104,6 +115,49 @@ def _seg_intrusion(ax: float, az: float, bx: float, bz: float,
     return max(0.0, worst)
 
 
+def tangent_candidates(greens: list[tuple[float, float]],
+                       margin: float) -> list[tuple[float, float]]:
+    """Candidats TANGENTS (TangentBug, recherche §4) : un waypoint juste AU-DELÀ de chaque bord
+    angulaire du nuage vert perçu, décalé perpendiculairement vers l'extérieur. Géométrie capteur
+    PURE (les points verts bruts), zéro centre/rayon estimé. POURQUOI (G1 v0, mesuré) : depuis
+    6-8 m, l'anneau autour de l'ENTITÉ ne dévie le 2ᵉ segment que de ~1 m au niveau du gardien
+    (le segment reconverge vers la cible) → best_wp ≈ direct sur 22 décisions bloquées. Le via-point
+    doit être posé À CÔTÉ DE L'OBSTACLE, pas à côté de l'entité.
+
+    Bords angulaires = extrémités du plus grand TROU angulaire entre points verts consécutifs
+    (robuste au wraparound, aucune hypothèse « un seul disque »)."""
+    if not greens:
+        return []
+    if len(greens) == 1:
+        gx, gz = greens[0]
+        d = max(math.hypot(gx, gz), 1e-6)
+        px, pz = -gz / d, gx / d                       # perpendiculaire unitaire
+        return [(gx + margin * px, gz + margin * pz), (gx - margin * px, gz - margin * pz)]
+    order = sorted(range(len(greens)),
+                   key=lambda i: math.atan2(greens[i][0], greens[i][1]))
+    bearings = [math.atan2(greens[i][0], greens[i][1]) for i in order]
+    gaps = []
+    for j in range(len(order)):
+        nxt = (j + 1) % len(order)
+        gap = bearings[nxt] - bearings[j]
+        if nxt == 0:
+            gap += 2.0 * math.pi
+        gaps.append(gap)
+    jmax = max(range(len(gaps)), key=lambda j: gaps[j])
+    # le nuage s'étend du point APRÈS le plus grand trou (bord 1) au point AVANT (bord 2)
+    edges = (order[(jmax + 1) % len(order)], order[jmax])
+    out: list[tuple[float, float]] = []
+    for k, side in zip(edges, (+1.0, -1.0)):
+        gx, gz = greens[k]
+        d = max(math.hypot(gx, gz), 1e-6)
+        # perpendiculaire orientée vers l'EXTÉRIEUR du nuage. Convention : bearing atan2(x,z)
+        # croissant = vers la DROITE ; perp gauche = (−gz, gx)/d, perp droite = (gz, −gx)/d.
+        # Bord 1 (après le trou, côté gauche du nuage) → décale à GAUCHE ; bord 2 → à DROITE.
+        px, pz = (-gz / d, gx / d) if side > 0 else (gz / d, -gx / d)
+        out.append((gx + margin * px, gz + margin * pz))
+    return out
+
+
 def route_cost(wp: tuple[float, float], target: tuple[float, float],
                greens: list[tuple[float, float]], cfg: WaypointConfig) -> tuple[float, float]:
     """Coût (m équivalents) d'un trajet 0→wp→cible : longueur totale + W × intrusion-verte des
@@ -138,6 +192,7 @@ class WaypointLayer:
         self._target_at_decision: tuple[float, float] | None = None
         self.leg_steps = 0
         self._replans_since_decision = 0
+        self._flip_streak = 0                    # replans consécutifs où l'arbitrage préfère l'AUTRE cible
         self._event: str | None = None           # "reached" | "timeout" (consommé par le serveur)
         # compteurs de trace (diagnostic G1 : LOCALISER, ne pas deviner)
         self.n_decisions = 0
@@ -172,6 +227,19 @@ class WaypointLayer:
         self.n_aborts += 1
         self._clear(reason)
 
+    def note_first_target(self, first_target: str | None) -> None:
+        """Pendant un leg : l'arbitrage du plan préfère-t-il l'AUTRE ressource ? On n'avorte que si
+        la bascule PERSISTE abort_patience replans — G1 v0 : 18/27 abandons à 10 pas = bruit
+        d'égalité 1-replan (scores saturés au cap) ; une vraie urgence, elle, persiste."""
+        if self.wp is None or first_target is None:
+            return
+        if first_target != self.target_id:
+            self._flip_streak += 1
+            if self._flip_streak >= self.cfg.abort_patience:
+                self.abort("target_change")
+        else:
+            self._flip_streak = 0
+
     def consume_event(self) -> str | None:
         ev, self._event = self._event, None
         return ev
@@ -183,6 +251,7 @@ class WaypointLayer:
         self.wp = None
         self.target_id = None
         self.leg_steps = 0
+        self._flip_streak = 0
         self._event = event
 
     # ------------------------------------------------------------------ décision
@@ -206,11 +275,16 @@ class WaypointLayer:
         cfg = self.cfg
         greens = green_points(retina)
         cost_direct, intr_direct = route_cost(target_pos, target_pos, greens, cfg)
+        candidates = [(cfg.ring_radius * math.sin(2.0 * math.pi * i / cfg.ring_n),
+                       cfg.ring_radius * math.cos(2.0 * math.pi * i / cfg.ring_n))
+                      for i in range(cfg.ring_n)]
+        # candidats TANGENTS : posés au-delà des bords du nuage vert (à côté de l'OBSTACLE, pas de
+        # l'entité) — seuls capables de dégager le 2ᵉ segment quand la cible est loin derrière le
+        # gardien (G1 v0 : best_wp≈direct sur toutes les décisions bloquées, anneau seul).
+        candidates += tangent_candidates(greens, cfg.tangent_margin)
         best_wp: tuple[float, float] | None = None
         best_cost = float("inf")
-        for i in range(cfg.ring_n):
-            th = 2.0 * math.pi * i / cfg.ring_n
-            wp = (cfg.ring_radius * math.sin(th), cfg.ring_radius * math.cos(th))
+        for wp in candidates:
             cost, _ = route_cost(wp, target_pos, greens, cfg)
             if cost < best_cost:
                 best_cost, best_wp = cost, wp
@@ -221,6 +295,7 @@ class WaypointLayer:
         self._target_at_decision = target_pos
         self.target_id = target_id
         self.leg_steps = 0
+        self._flip_streak = 0
         self.wp = best_wp if commit else None
         if commit:
             self.n_commits += 1
