@@ -58,3 +58,12 @@ TOUT critère à ±4 repas — le coût de la preuve a doublé, c'est le prix de
 instrumenter les bras oracle (debug) — possible artefact de phase d'approche de la sonde v2 (cible
 engouffrée >3 m : le sprint ne se déverrouille qu'en dessous) ; (iii) garde sans-cible : 5→3 morts
 (sa classe soldée), attribution des 3 restantes (classe frôlements-direct) à sonder.
+
+## GATES 24 VIES (pré-enregistrés AVANT lancement, 2026-07-17)
+4 bras séquentiels, 24 vies chacun, monde v2 (P=0.5, regen=0.05), instrumentés (debug + WP_LOG) :
+ordre s2(a), s2(b), s1(a), s1(b) — le paquet dur d'abord (kill précoce possible).
+- **PASS global** : sur CHAQUE seed, (b) ≥ (a) + 8 repas /24 vies (échelle du +4/12) ET morts-danger
+  (b) ≤ (a) + 2. → place prouvée, chantier apprenant licencié.
+- **KILL** : un seed montre (b) < (a) en repas (contradiction directionnelle à N=24).
+- Entre les deux → toujours non-conclu → décision owner (N=36 ou autre design).
+Bruit attendu sur totaux de 24 : ~±5 (SD 12-vies ~3.5 ×√2) ; signal attendu si réel : +8-12.
