@@ -1,28 +1,31 @@
 """CRITIQUE-SPRINT de l'étage waypoint — forme IC+TC (docs/design_critique_sprint.md).
 
-Forme D1 (tranchée owner 2026-07-16) : au déploiement, le scoreur ANALYTIQUE reste le socle et
-    score(c) = leg1 + leg2 + (W − g(s,c)) · intrusion(c),   g = W · p(s,c) ∈ [0, W]
-p(s,c) = P(la traversée PAIE | état, candidat). La correction ne touche que les candidats qui
-croisent le vert et ne peut qu'ADOUCIR la pénalité (jamais l'aggraver) : g=0 ⇒ bit-identique à
-l'analytique — le plancher de perf est le bras géométrie. Elle n'apprend QUE la licence de sprint,
-ce que la géométrie ignore (drives, santé, douleur prédite).
+Forme D1 (tranchée owner 2026-07-16), REPRISE v2 (owner, après le négatif n°1 — le SIGNE de U
+jetait le signal risque, y≡repas 97.6 %) : le critique RÉGRESSE LA MAGNITUDE et au déploiement
+    remise(c) = min(W·intrusion(c), 0.02 · max(0, Q̂(s,c)·100)) ;  score(c) = route_cost(c) − remise
+Q̂(s,c) = U prédit de la traversée (unités U/100, signé). 0.02 m/pas = constante CALIBRÉE du corps
+(waypoint_layer k_fwd), κ_data et drain MESURÉS du corpus — zéro constante libre. La remise ne
+touche que les candidats à intrusion>0 et est capée à la pénalité verte (jamais d'aggravation,
+jamais d'inversion) : Q̂≤0 ⇒ bit-identique à l'analytique — le plancher de perf est le bras
+géométrie. Elle n'apprend QUE la licence de sprint, ce que la géométrie ignore.
 
-Label PINNÉ (Phase 0, diag_sprint_corpus sur g24×4) : y = 1[U > 0],
-U = gain_observé/drain − κ_data·dégâts_de_poursuite (LINÉAIRE — plancher-mort non retenu, 3 % <
-10 %) ; drain et κ_data MESURÉS du corpus (Phase 0 : 0.05 et 9.5), jamais devinés.
+Label PINNÉ (Phase 0) : U = gain_observé/drain − κ_data·dégâts_de_poursuite (LINÉAIRE —
+plancher-mort non retenu, 3 % < 10 %). Le négatif n°1 a prouvé que la magnitude porte la santé
+(U̅|repas 557/591/716 par bande) là où le signe ne porte que « repas obtenu ».
 
-GATES OFFLINE PRÉ-ENREGISTRÉS (design §gates — opérationnalisés ici, écrits AVANT le train) :
-  1. G-rank  : AUC(p ordonne les traversées payantes > non-payantes) > 0.70, CV-4 par VIE ;
+GATES OFFLINE PRÉ-ENREGISTRÉS (design §gates — opérationnalisés ici, écrits AVANT le re-train) :
+  1. G-rank  : AUC(Q̂ ordonne les traversées payantes > non-payantes) > 0.70, CV-4 par VIE ;
   2. G-res   : précision du choix simulé (traverser/refuser, hystérésis incluse) vs l'action
                empiriquement meilleure du bucket (santé×énergie×dist) : corrigé ≥ analytique
                + 10 pts, sur décisions TENUES (modèles des plis) ;
   3. G-consist : replay des séquences intra-poursuite — taux de bascule du choix simulé corrigé
                ≤ 1.2× celui de l'analytique (le gate anti-flottement que v2/v3 n'avaient pas) ;
-  4. G-mono   : (correction owner du volet blessés G0, 2026-07-16 — le monde montre un GRADIENT,
-               pas une inversion au seuil oracle) p̂ moyen des traversées STRICTEMENT croissant par
-               bande de santé [0,30)/[30,60)/[60,100] ET strictement décroissant par tercile de
-               profondeur d'intrusion.
-Échec d'un gate → NE PAS brancher (négatif commité). Le juge reste le closed-loop (2×24 vies).
+  4. G-mono v2 : (owner 2026-07-16, CONDITIONNÉ où le risque vit — le volet non conditionné était
+               confondu avec la proximité) Q̂ moyen STRICTEMENT croissant par bande de santé
+               [0,30)/[30,60)/[60,100] PARMI les traversées PROFONDES (intr > médiane), ET
+               strictement décroissant par tercile de profondeur PARMI les BLESSÉS (h<60).
+Échec d'un gate → NE PAS brancher (négatif commité, budget re-train ÉPUISÉ). Le juge reste le
+closed-loop (2×24 vies).
 
 Usage :
   PYTHONPATH=python env_pytorch_3.12/bin/python -m scripts.train_sprint_critic \
@@ -57,15 +60,16 @@ DEFAULT_RUNS = ["data/replay_buffer/critic_kin_g24as1", "data/replay_buffer/crit
 
 
 class SprintCritic(nn.Module):
-    """entrées [B, 14] → p = P(la traversée paie) ∈ (0, 1). Déploiement : g = W·p."""
+    """entrées [B, 14] → Q̂ = U prédit de la traversée (unités U/100, SIGNÉ — la magnitude porte
+    le risque, leçon du négatif n°1). Déploiement : remise = min(W·intr, 2·max(0, Q̂))."""
 
     def __init__(self, hidden: int = 64):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(SPRINT_IN_DIM, hidden), nn.ReLU(),
                                  nn.Linear(hidden, hidden), nn.ReLU(), nn.Linear(hidden, 1))
 
-    def p(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sigmoid(self.net(x).squeeze(-1))
+    def q(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(-1)
 
 
 def sprint_inputs(feats: list[list[float]], drives: tuple[float, float, float],
@@ -86,7 +90,7 @@ def make_checkpoint(critic: SprintCritic, pain_ckpt: str, **meta) -> dict:
     """Format de checkpoint unique (déploiement : waypoint_layer recharge pain_ckpt d'ici —
     la parité de la feature douleur est portée par le chemin bankée, pas par une convention)."""
     return {"state_dict": critic.state_dict(), "in_dim": SPRINT_IN_DIM,
-            "pain_ckpt": pain_ckpt, **meta}
+            "form": "q_regression", "pain_ckpt": pain_ckpt, **meta}
 
 
 # ------------------------------------------------------------------ corpus (partagé avec le diag)
@@ -202,10 +206,15 @@ def simulate_choice(r: dict, critic: SprintCritic | None,
         x = sprint_inputs(r["feats_all"], (r["e"], r["t"], r["h"]),
                           _pain_of(pain_model, r["feats_all"]))
         with torch.no_grad():
-            p = critic.p(x)
-        costs = [c - _CFG.block_weight * float(p[i]) * (r["intr_all"][i] or 0.0)
-                 if r["intr_all"][i] == r["intr_all"][i] else c
-                 for i, c in enumerate(costs)]
+            q = critic.q(x)
+        # remise = min(W·intr, 2·max(0, Q̂)) — 2 = 0.02 m/pas × 100 (Q̂ en pas/100), parité déploiement
+        new_costs = []
+        for i, c in enumerate(costs):
+            intr_i = r["intr_all"][i]
+            if intr_i == intr_i and intr_i > 0.0:
+                c = c - min(_CFG.block_weight * intr_i, 2.0 * max(0.0, float(q[i])))
+            new_costs.append(c)
+        costs = new_costs
     best_i = min(range(1, len(costs)), key=lambda i: costs[i])
     chosen = best_i if costs[best_i] < costs[0] * (1.0 - _CFG.hysteresis) else 0
     intr_c = r["intr_all"][chosen]
@@ -244,35 +253,37 @@ def train(args: argparse.Namespace) -> None:
     X = torch.cat([sprint_inputs([r["feats_all"][r["chosen"]]], (r["e"], r["t"], r["h"]),
                                  _pain_of(pain_model, [r["feats_all"][r["chosen"]]]))
                    for r in cross])
-    y = torch.tensor([net_utility(r, kappa, drain) > 0.0 for r in cross], dtype=torch.float32)
+    u = torch.tensor([net_utility(r, kappa, drain) / 100.0 for r in cross], dtype=torch.float32)
+    y = (u > 0.0)
     life = torch.tensor([r["life"] for r in cross])
-    print(f"[sprint] label : {int(y.sum())}/{len(y)} traversées payantes ({100 * float(y.mean()):.0f}%)")
+    print(f"[sprint] label (MAGNITUDE, reprise v2) : U/100 méd={float(u.median()):.2f} "
+          f"q1/q3={float(u.quantile(0.25)):.2f}/{float(u.quantile(0.75)):.2f} | "
+          f"payantes {int(y.sum())}/{len(y)} ({100 * float(y.float().mean()):.0f}%)")
 
     def fit(mask: torch.Tensor) -> SprintCritic:
         torch.manual_seed(args.seed)
         c = SprintCritic()
         opt = torch.optim.Adam(c.parameters(), 2e-3, weight_decay=1e-4)
-        Xt, yt = X[mask], y[mask]
+        Xt, ut = X[mask], u[mask]
         for _ in range(args.iters):
             bi = torch.randint(0, len(Xt), (256,))
-            logits = c.net(Xt[bi]).squeeze(-1)
-            nn.functional.binary_cross_entropy_with_logits(logits, yt[bi]).backward()
+            nn.functional.mse_loss(c.q(Xt[bi]), ut[bi]).backward()
             opt.step()
             opt.zero_grad()
         return c.eval()
 
-    # GATE 1 — G-rank : AUC(p, traversée payante) en CV 4 plis PAR VIE (le gate décisionnel :
+    # GATE 1 — G-rank : AUC(Q̂, traversée payante) en CV 4 plis PAR VIE (le gate décisionnel :
     # ranger les traversées payantes au-dessus des non-payantes, dans le set sprint-pertinent).
     aucs, fold_models = [], {}
     for k in range(4):
         te = (life % 4 == k)
-        if int(y[te].sum()) == 0 or int((1 - y[te]).sum()) == 0 or int(te.sum()) == 0:
+        if int(y[te].sum()) == 0 or int((~y[te]).sum()) == 0:
             print(f"[sprint]   pli {k} : classe vide, sauté")
             continue
         c_k = fit(~te)
         fold_models[k] = c_k
         with torch.no_grad():
-            aucs.append(_auc(c_k.p(X[te]), y[te].bool()))
+            aucs.append(_auc(c_k.q(X[te]), y[te]))
         print(f"[sprint]   pli {k} : AUC={aucs[-1]:.3f} (n_te={int(te.sum())}, pay={int(y[te].sum())})")
     auc = sum(aucs) / max(len(aucs), 1)
 
@@ -325,24 +336,29 @@ def train(args: argparse.Namespace) -> None:
     print(f"[sprint] G-consist : {n_pairs} paires | bascule analytique {100 * rate_ana:.1f}% "
           f"vs corrigé {100 * rate_cor:.1f}%")
 
-    # GATE 4 — G-mono (correction owner G0) : le gradient appris doit suivre le gradient vécu —
-    # p̂ croît avec la santé (bandes 0-30/30-60/60+) et décroît avec la profondeur d'intrusion.
+    # GATE 4 — G-mono v2 (owner, CONDITIONNÉ où le risque vit — le volet non conditionné était
+    # confondu proximité) : Q̂ croissant en santé PARMI les traversées PROFONDES (intr > médiane) ;
+    # Q̂ décroissant en profondeur PARMI les BLESSÉS (h<60).
     with torch.no_grad():
-        p_all = critic.p(X)
-    h_bands = [(lo, hi) for lo, hi in ((0.0, 30.0), (30.0, 60.0), (60.0, 101.0))]
-    p_by_h = []
-    for lo, hi in h_bands:
-        m = torch.tensor([lo <= r["h"] < hi for r in cross])
-        p_by_h.append(float(p_all[m].mean()) if m.any() else float("nan"))
-    depths = [r["intr_chosen"] for r in cross]
-    cuts = st.quantiles(depths, n=3)
-    p_by_d = []
-    for lo, hi in ((0.0, cuts[0]), (cuts[0], cuts[1]), (cuts[1], 1e9)):
-        m = torch.tensor([lo <= r["intr_chosen"] < hi for r in cross])
-        p_by_d.append(float(p_all[m].mean()) if m.any() else float("nan"))
-    g_mono = (p_by_h[0] < p_by_h[1] < p_by_h[2]) and (p_by_d[0] > p_by_d[1] > p_by_d[2])
-    print(f"[sprint] G-mono : p̂ par santé {['%.2f' % v for v in p_by_h]} (croissant ?) | "
-          f"p̂ par profondeur {['%.2f' % v for v in p_by_d]} (décroissant ?)")
+        q_all = critic.q(X)
+
+    def _mean_at(idx: list[int]) -> float:
+        return float(q_all[torch.tensor(idx)].mean()) if len(idx) >= 15 else float("nan")
+
+    med_d = st.median([r["intr_chosen"] for r in cross])
+    deep = [i for i, r in enumerate(cross) if r["intr_chosen"] > med_d]
+    q_by_h = [_mean_at([i for i in deep if lo <= cross[i]["h"] < hi])
+              for lo, hi in ((0.0, 30.0), (30.0, 60.0), (60.0, 101.0))]
+    wounded = [i for i, r in enumerate(cross) if r["h"] < 60.0]
+    if len(wounded) >= 45:
+        cuts = st.quantiles([cross[i]["intr_chosen"] for i in wounded], n=3)
+        q_by_d = [_mean_at([i for i in wounded if lo <= cross[i]["intr_chosen"] < hi])
+                  for lo, hi in ((0.0, cuts[0]), (cuts[0], cuts[1]), (cuts[1], 1e9))]
+    else:
+        q_by_d = [float("nan")] * 3
+    g_mono = (q_by_h[0] < q_by_h[1] < q_by_h[2]) and (q_by_d[0] > q_by_d[1] > q_by_d[2])
+    print(f"[sprint] G-mono v2 : Q̂|profond par santé {['%.2f' % v for v in q_by_h]} (croissant ?) | "
+          f"Q̂|blessé par profondeur {['%.2f' % v for v in q_by_d]} (décroissant ?)")
 
     g_rank = auc > 0.70
     g_res = acc_cor >= acc_ana + 0.10
@@ -352,17 +368,17 @@ def train(args: argparse.Namespace) -> None:
           f"[{', '.join(f'{a:.3f}' for a in aucs)}]")
     print(f"[sprint] G-res     : {100 * acc_cor:.0f}% ≥ {100 * acc_ana:.0f}% + 10 pts → {'✅' if g_res else '❌'}")
     print(f"[sprint] G-consist : {100 * rate_cor:.1f}% ≤ 1.2×{100 * rate_ana:.1f}% → {'✅' if g_consist else '❌'}")
-    print(f"[sprint] G-mono    : santé {'↑' if p_by_h[0] < p_by_h[1] < p_by_h[2] else '✗'} "
-          f"profondeur {'↓' if p_by_d[0] > p_by_d[1] > p_by_d[2] else '✗'} → {'✅' if g_mono else '❌'}")
+    print(f"[sprint] G-mono v2 : santé|profond {'↑' if q_by_h[0] < q_by_h[1] < q_by_h[2] else '✗'} "
+          f"profondeur|blessé {'↓' if q_by_d[0] > q_by_d[1] > q_by_d[2] else '✗'} → {'✅' if g_mono else '❌'}")
     verdict = g_rank and g_res and g_consist and g_mono
     print(f"[sprint] {'✅ GATES PASSÉS → juge closed-loop (2×24 vies seeds 1+2)' if verdict else '❌ GATE ÉCHOUÉ → ne pas brancher, commiter le négatif'}")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     torch.save(make_checkpoint(critic, args.pain, auc_cv=auc, acc_ana=acc_ana, acc_cor=acc_cor,
-                               flip_ana=rate_ana, flip_cor=rate_cor, p_by_health=p_by_h,
-                               p_by_depth=p_by_d, kappa_data=kappa,
-                               drain=drain, label="linear_pursuit", runs=list(args.runs),
+                               flip_ana=rate_ana, flip_cor=rate_cor, q_by_health_deep=q_by_h,
+                               q_by_depth_wounded=q_by_d, kappa_data=kappa,
+                               drain=drain, label="linear_pursuit_magnitude", runs=list(args.runs),
                                gates_pass=bool(verdict)),
                out / "sprint_best.pt")
     print(f"[sprint] sauvé → {out / 'sprint_best.pt'}")
@@ -395,7 +411,7 @@ def selfcheck() -> None:
             c = SprintCritic()
             with torch.no_grad():
                 c.net[-1].weight.zero_()
-                c.net[-1].bias.fill_(bias)        # σ(∓20) → p ≈ 0 / 1 quelle que soit l'entrée
+                c.net[-1].bias.fill_(bias)        # Q̂ ≡ ∓20 → remise 0 / capée à W·intr, ∀ entrée
             torch.save(make_checkpoint(c, DEFAULT_PAIN), Path(td) / f"{name}.pt")
         try:
             os.environ["SYLVAN_WP_SPRINT_CRITIC"] = str(Path(td) / "g0.pt")

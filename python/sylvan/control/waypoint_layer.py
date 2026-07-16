@@ -288,9 +288,11 @@ class WaypointLayer:
             print(f"[waypoint] CRITIQUE-DOULEUR actif : {Path(_pc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
                   f"κ={_kappa} pas/dégât → les marges vertes codées-main SORTENT du scoring", flush=True)
         # === CRITIQUE-SPRINT (SYLVAN_WP_SPRINT_CRITIC=ckpt — chantier IC+TC, docs/design_critique_sprint.md) ===
-        # Forme D1 (owner 2026-07-16) : score(c) = leg1+leg2 + (W − g(s,c))·intrusion(c), g = W·p ∈ [0, W].
-        # L'ANALYTIQUE COMPLET reste le socle (g=0 ⇒ bit-identique — leçon des 2 A/B perdus par
-        # REMPLACEMENT) ; la correction ne peut qu'ADOUCIR la pénalité verte selon l'état (drives,
+        # Forme D1 reprise v2 (owner 2026-07-16) : remise(c) = min(W·intr(c), 2·max(0, Q̂(s,c))),
+        # score(c) = route_cost(c) − remise. Q̂ = U prédit de la traversée (pas/100, MAGNITUDE — le
+        # signe seul jetait le risque, négatif n°1) ; 2 = 0.02 m/pas (corps calibré) × 100.
+        # L'ANALYTIQUE COMPLET reste le socle (Q̂≤0 ⇒ bit-identique — leçon des 2 A/B perdus par
+        # REMPLACEMENT) ; la remise ne peut qu'ADOUCIR la pénalité verte selon l'état (drives,
         # santé, douleur prédite) → elle n'apprend QUE la licence de sprint. Si son juge passe
         # (2×24 vies : ≥ géométrie +8 repas poolés ET morts ≤ +2), la règle-oracle ci-dessus MEURT.
         self.sprint_critic = None
@@ -304,6 +306,9 @@ class WaypointLayer:
             from scripts.train_sprint_critic import SprintCritic
             from scripts.train_waypoint_pain import PainCritic as _Pain
             _ck = _torch.load(_sc, map_location="cpu", weights_only=True)
+            if _ck.get("form") != "q_regression":
+                raise ValueError(f"ckpt sprint-critic de forme inattendue : {_ck.get('form')!r} "
+                                 "(attendu 'q_regression' — re-entraîner via train_sprint_critic)")
             self.sprint_critic = SprintCritic()
             self.sprint_critic.load_state_dict(_ck["state_dict"])
             self.sprint_critic.eval()
@@ -313,7 +318,7 @@ class WaypointLayer:
             self._sprint_pain.load_state_dict(_pk["state_dict"])
             self._sprint_pain.eval()
             print(f"[waypoint] CRITIQUE-SPRINT actif : {Path(_sc).name} (AUC_cv={_ck.get('auc_cv', 0):.3f}) "
-                  f"— g=W·p module la pénalité verte, analytique intact "
+                  f"— remise=min(W·intr, 2·max(0,Q̂)) sur la pénalité verte, analytique intact "
                   f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
@@ -447,18 +452,20 @@ class WaypointLayer:
                 scored.append((length + self.pain_kappa_m * float(pain[i]), float(pain[i])))
         else:
             scored = [route_cost(w, target_pos, greens, cfg) for w in cands]
-            # CORRECTION SPRINT (IC+TC) : adoucit la pénalité verte selon l'état — seuls les
-            # candidats à intrusion>0 bougent, jamais en aggravation ; l'intrusion GÉOMÉTRIQUE
-            # (scored[i][1]) reste intacte pour l'aval. Sans drives connus ou cible non-ressource
-            # (guard) : g=0 ⇒ analytique pur.
+            # CORRECTION SPRINT (IC+TC, reprise v2) : remise = min(W·intr, 2·max(0, Q̂)) — le
+            # bénéfice net PRÉDIT de la traversée en mètres (0.02 m/pas calibré × Q̂·100), capé à
+            # la pénalité verte → seuls les candidats à intrusion>0 bougent, jamais en aggravation ;
+            # l'intrusion GÉOMÉTRIQUE (scored[i][1]) reste intacte pour l'aval. Sans drives connus
+            # ou cible non-ressource (guard) : remise=0 ⇒ analytique pur.
             if (self.sprint_critic is not None and self._drives is not None and greens
                     and target_id in ("food", "water")):
                 import torch as _torch
                 from scripts.train_sprint_critic import sprint_inputs
                 with _torch.no_grad():
                     _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
-                    _p = self.sprint_critic.p(sprint_inputs(feats, self._drives, _pain.tolist()))
-                scored = [(c - cfg.block_weight * float(_p[i]) * intr, intr)
+                    _q = self.sprint_critic.q(sprint_inputs(feats, self._drives, _pain.tolist()))
+                scored = [(c - min(cfg.block_weight * intr, 2.0 * max(0.0, float(_q[i]))), intr)
+                          if intr > 0.0 else (c, intr)
                           for i, (c, intr) in enumerate(scored)]
         cost_direct, intr_direct = scored[0]
         best_i = min(range(1, len(cands)), key=lambda i: scored[i][0])
