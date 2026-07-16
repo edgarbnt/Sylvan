@@ -61,6 +61,20 @@ Juge closed-loop (si 1-3) : 2×24 vies seeds 1+2 vs réf vivante 45/8 — **PASS
 ET morts-danger ≤ 10** ; KILL précoce seed 1 < 14. Échec offline OU juge → forme-remise conservée
 (elle est jugée), négatif commité, W reste l'ancre déclarée.
 
+## ⭐ VERDICT P2 (2026-07-16) : **ÉCHEC AU JUGE (morts) — négatif diagnostiqué, remise conservée**
+Gates offline 3/3 passés (G-res-pure 75 %≥72, G-consist-pure 6.9 %≤7.8 — le remplacement ne
+flotte PAS, G-safe parité) MAIS juge closed-loop : s1 17/6, s2 32/8 → **POOLÉ 49 repas / 14
+morts-danger** vs gate ≥40 ET ≤10 : repas ✓ (bat même le plafond oracle 47 !) mais **morts ✗
+(+6 vs remise 8, dégâts ×1.5)**. DIAGNOSTIC (structurel, pas un bug) : `κ·douleur̂` linéaire
+prix une traversée profonde ~5 m là où `W·intr` montait à 25 m → sans l'ancre, l'entité troque
+des vies contre des repas. **W=25 encode une PRIME DE RISQUE NON-LINÉAIRE** (mourir ≠ perdre
+κ·dégâts — même thème que le plancher-mort du label) que les têtes actuelles (E[dégâts]) ne
+portent pas. Per pré-enregistrement : forme-REMISE conservée (le vivant jugé 45/8), W = ANCRE
+DÉCLARÉE ET DATÉE — sa purification exige une hypothèse NOUVELLE : une tête P(mort|s,c) (ou une
+tarification convexe apprise de la queue des morts), licence owner requise. Ckpt sprint_pure.pt
+bankée (judge_fail 49/14). Leçon : la frontière actuelle de pureté s'arrête à la remise-capée —
+et on sait désormais EXACTEMENT ce que W contient.
+
 ## P4 — Reclassement (fait avec P1)
 Les constantes de la machine à états sont déclarées CONSTANTES DE CONCEPTION en carte (comme les
 drains des drives) — elles sortent du décompte de dette d'échafaudage.
