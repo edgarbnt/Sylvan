@@ -189,11 +189,35 @@ actions primitives » → le critique renaît à cet étage). Bonus rétrospecti
 (exploration-commande qui comprime ; blends scalaires qui calent) sont des résultats CONNUS (Director :
 bonus worker nuit, manager requis ; Koren-Borenstein : minima locaux inhérents).
 
-**CHANTIER SUIVANT (session dédiée)** : spec §6 du doc recherche + prompt de lancement
-**`docs/prompt_chantier_hjepa.md`**. Gates pré-enregistrés inchangés : G1 danger repas>10 ET morts≤2
-(réf 15 ; meilleur juge plat 9/6) ; G0 non-régression monde plat.
-Échafaudages actifs (tous opt-in, défaut OFF, déclarés) : SYLVAN_HAZARD_AVOID / _DETOUR / _CENTER_SHIFT /
-_GREENWALL / _DEBUG (trace). WM 3-slots : wm_objcentric_kin_haz. À retirer une fois l'appris validé.
+**⭐⭐ CHANTIER WAYPOINT FAIT — G1 PASS (2026-07-16, session dédiée).** L'étage waypoint (« petit
+H-JEPA » 2 niveaux, spec recherche §6) est construit et GATÉ : **14 repas / 1 mort-danger** sur 12 vies
+(critères pré-enregistrés repas>10 ET morts≤2, jamais déplacés ; réf sans danger 15 ; meilleur juge plat
+9/6 ; aveugle 5/7-8). **Le troc évitement↔repas est cassé** — 8/12 vies à zéro dégât, 21 legs aboutis.
+G0 (monde plat) : 19 repas/16 boissons, 0 commit, étage transparent. Code : `waypoint_layer.py` +
+intégration `serve_planner_command.py` (opt-in `SYLVAN_WAYPOINT=1`, défaut OFF ; planner bas INTOUCHÉ,
+override par appel via flags slot existants restaurés en finally). Chemin en 3 gates, chaque itération
+= cause NOUVELLE mesurée (anti-boucle respecté) :
+- v0 ÉCHEC (6 repas/5 morts, 0 leg abouti) → trace : near-miss structurel (reach 0.9 < resource_reach
+  1.0 du bas — timeouts groupés 1.05-1.40 m) ; 18/27 aborts à 10 pas (flicker d'égalité 1-replan) ;
+  anneau insuffisant à 6-8 m (best_wp≈direct : le 2ᵉ segment reconverge vers la cible) — `eb767ea`.
+- v1 (reach 1.2, patience 2, candidats TANGENTS aux bords du nuage vert = TangentBug, zéro
+  reconstruction) ÉCHEC (8/5) → attribution corpus BC : l'exposition au vert vit HORS des legs
+  (fenêtre aveugle 50 ticks du mode direct ; marges calées piliers alors que le bord létal est
+  0.39 m au-delà — anneau 0.91 m vs disque 1.3 m) — `376d4fa`.
+- v2 (recheck chaque replan, marges 1.0/1.4) **PASS**.
+Odométrie du wp = commande intégrée, calibrée GRATUITEMENT avant construction
+(`diag_waypoint_deadreckon.py` : 0.22 m @150 pas). Smoke offline : `diag_waypoint_layer.py` (8 scénarios,
+dont la géométrie exacte de l'échec v0). Carte : module `etage_waypoint` (échafaudage).
+**Résidus déclarés** : proposeur/scoreur codés-main (→ l'appris) ; croisière sans-cible aveugle au vert
+(frontière CHERCHER) ; wp remplace la ressource dans le coût pendant un leg (distorsion bornée) ;
+mono-seed (multi-seed = dette, comme s2).
+**PROCHAIN PAS — cheaper-first (recherche §6, « après G1 »)** : le CRITIQUE NOTE LES WAYPOINTS — peu
+d'options très dissemblables → écarts larges (HIQL fig.8) = là où il peut enfin discriminer. Corpus
+contrasté GRATUIT en variant les wp (l'exploration au bon étage — leçon Director) ; gate résidu
+`train_survival_critic --labels residual` (+0.10 R², CV 4 plis) déjà écrit — le rejouer sur ce corpus
+AVANT tout entraînement neuf.
+Échafaudages hazard antérieurs (tous opt-in, défaut OFF, déclarés, SUPERSEDED par l'étage waypoint) :
+SYLVAN_HAZARD_AVOID / _DETOUR / _CENTER_SHIFT / _GREENWALL / _DEBUG. WM 3-slots : wm_objcentric_kin_haz.
 
 ## Critère de succès = le BUT
 
