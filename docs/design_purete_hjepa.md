@@ -31,6 +31,17 @@ elle devrait être apprise du vécu.
   négatif commité (ils ne sont PAS redondants — le bas en a encore besoin).
 - ⚠️ URGENCY_W laissé tel quel (isole l'effet cap ; son chemin propre sera audité à part).
 
+## ⭐ VERDICT P1 (2026-07-16) : **KILL — les hints sont PORTEURS, pas redondants**
+Bras OFF seed 1 : **3 repas / 24 vies** (réf hints-ON : 19), 20 morts de FAIM, KILL précoce
+déclenché (<14) → seed 2 non payé, hints CONSERVÉS. Diagnostic : l'étage waypoint décide OÙ aller,
+mais le bas a besoin du shaping d'alignement pour TOURNER vers sa cible — sans `heading_weight`,
+le mur A→B de 2026-06-18 revient (gradient de virage ≈ 0 dans `-min_dist` : l'entité voit la
+bouffe et meurt devant). La note « hw=0 ≥ hw=2 » (2026-06-25) ne valait que pour l'ancienne
+config sans danger/waypoint. RECLASSEMENT : les hints passent d'« impureté à retirer » à
+**échafaudage PORTEUR daté** — leur remplacement propre exigera soit un bas qui apprend à tourner
+(hors scope), soit un étage haut qui émet un cap (candidat lointain). Décomposition HW-seul vs
+FAR_ALIGN-seul = sonde optionnelle future (licence owner), pas payée aujourd'hui.
+
 ## P2 — Absorber la tarification du vert (pré-enregistrement complet AVANT son train)
 `score = longueur + 0.02·max(0, κ_data·douleur̂(c)·100 − P̂·bénéfice)` — W et green_margin sortent
 du chemin décisionnel (la létalité devient 100 % apprise). ⚠️ Cousin du remplacement tué 2× (v2/v3)
