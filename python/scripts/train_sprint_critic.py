@@ -212,20 +212,32 @@ def _pain_of(pain_model: PainCritic, feats: list[list[float]]) -> list[float]:
 
 
 def simulate_choice(r: dict, critic: SprintCritic | None, pain_model: PainCritic | None, *,
-                    composed: bool = False, kappa: float = 0.0, drain: float = 0.05,
-                    restore: float = 40.0) -> bool:
+                    composed: bool = False, pure: bool = False, kappa: float = 0.0,
+                    drain: float = 0.05, restore: float = 40.0) -> bool:
     """Rejoue la règle de choix de decide() (argmin + hystérésis pro-direct) sur les candidats
     loggés → True si le choix TRAVERSE (intr>ε). critic=None ⇒ scoreur analytique pur.
     composed=False : remise = min(W·intr, 2·max(0, Q̂)) ; composed=True : remise =
-    min(W·intr, 0.02·max(0, P̂·bénéfice(drive) − κ·douleur̂·100)) — parité déploiement."""
+    min(W·intr, 0.02·max(0, P̂·bénéfice(drive) − κ·douleur̂·100)) — parité déploiement.
+    pure=True (P2, docs/design_purete_hjepa.md) : REMPLACEMENT — score = longueur +
+    0.02·max(0, κ·douleur̂·100 − P̂·bénéfice) ; W/green_margin sortent du chemin décisionnel."""
     costs = list(r["costs"])
     if critic is not None:
         pains = _pain_of(pain_model, r["feats_all"])
         x = sprint_inputs(r["feats_all"], (r["e"], r["t"], r["h"]), pains)
+        drive = r["e"] if r["target"] == "food" else r["t"]
+        ben = min(restore, 100.0 - drive) / drain
         with torch.no_grad():
+            if pure:
+                p = critic.p(x)
+                costs = [f[6] * _LEN_CAP
+                         + 0.02 * max(0.0, kappa * pains[i] * 100.0 - float(p[i]) * ben)
+                         for i, f in enumerate(r["feats_all"])]
+                intr = r["intr_all"]
+                best_i = min(range(1, len(costs)), key=lambda i: costs[i])
+                chosen = best_i if costs[best_i] < costs[0] * (1.0 - _CFG.hysteresis) else 0
+                intr_c = intr[chosen]
+                return bool(intr_c == intr_c and intr_c > _INTR_EPS)
             if composed:
-                drive = r["e"] if r["target"] == "food" else r["t"]
-                ben = min(restore, 100.0 - drive) / drain
                 p = critic.p(x)
                 vals = [0.02 * max(0.0, float(p[i]) * ben - kappa * pains[i] * 100.0)
                         for i in range(len(costs))]

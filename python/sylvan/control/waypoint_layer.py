@@ -297,10 +297,9 @@ class WaypointLayer:
             from scripts.train_waypoint_pain import PainCritic as _Pain
             _ck = _torch.load(_sc, map_location="cpu", weights_only=True)
             self._sprint_form = _ck.get("form")
-            if self._sprint_form not in ("q_regression", "composed_v1"):
+            if self._sprint_form not in ("q_regression", "composed_v1", "composed_pure_v1"):
                 raise ValueError(f"ckpt sprint-critic de forme inattendue : {self._sprint_form!r} "
-                                 "(attendu 'q_regression' ou 'composed_v1' — re-entraîner via "
-                                 "train_sprint_critic)")
+                                 "(attendu q_regression / composed_v1 / composed_pure_v1)")
             # constantes MESURÉES portées par le ckpt (forme composée) — jamais fittées ici
             self._sc_kappa = float(_ck.get("kappa_data", 0.0))
             self._sc_drain = float(_ck.get("drain", 0.05))
@@ -313,9 +312,12 @@ class WaypointLayer:
             self._sprint_pain = _Pain()
             self._sprint_pain.load_state_dict(_pk["state_dict"])
             self._sprint_pain.eval()
+            _desc = ("tarification verte 100% APPRISE : longueur + 0.02·max(0, κ·douleur̂ − P̂·bén)"
+                     if self._sprint_form == "composed_pure_v1"
+                     else "remise capée sur la pénalité verte, analytique intact")
             print(f"[waypoint] CRITIQUE-SPRINT actif ({self._sprint_form}) : {Path(_sc).name} "
-                  f"(AUC_cv={_ck.get('auc_cv', 0):.3f}) — remise capée sur la pénalité verte, "
-                  f"analytique intact (douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
+                  f"(AUC_cv={_ck.get('auc_cv', 0):.3f}) — {_desc} "
+                  f"(douleur : {Path(_ck['pain_ckpt']).name})", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
@@ -442,7 +444,27 @@ class WaypointLayer:
         # verte → seuls les candidats à intrusion>0 bougent, jamais en aggravation ; l'intrusion
         # GÉOMÉTRIQUE (scored[i][1]) reste intacte pour l'aval. Sans drives connus ou cible
         # non-ressource (guard) : remise=0 ⇒ analytique pur.
-        if (self.sprint_critic is not None and self._drives is not None and greens
+        if self.sprint_critic is not None and greens and self._sprint_form == "composed_pure_v1":
+            # P2 — TARIFICATION DU VERT 100 % APPRISE (docs/design_purete_hjepa.md, gates offline
+            # 3/3) : score = longueur + 0.02·max(0, κ·douleur̂·100 − P̂·bénéfice). W/green_margin
+            # SORTENT du chemin décisionnel (ils ne survivent que dans le proposeur tangent).
+            # Sans drives/cible-ressource : bénéfice=0 → pénalité = risque appris seul.
+            import torch as _torch
+            with _torch.no_grad():
+                _pain = self._sprint_pain.pain(_torch.tensor(feats, dtype=_torch.float32))
+                _bonus = [0.0] * len(feats)
+                if self._drives is not None and target_id in ("food", "water"):
+                    from scripts.train_sprint_critic import sprint_inputs
+                    _p = self.sprint_critic.p(sprint_inputs(feats, self._drives, _pain.tolist()))
+                    _drive = self._drives[0] if target_id == "food" else self._drives[1]
+                    _ben = min(self._sc_restore, 100.0 - _drive) / self._sc_drain
+                    _bonus = [float(_p[i]) * _ben for i in range(len(feats))]
+            scored = [(math.hypot(w[0], w[1])
+                       + math.hypot(target_pos[0] - w[0], target_pos[1] - w[1])
+                       + 0.02 * max(0.0, self._sc_kappa * float(_pain[i]) * 100.0 - _bonus[i]),
+                       scored[i][1])
+                      for i, w in enumerate(cands)]
+        elif (self.sprint_critic is not None and self._drives is not None and greens
                 and target_id in ("food", "water")):
             import torch as _torch
             from scripts.train_sprint_critic import sprint_inputs
