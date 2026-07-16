@@ -67,3 +67,15 @@ ordre s2(a), s2(b), s1(a), s1(b) — le paquet dur d'abord (kill précoce possib
 - **KILL** : un seed montre (b) < (a) en repas (contradiction directionnelle à N=24).
 - Entre les deux → toujours non-conclu → décision owner (N=36 ou autre design).
 Bruit attendu sur totaux de 24 : ~±5 (SD 12-vies ~3.5 ×√2) ; signal attendu si réel : +8-12.
+
+## ⭐⭐ VERDICT G-PLACE 24 VIES (2026-07-17 matin) : DIRECTION CONFIRMÉE 4/4, BARRE STRICTE MANQUÉE SUR UN SEED
+| seed | (a) géométrie | (b) oracle | Δ repas (gate ≥+8) | Δ morts (gate ≤+2) |
+|---|---|---|---|---|
+| 2 | 15 / 5 | 24 / 6 | **+9 ✓** | +1 ✓ |
+| 1 | 19 / 6 | 23 / 3 | **+4 ✗** | **−3** ✓ |
+Cumul 48 vies/bras : (a) 34 repas/11 morts vs (b) **47 repas/9 morts** → +13 repas ET −2 morts.
+L'oracle **Pareto-domine** la géométrie sur les DEUX seeds (plus de repas ET, au seed 1, moitié
+moins de morts — il a converti l'avantage en sécurité plutôt qu'en repas). Mais le critère global
+pré-enregistré (≥+8 sur CHAQUE seed) n'est pas atteint → per pré-enregistrement : NON-CONCLU strict,
+décision owner. Évidence accumulée : 4/4 comparaisons favorables (2 N, 2 seeds), signal poolé +13
+(bruit poolé ~±10). Corpus instrumentés (decisions.jsonl ×4) sur disque pour le chantier apprenant.
