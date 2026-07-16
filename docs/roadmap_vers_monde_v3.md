@@ -19,13 +19,17 @@ diagnostiqué ; juge closed-loop poolé (bruit ±5 repas/24 vies) ; négatif = c
 
 ## Les chantiers, dans l'ordre
 
-### 1. Perception par la CONSÉQUENCE (prêt — prompt écrit)
-« Dangereux = ce qui a précédé mes dégâts » : saillance apprise sur rétine brute, remplace la
-règle « danger = vert » + dé-contamine les entrées des têtes (douleur̂, P̂mort). Puis volet 2
-(licence séparée) : « nourrissant = ce qui a soulagé le drive » — les requêtes-couleur des slots
-WM remplacées par le lien consommation appris. **Sortie : plus aucune variable clé-apparence dans
-la boucle décisionnelle.** Prérequis de TOUT enrichissement du monde (sinon on débogue monde et
-perception en même temps). Juge : parité avec la réf vivante (≥40 repas ET ≤10 morts poolés).
+### 1. Perception par la CONSÉQUENCE (EN COURS, branche feat/perception-consequence)
+« Dangereux = ce qui a précédé mes dégâts ». État au 2026-07-17 : la lunette saillance-danger
+APPRISE du vécu est VALIDÉE offline (MIL max-pool sur rétine brute, labels = dégâts ; AUC 0.997,
+identique à la règle verte sur 100 % des 14 003 décisions, portée ρ̂=0.63 m apprise) et les têtes
+dg sont dé-contaminées à l'EXACT (0 ligne divergente). Le juge du remplacement-des-MARGES a dit
+NON (29/14) : le standoff 1.0 est une PRÉFÉRENCE DU CORPS (jumeau spatial de P2-bis : survivre
+exige l'aversion, pas l'espérance vécue) ; lunette innocentée. Bras vivant visé = MIXTE :
+lunette apprise + marges-standoff du corps (licencié owner). Reste ensuite le volet 2 (licence
+séparée) : « nourrissant = ce qui a soulagé le drive », les requêtes-couleur des slots WM.
+**Sortie : plus aucune variable clé-apparence dans la boucle décisionnelle.** Prérequis de TOUT
+enrichissement du monde. Juge : parité avec la réf vivante (≥40 repas ET ≤10 morts poolés).
 
 ### 2. Jour/nuit v1 — têtes seules (le plus petit cycle qui VIT)
 Jour = vies avec ε au MANAGER (machinerie existante ; la collecte déterministe est prouvée
