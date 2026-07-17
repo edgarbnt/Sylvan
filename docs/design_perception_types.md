@@ -164,7 +164,13 @@ mesuré d'avance comme non-attendu à jitter 0.15 (baseline main 23/9 tient) ; l
 valeur = le GATE-CAPACITÉ (swap d'apparence), qui exige encore 2 pièces : déclencheur de re-mesure
 (build périodique — l'embryon jour/nuit) + bouton Godot swap-au-tick-T. Dettes : multi-seed >1+2 ;
 parité monde-PLAT du WM typé non mesurée closed-loop (positions offline ≈ exactes, méd 0.000 m).
-Promotion = décision owner (parité + pureté totale acquises ; capacité = le BUT restant).
+**PROMU (owner, 2026-07-17 soir) : WM typé + monde varié = nouvelle config vivante** (kin_haz =
+secours requêtes-main ; nouvelle réf vivante = **42/10 en monde varié** ; dettes : multi-seed
+>1+2, parité monde-plat closed-loop). La sortie du chantier est atteinte : **plus aucune variable
+clé-apparence dans la boucle décisionnelle** — apparences danger ET ressources apprises du vécu,
+lien type→drive découvert, marges mesurées, standoff/aversion = corps déclaré. Le GATE-CAPACITÉ
+(swap d'apparence, avec déclencheur de re-mesure = embryon jour/nuit) devient le chantier suivant
+sur cette base.
 
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
