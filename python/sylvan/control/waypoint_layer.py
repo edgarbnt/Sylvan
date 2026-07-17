@@ -349,6 +349,24 @@ class WaypointLayer:
                   f"(ρ̂ mesuré={float(_sk.get('rho_hat', 0)):.2f} m) ; marges du CORPS conservées "
                   f"({self.cfg.green_margin:.2f}/{self.cfg.tangent_margin:.2f} m, standoff déclaré)",
                   flush=True)
+        # VOIE B (chantier obstacle) : lentille d'AFFORDANCE apprise (blocage du mouvement, appris du
+        # commandé-vs-réel) → ses points-obstacles sont FUSIONNÉS dans la MÊME machinerie d'intrusion que
+        # le danger (validation en monde food+obstacle, sans danger ; marge dédiée = étape future). Opt-in
+        # SYLVAN_WP_OBSTACLE ; défaut None = bit-identique.
+        self.obstacle = None
+        self._obs_thr = 0.5
+        _obs = os.environ.get("SYLVAN_WP_OBSTACLE")
+        if _obs:
+            import torch as _torch2
+            from scripts.train_obstacle_affordance import SAL_THR as _OTHR, ObstacleAffordance
+            _ok = _torch2.load(_obs, map_location="cpu", weights_only=True)
+            self.obstacle = ObstacleAffordance()
+            self.obstacle.load_state_dict(_ok["state_dict"])
+            self.obstacle.eval()
+            self._obs_thr = float(_ok.get("thr", _OTHR))
+            print(f"[waypoint] LENTILLE OBSTACLE (voie B) active : {Path(_obs).name} "
+                  f"(AUC={_ok.get('auc_cv', 0):.3f}, ρ̂={float(_ok.get('rho_hat', 0)):.2f} m) — "
+                  f"affordance de BLOCAGE apprise du commandé-vs-réel", flush=True)
         if self.explore_eps > 0.0:
             print(f"[waypoint] EXPLORATION active : ε={self.explore_eps} (uniforme sur les candidats, "
                   f"collecte seulement) — corpus contrasté pour le critique-waypoint", flush=True)
@@ -359,8 +377,13 @@ class WaypointLayer:
         règle verte codée-main — UN seul point de dispatch, decide/guard le partagent."""
         if self.saliency is not None:
             from scripts.train_danger_saliency import saliency_points
-            return saliency_points(self.saliency, retina, self._sal_thr)
-        return green_points(retina)
+            pts = list(saliency_points(self.saliency, retina, self._sal_thr))
+        else:
+            pts = list(green_points(retina))
+        if self.obstacle is not None:                      # VOIE B : ajoute les points-obstacles perçus
+            from scripts.train_obstacle_affordance import obstacle_points
+            pts += obstacle_points(self.obstacle, retina, self._obs_thr)
+        return pts
 
     def reset(self) -> None:
         self.wp: tuple[float, float] | None = None

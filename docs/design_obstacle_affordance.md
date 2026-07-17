@@ -225,6 +225,20 @@ bloqués **100 %** vs libres 20 % (le label NE regarde PAS la couleur). → lice
   sélectivité juste, puis G3. PROCHAIN quel que soit le choix : `_obstacle_lens` + `SYLVAN_WP_OBSTACLE`
   dans `waypoint_layer.py` (jumeau du swap `_lens`, marge de standoff DÉCLARÉE, pas la ρ̂ réfutée) → G3.
 
+**INTÉGRATION FAITE (2026-07-18) + FINDING G3-monde (honnête).** `waypoint_layer.py` : `SYLVAN_WP_OBSTACLE`
+charge la lentille apprise (opt-in, défaut OFF bit-identique) ; `_lens` fusionne les points-obstacles
+dans la MÊME machinerie d'intrusion que le danger (validation food+obstacle, sans danger). Vérifié : la
+lentille se charge (AUC 1.0, ρ̂ 0.63 m), l'étage waypoint tourne. **MAIS le smoke A/B est INCONCLUSIF** :
+aware (3 repas / 12 frames près-du-mur) ≈ blind (3 repas / 0). Cause DIAGNOSTIQUÉE = le mur OCCULTE la
+bouffe → le slot single-food se vide → l'agent **PERD sa cible et erre** AVANT d'atteindre le mur → il
+ne l'ENGAGE jamais → le contournement n'est pas exerçable. **C'est un finding structurel** : contourner
+un obstacle OCCLUANT exige une **persistance de cible (mémoire)** ; sans elle, l'agent erre. → G3 doit
+soit (a) un monde NON-occluant (obstacle DÉCALÉ à côté du trajet, bouffe visible, protubérant dans le
+chemin → contournement pur, testable sans mémoire), soit (b) activer la mémoire de slot (module
+`memoire_spatiale`, partiel) — ce qui **révèle la dépendance à la mémoire = le chantier suivant**. Voie
+B (perception+intégration) est bâtie et branchée ; la preuve-en-vies du contournement attend ce choix
+de monde G3.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
 transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les
