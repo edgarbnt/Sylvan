@@ -64,6 +64,22 @@ avance) ; ou il décroche (on l'apprend maintenant, sur un ingrédient isolé et
 « v3 complet » où ce serait mêlé à cinq autres changements et impossible à diagnostiquer).
 C'est le bon test de généralité du WM — à faire tôt, seul.
 
+### ⭐ VERDICT DIAG WM (2026-07-17, `diagnostics/diag_wm_appearance_robustness.py`, 0 run) : **CHEAP**
+Perturbations synthétiques des rétines réelles (jitter de teinte, bruit de texture par-rayon,
+désaturation), 3000 ticks, WM gelé `wm_objcentric_kin_haz`. Étalon = dérive latente NATURELLE
+tick-à-tick (0.044). Au niveau modéré réaliste (teinte 20° / σ 0.05 / désat 0.4), la dérive du
+LATENT = **0.1-0.2× la dérive naturelle** (0.34× même au plus fort) → le latent bouge MOINS qu'un
+pas de vie normal. **Le substrat gelé est ~invariant à l'apparence : pas de recollecte WM requise.**
+Lecture : l'apparence vit dans le SLOT (readout), pas dans le latent de dynamique — cohérent avec
+l'archi. L'objection « le bump est le mouvement le plus cher » TOMBE : le bump = retrain léger de
+la requête seule, WM intouché.
+⚠️ Limite honnête (mesurée) : le slot montre 0.000 m de dérive et 100 % de visibilité gardée à
+TOUTES les magnitudes — non pas parce que la requête est robuste, mais parce que les perturbations
+sont restées AU-DESSUS du seuil cosinus 0.55 (couleurs saturées du monde-jouet). Donc le diag
+dé-risque le SUBSTRAT (établi), pas la requête face à un rendu réel désaturé/texturé (sous-testé
+ici) — mais la requête est la pièce qu'on remplace de toute façon ; son comportement réel se
+mesure au check open-loop du vrai bump.
+
 ## Prochain pas — plan de réouverture (PRÉ-NOTÉ, rien lancé)
 1. **Bump apparences** (opt-in Godot, défaut OFF = bit-identique) : les 3 types rendus avec de la
    variété intra-type (teinte/texture/forme), même `retina_color` moyen.
