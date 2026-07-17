@@ -133,6 +133,27 @@ par la saillance P5.)
   si bruité → 2ᵉ collecte seed, dette notée).
 Prochain : Unité automatisation (slot marge-par-requête + `build_typed_slots`) sur ce corpus.
 
+## ⭐⭐ VERDICT AUTOMATISATION (2026-07-17 soir, `build_typed_slots.py`) : **4/4 GATES — WM TYPÉ ÉMIS**
+Chirurgie slot préalable : marge PAR-REQUÊTE (buffer non-persistant, défaut 0.55) **prouvée
+bit-identique** (empreinte 6/6 sur rétines réelles, rétro-compat ckpt, effet par-slot isolé,
+dfd91fd). Puis build (mesure pure, zéro gradient, zéro retrain) :
+- **G-sep ✓ G-cluster ✓** : K=3 découvert (silhouette 0.848), prototypes = couleurs RENDUES vraies
+  (cos 0.9967-1.0000). Les requêtes apprises sont à cos **0.87-0.98 des requêtes main** — de
+  vraies couleurs du monde, pas les séparateurs idéalisés.
+- **⭐ MUR B RÉSOLU PAR LA MESURE** : marges mesurées **0.81 (food) / 0.86 (water) / 0.92
+  (danger)** — toutes AU-DESSUS du 0.55 historique. Le verrou P6 (cos(bleu-vrai, vert-vrai)=0.61 >
+  0.55 ⇒ fuite structurelle) est dissous : 0.61 < 0.86 ⇒ zéro fuite avec les marges apprises.
+  Le seuil n'est plus une constante d'appareil imposée : il émerge de l'écart réel entre groupes.
+- **⭐ MUR A RÉSOLU SUR DONNÉES RÉELLES** : le POOLING GRATUIT (10 runs plats + varié = 226
+  reliefs E / 302 T — les couleurs plates vivent dans les clusters appris, zéro collecte) donne la
+  bijection correcte : rouge→énergie (P=0.0150), bleu→soif (0.0145), **vert→dégâts (0.3204, et
+  P(énergie|vert)=0.0018 = 8× sous le rouge)** — le blocage tient malgré le confond 70 %
+  vert-nearest mesuré au repas. Le lien slot→drive est DÉCOUVERT, plus écrit.
+- **G-slot ✓** : positions du slot typé vs oracle rendu — méd 0.000/0.000/0.052 m, p90 ≤ 0.48 m.
+**Émis** : `data/checkpoints/wm_objcentric_kin_typed/wm_best.pt` (WM GELÉ ; seuls color_queries
+(buffer) + meta changent ; meta porte query_thr + provenance + table de liaison). NON promu —
+restent : smoke 3 vies → juge parité/valeur → GATE-CAPACITÉ (swap d'apparence).
+
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
    synthétique. Échec → corriger la reco, pas Godot.
