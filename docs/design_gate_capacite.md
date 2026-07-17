@@ -62,6 +62,16 @@ Interdits : re-mesure = MESURE (pas de gradient) ; N (période) et Δ (magnitude
 ajustés pour passer un gate ; pas d'oracle (le swap-hue du monde n'est ni entrée ni label — juste
 la physique du monde qui change).
 
+## ⭐ VERDICT G-pré-swap (2026-07-17, offline sur typcorp, 0 run) : **PASSÉ + contrainte découverte**
+La mesure SUIT un swap vers une couleur LIBRE : food re-teinté magenta (0.83) → re-clusté
+**cos 1.0000**, re-lié **food→énergie** (jaune 0.15 idem). **Contrainte de monde établie** : un swap
+vers vert (=danger) ou cyan (≈eau) → food devient INSÉPARABLE du type existant → aucun learner ne
+peut (cousin de G-sep) → la cible du swap Godot doit être une teinte LIBRE (magenta), **déclarée,
+jamais l'inverse**. Leçon technique : swap = poser une teinte CIBLE propre (HSV, garder S/V), pas
+une grande rotation `hue_matrix` (clip → couleur distordue — 1ᵉ faux négatif du pré-gate).
+→ Godot/serveur LICENCIÉS. Reste à construire : swap Godot (teinte cible libre) + re-mesure
+périodique serveur + juge 2-bras (contrôle statique s'effondre / appris récupère).
+
 ## Critère de succès = le BUT
 Le temps-de-récupération après swap, mesuré en REPAS : bras appris ≫ bras contrôle. C'est la preuve
 DIRECTE de « survit à un changement de monde » — celle que le monde figé ne pouvait pas donner
