@@ -17,6 +17,18 @@ Pré-enregistrement avant tout run ; diag gratuit avant tout train ; budget 1 tr
 diagnostiqué ; juge closed-loop poolé (bruit ±5 repas/24 vies) ; négatif = commité ; promotion à
 ≥3 seeds (dette historique à résorber au passage) ; carte à jour dans le même commit.
 
+## ⚠️ MISE À JOUR (2026-07-17 tard) — PERCEPTION CLOSE, PROCHAIN GROS CHANTIER = CANAL OBSTACLE
+Le chantier 1 (perception par conséquence) est CLOS : danger appris (P5, promu), requêtes-ressource
+mesurées + lien découvert (typé, vivant), et la classe NEUTRE prouvée end-to-end (baie-buisson G0-G3,
+`docs/design_attribution_credit.md`). La dernière clé-apparence est dissoute. **Ordre RÉVISÉ (reco
+critique, owner à trancher) : le prochain gros chantier = le CANAL OBSTACLE / affordance**
+(`docs/prompt_chantier_obstacle.md`), PAS jour/nuit (chantier 2 : orthogonal + auto-confirmant +
+re-mesure fragile), PAS chercher/mémoire d'abord. Raison : les obstacles créent la TOPOLOGIE qui rend
+chercher/mémoire (chantier 3) enfin décisifs (triviaux en arène ouverte), et l'obstacle généralise
+« apparence -> conséquence » à un nouveau canal (le mouvement). Donc l'ordre ci-dessous
+(chercher/mémoire avant obstacles) est INVERSÉ. La deep-research (`docs/research_appearance_consequence.md`)
+penche pour un prédicteur d'affordance SÉPARÉ plutôt que l'absorption dans le WM ; un diag gratuit tranche.
+
 ## ⚠️ CHANTIER COURANT TRANCHÉ (2026-07-17 soir, owner) — PURETÉ-DU-MONDE AU MAX D'ABORD
 Décision : pousser le curseur de pureté-du-monde à son maximum atteignable AVANT tout gros build.
 Cible unique et bien scopée = **reconnaissance des types d'objets** (requêtes-couleur + lien
