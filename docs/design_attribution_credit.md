@@ -107,6 +107,26 @@ cœur du danger = confond Mur-A résiduel sur les DÉGÂTS, traité ailleurs par
 n'affecte pas la liaison énergie/neutre). Refinement banké : **le plancher-neutre se MESURE par
 placebos même-structure**, pas par un indice aléatoire indépendant.
 
+## ⭐ VERDICT G1 (2026-07-17, `food_manager.gd` buisson + `diag_credit_g1.py`, corpus rendu) : PASSÉ
+Buisson NEUTRE rendu dans Godot (opt-in `SYLVAN_FOOD_BUSH*`, défaut OFF bit-identique, PERCEPTIBLE
+layer 8, SANS drive/consommation/physique — jamais dans `_positions`), co-localisé à la baie
+(offset ±0.30 m, petit r=0.20 → co-perçu sans occulter) + buissons DISPERSÉS + baies parfois seules.
+**Propriétés du MONDE déclarées** : teinte **0.45** (teal, dans le trou vert-bleu ; choisie par
+mesure — voir ci-dessous), co-loc `_bush_p=0.9`, `_bush_alone=1`. Corpus 16 vies (kin base WM,
+food-only WC=0 COST=mindist pour une nav propre). Mesures : **(a) co-occurrence au repas 0.67**
+(21 repas ≥20) ✅ ; **(b) décorrélation** baies-seules 199 / buissons-seuls 8553 ✅ ; **(c)
+séparabilité** cos(baie,buisson) 0.54 ≪ intra 0.99/1.00 ✅. → **monde viable, G2 LICENCIÉ.**
+
+**Découverte mesurée (importante) : PAS de « zone morte » de couleur** — sous les requêtes du WM
+vivant (typé, marges 0.81/0.86/0.92), TOUTE teinte saturée fire au moins un slot (les 3 requêtes +
+marges couvrent tout le cercle des teintes ; l'espace couleur est encombré). Donc pendant la
+COLLECTE avec le WM pré-buisson, un buisson coloré détourne un slot → l'agent se gare. Contourné en
+G1 par une collecte **food-only** (WM single-food, requête rouge ≠ teal). **La neutralité réelle du
+buisson sous le WM complet viendra de G2** (re-mesure des requêtes+marges AVEC le cluster buisson →
+la marge du voisin se resserre pour l'exclure — c'est tout le point du chantier). Note : co-occ
+~0.6 (pas 0.9) = géométrie (petit buisson parfois occulté au repas) ET **favorable à
+l'identifiabilité** (plus de décorrélation).
+
 ## Ce qu'on ne touche JAMAIS
 WM (gelé, invariant à l'apparence), readout géométrique du slot, transport, corps/physique (pas
 d'obstacle ici), les drives eux-mêmes. On ne change QUE l'étage de LIAISON (argmax → ΔP + neutre) +
