@@ -1,0 +1,170 @@
+# Design — Canal OBSTACLE / affordance physique : première conséquence NON-homéostatique, pré-inscrit 2026-07-17
+
+## Mission
+Prouver, **en vies**, que l'entité **CONTOURNE** un obstacle qui bloque son mouvement (au lieu de
+foncer dedans), **sans aucun coût-obstacle codé-main dans la boucle de décision** — la réaction est
+**APPRISE / ÉMERGENTE** du seul vécu. C'est le **PREMIER canal de conséquence NON-homéostatique** :
+la conséquence porte sur le **mouvement**, pas sur les drives (faim/soif/santé). C'est la
+généralisation de « apparence → conséquence apprise » (chantier baie-buisson **clos**, G0-G3 PASS) à
+une **nouvelle nature de conséquence**. Et ça crée la **TOPOLOGIE** (détours, impasses, occlusions)
+qui rendra *chercher + mémoire* enfin décisifs (aujourd'hui triviaux en arène ouverte).
+
+## À lire d'abord
+- `docs/research_appearance_consequence.md` **AXE 3** (la synthèse de recherche : « absorber
+  l'obstacle DANS le WM » est LE PLUS MINCE en sources — une seule réf vague — la littérature
+  préférant un **prédicteur d'affordance séparé** appris du signal commandé-vs-réel).
+- `docs/design_attribution_credit.md` (le **patron** du chantier précédent : pré-inscription,
+  gates cheaper-first, G0 gratuit qui gate le cher, négatif commité).
+- `docs/design_perception_types.md` (le WM typé = la base perceptive vivante).
+- `memory/MEMORY.md` + fin de `memory/sylvan-mode1-build.md`.
+
+## Pourquoi ce canal, et pourquoi maintenant
+1. **Premier canal non-homéostatique.** Jusqu'ici toute conséquence apprise était un drive
+   (rouge→énergie, bleu→soif, vert→dégâts). Le blocage du mouvement est une conséquence d'une
+   **autre nature** — la brique manquante pour une famille de conséquences ouverte et hétérogène
+   (research AXE 1).
+2. **Le coût paie par CANAL (un sens fixé au corps), pas par objet.** Le canal-mouvement payé UNE
+   fois → toute la famille des affordances physiques (bloque / traverse / ralentit) arrive
+   **découverte**, zéro code par objet. C'est le même contrat que « une tête par pulsion » (§3
+   CLAUDE.md), étendu à un canal sensori-moteur.
+3. **La topologie débloque le vrai mur de capacité.** `docs/roadmap_vers_monde_v3.md` (encart
+   2026-07-17 tard) inverse l'ordre : obstacles AVANT chercher/mémoire, parce qu'en arène ouverte
+   chercher/mémoire sont triviaux. Les détours/occlusions de l'obstacle sont ce qui les rend
+   décisifs.
+
+## Le principe (à garder honnête — §2, §3 CLAUDE.md)
+- **MONDE / physique / sens = donnés légitimes** (§3). Un solide qui bloque le corps est une
+  addition **PHYSIQUE** (couche CORPS/MONDE). La **RÉACTION** (contourner) est **APPRISE ou
+  ÉMERGENTE**, JAMAIS un `if gris then évite` ni un coût-obstacle codé-main dans la décision.
+- **Coût par CANAL, pas par objet.** Le canal-mouvement est écrit/fourni UNE fois ; l'apparence de
+  l'obstacle et son effet (bloque) sont **découverts**.
+- **Critère de pureté (le test officiel « ça survit à un changement de monde ? ») :** si l'apparence
+  de l'obstacle change, l'entité **ré-apprend** qu'il bloque — elle ne présume rien de la couleur.
+
+## État à la reprise (rien à re-découvrir)
+- WM vivant = `wm_objcentric_kin_typed` (perception 100 % apprise au sens connaissance-du-monde).
+- **Le corps cinématique glisse par TÉLÉPORTATION** (`sylvan_agent.gd` `_kinematic_step`,
+  `PhysicsServer3D.body_set_state`) : il **NE respecte PAS les solides** aujourd'hui. Un obstacle
+  bloquant exige une addition **physique du CORPS** (shapecast / collision avant le glide), jamais le
+  cerveau.
+- Le buisson (chantier précédent) a établi le patron d'**ingrédient-monde opt-in, défaut OFF,
+  bit-identique** (`food_manager.gd`, flags `SYLVAN_FOOD_BUSH*`) : le reprendre pour l'obstacle.
+
+## Les deux voies (le diag G0 en TRANCHE une)
+- **Voie A — « absorber dans le WM ».** Re-collecter + fine-tuner le WM avec des interactions
+  d'obstacle pour que la dynamique `(vx,ω)→déplacement` encode le blocage ; le planner MPC évite
+  alors **par rollout**, zéro coût codé. **Séduisante** (pas de nouveau module, pureté maximale) mais
+  **PEU ÉTAYÉE** (research AXE 3 : une seule réf vague) **et COÛTEUSE** (cycle WM) — et elle frôle le
+  **SIGNAL D'ALERTE §3** (ne pas retrain le WM pour *une* ressource). À ne payer QUE si G0 prouve que
+  le WM *peut* représenter le blocage.
+- **Voie B — « prédicteur d'affordance séparé ».** Une fonction apprise `rétine → facteur de
+  blocage`, entraînée du signal **commandé-vs-réel** (le WM prédit un déplacement, le réel ≈ 0 ⇒
+  collision), **lue par le planner comme un coût** — dans la lignée **exacte** de la lunette
+  saillance-danger déjà vivante et pure. **MIEUX ÉTAYÉE** (research AXE 3 : traversabilité
+  recon-error / commandé-vs-réel + MPC).
+- **Le signal commandé-vs-réalisé est le pont des deux voies** : déplacement PRÉDIT (WM) vs RÉALISÉ
+  (proprio / odométrie), **déjà disponible, aucun nouveau capteur**.
+
+## Contrainte de monde DÉCLARÉE (viabilité — mesurée AVANT de juger l'agent, §2)
+- L'obstacle doit créer une **VRAIE place** : contourner **coûte un détour** mais reste **POSSIBLE et
+  SURVIVABLE** (portée métabolique soutenable ≥ longueur du détour). Sinon on juge des vies
+  **condamnées par l'arithmétique** (leçon plafond métabolique).
+- L'apparence de l'obstacle (couleur/teinte, taille, position) = **propriété du monde déclarée**,
+  jamais ajustée pour faire passer un gate (§2). Elle est **datée** dans ce doc au build.
+- **Séparabilité rétine** : l'obstacle est perceptible et distinct du fond et des ressources
+  (mesuré en G1, écart teinte inter > dispersion intra).
+
+## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre pas-cher-d'abord)
+
+### G0 — DIAG GRATUIT DÉCISIF (0 run, 0 Godot, 0 train). **GATE LA VOIE ET TOUT LE BUILD.**
+**Question :** le WM gelé conditionne-t-il son **déplacement prédit** sur la **PERCEPTION** (la
+rétine), ou seulement sur la **commande** (vx, ω) ? Ce diag TRANCHE la voie et évite un cycle WM
+deviné (la leçon anti-boucle §1).
+
+- **G0a — architectural (inspection, gratuit).** Le chemin de prédiction du déplacement prend-il en
+  entrée le **latent** (qui encode la rétine) ou **seulement la commande** ? *(Inspection faite :
+  `MetricsPredictionHead` = `cat([latent(128), commande(2)])` → la rétine **peut** atteindre le
+  déplacement, mais **seulement via le latent** ; et la CIBLE d'entraînement du déplacement est de la
+  cinématique corporelle pure obstacle-free → le couplage rétine→déplacement est **probablement
+  faible**, à MESURER.)* La porte architecturale est donc **ouverte** → G0b tranche.
+- **G0b — comportemental (le WM répond-il DÉJÀ à un obstacle ?).** Sur `N` obs RÉELLES du corpus
+  existant (aucun obstacle rendu — injection synthétique, façon `diag_credit_g0`), injecter un
+  **obstacle synthétique DEVANT** à courte portée dans la rétine, re-encoder, et mesurer **DEUX**
+  réponses (pour une **commande avant fixe** vx > 0, ω = 0) :
+  1. `Δ_disp = |déplacement_prédit(obstacle) − déplacement_prédit(sans)|` (le couplage
+     rétine→**déplacement**) ;
+  2. `Δ_slot = |slot_prédit(obstacle) − slot_prédit(sans)|` (le couplage rétine→**latent**, borne de
+     **REPRÉSENTABILITÉ** : le slot est le readout le plus retina-dérivé → un `Δ_slot` fort prouve que
+     l'obstacle **atteint le latent**, donc qu'un fine-tune *pourrait* le lire).
+  - **Contrôles (pré-enregistrés)** : obstacle injecté **sur le côté / derrière** (le blocage vers
+    l'avant devrait **moins** réagir → réponse spatialement sensée) ; rayon **PLACEBO** lointain /
+    non-coloré (Δ ≈ 0 attendu) ; **plancher-bruit MESURÉ** = dispersion de Δ sous injections nulles
+    (pas réglé — §2).
+
+**Verdict G0 (le SUCCÈS de G0 = TRANCHER + localiser le coût, pas valider une voie) :**
+- **`Δ_disp` significatif** (`> 3·plancher` ET `>` réponse-côté) → le WM **répond déjà** au blocage →
+  **voie A quasi-gratuite** (fine-tune léger de la tête déplacement).
+- **`Δ_disp ≈ 0` mais `Δ_slot` fort** (l'obstacle est **dans le latent**, la tête déplacement
+  l'IGNORE — issue **attendue**) → voie A **possible mais COÛTEUSE** (re-collecte obstacle +
+  fine-tune tête, l'info est là) ; **voie B lit le MÊME latent/rétine bien moins cher** (jumeau de la
+  lunette danger, pur) → **voie B recommandée** (research AXE 3 + §3).
+- **`Δ_disp ≈ 0` ET `Δ_slot ≈ 0`** (l'obstacle n'atteint même pas le latent) → voie A exigerait un
+  **retrain encodeur complet** → **voie B tranchée** sans ambiguïté.
+- **ÉCHEC G0** = diag ambigu / contrôles incohérents (réponse-côté ≥ réponse-avant, placebo ≈ signal)
+  → **re-concevoir la sonde AVANT tout build**, ne rien lancer.
+
+### G1 — Godot léger (viabilité du monde + physique du corps)
+- Ajouter un obstacle **COLORÉ bloquant**, opt-in `SYLVAN_OBSTACLE_*` **défaut OFF bit-identique**
+  (patron buisson) ; **rendu rétine** ; **AUCUN drive**, aucune consommation.
+- Le corps cinématique **RESPECTE les solides** (shapecast / `move_and_collide` avant le glide dans
+  `_kinematic_step`) = **physique du CORPS**, pas du cerveau. `main.gd` jamais stagé.
+- **MESURER** : (a) le corps **s'arrête** contre le solide → déplacement réalisé **<** commandé quand
+  un obstacle est devant (le signal du canal existe) ; (b) **VIABILITÉ** : obstacle placé entre spawn
+  et ressources → contourner reste **possible + survivable** (détour ≤ portée soutenable) ; (c)
+  **séparabilité rétine** de l'obstacle vs fond/ressources.
+- Si non-viable ou non-séparable → ajuster le **MONDE** (déclaré), **jamais le gate** (§2).
+
+### G2 — offline (apprendre l'affordance ; **selon le verdict G0**)
+- **Voie B** : entraîner le prédicteur d'affordance (`rétine → facteur de blocage`) sur le corpus G1,
+  **labels bootstrappés du commandé-vs-réel** ; MESURER AUC / séparation sol-vs-obstacle vs labels de
+  contact ; intégration planner comme **coût** (lu comme la lunette danger). WM **gelé**.
+- **Voie A** : re-collecte + fine-tune WM avec obstacles ; MESURER que le déplacement prédit chute
+  **au bon endroit** (open-loop) et que le reste (perception / position) **ne régresse pas**.
+- **Non-régression (les deux voies)** : les drives (food / water / danger) restent corrects.
+
+### G3 — juge closed-loop (payé si G0-2 passent)
+- **2×24 vies seeds 1+2**, monde avec obstacle **entre spawn et ressources**.
+- **PASS** : taux de **collision ↓** vs baseline **obstacle-aveugle** (l'entité contourne) **ET**
+  forage ≥ config vivante − bruit (l'obstacle coûte un détour sans casser la survie). **Zéro
+  coût-obstacle codé** dans la boucle de décision.
+- **KILL précoce** : seed 1 **fonce** systématiquement dans l'obstacle (collision ≈ aveugle), OU le
+  forage s'effondre.
+
+## Ce qu'on ne touche JAMAIS
+Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
+transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les
+solides** = **physique**, pas cerveau. Godot : `godot/scripts/main.gd` **jamais stagé**, `ui/`
+jamais stagé ; obstacle **opt-in défaut OFF = bit-identique**. Carte
+`tools/archi_hud/architecture.json` mise à jour **DANS LE COMMIT du build** (pas de la
+pré-inscription).
+
+## Critère de succès = le BUT
+En vies : l'entité **contourne** un obstacle qu'elle a **appris** bloquant (pas codé), **forage
+préservé**, et la réaction **survit à un changement d'apparence** de l'obstacle. Zéro code par objet :
+le **canal** (mouvement) est fourni UNE fois ; l'apparence et l'effet (bloque) sont **découverts**.
+Si PASS : premier canal de conséquence non-homéostatique appris ; la **topologie** existe → débloque
+*chercher + mémoire spatiale*. Si échec : **négatif commité**, cause diagnostiquée sur trace (le G0
+gratuit d'abord = négatif à coût nul).
+
+## Sources
+- `docs/research_appearance_consequence.md` **AXE 3** : Montesano et al., *Learning Object
+  Affordances* (IEEE T-RO 2008, réseau bayésien action-features-effet — la couleur détectée
+  non-pertinente, forme/contact retenus) ; **traversabilité par erreur de reconstruction** (81-85 %
+  vs labels, zéro label — jumeau de la lunette saillance-danger) ; **traversabilité self-supervisée
+  commandé-vs-réel + MPC** (labels bootstrappés du mouvement commandé-vs-réel = le signal exact du
+  canal) ; **évitement model-based émergent** (rollouts dans un WM appris — piste unique et vague,
+  côté voie A, **non prouvée**).
+- Composition GVF « près d'un obstacle » (Horde, AXE 1) : P(pic capteur-contact) comme affordance
+  apprise et composable.
+</content>
+</invoke>
