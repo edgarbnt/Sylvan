@@ -140,6 +140,32 @@ deviné (la leçon anti-boucle §1).
 - **KILL précoce** : seed 1 **fonce** systématiquement dans l'obstacle (collision ≈ aveugle), OU le
   forage s'effondre.
 
+## ⭐ VERDICT G0 (2026-07-17, `diagnostics/diag_obstacle_g0.py`, 0 run / 0 Godot / 0 train) : PASSÉ — voie B tranchée
+Corpus PROPRE `critic_kin_typcorp` (256 frames à **front dégagé**), WM vivant
+`wm_objcentric_kin_typed` (obs 277, 3 slots), commande avant fixe vx=0.65, obstacle synthétique
+injecté dans la rétine. **Sanity null** (obs identique) : ratio 1.000, Δ = 0 exact → sonde
+déterministe ✅.
+
+- **(1) La tête déplacement IGNORE l'obstacle** (le décisif) : obstacle gris **DEVANT proche
+  (~1.85 m)** → `d_fwd` **8.21 mm vs 8.00 mm de base, ratio 1.03** — elle ne **FREINE pas** (si quoi
+  que ce soit elle accélère très légèrement = réponse anti-blocage, pur bruit de perturbation).
+  `|Δdisp|` = 0.17 mm (~2 %), **sans sélectivité spatiale** : DEVANT 0.17 ≈ DERRIÈRE 0.16 ≈ CÔTÉ 0.10
+  ≈ LOINTAIN 0.12 mm (tous dans la bande-bruit) → la tête n'a **aucun modèle d'obstacle**. Attendu :
+  sa cible d'entraînement = cinématique corporelle pure, monde **sans** obstacle.
+- **(2) MAIS l'obstacle ATTEINT le latent** (représentabilité) : `Δlatent(1−cos)` DEVANT **0.0118**
+  vs null **0.00000** (le latent qui nourrit la tête déplacement bouge bien) ; `Δslot` du readout
+  requêté (vert devant) **6.58 m** (la perception object-centric répond fortement). L'information de
+  l'obstacle est **présente dans le latent** — la tête déplacement la laisse simplement tomber.
+
+**➜ VERDICT : issue 2/3 pré-enregistrée (`Δ_disp ≈ 0` mais `Δ_latent`/`Δ_slot` fort) → VOIE B
+(prédicteur d'affordance séparé).** La voie A (« absorber dans le WM ») n'est **pas**
+architecturalement impossible (l'info est dans le latent) mais exigerait une re-collecte obstacle +
+fine-tune du WM (cycle coûteux, SIGNAL D'ALERTE §3) pour un gain modeste ; la voie B lit le **même
+latent/rétine** comme un coût planner — **jumeau exact de la lunette saillance-danger déjà vivante et
+pure** (research AXE 3 : la voie la mieux étayée). Le diag a **tranché à coût nul** (0 run) = la
+discipline anti-boucle §1 respectée. **PROCHAIN = G1** (obstacle bloquant Godot + le corps
+cinématique respecte les solides + viabilité du monde mesurée).
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
 transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les
