@@ -197,6 +197,34 @@ séparable. Harnais : `scripts/collect_obstacle_g1.sh`. **PROCHAIN = G2** : entr
 d'affordance (voie B) sur le signal commandé-vs-réel (le WM prédit un déplacement, le réel ≈ 0 ⇒
 blocage), lu par le planner comme un coût — jumeau de la lunette saillance-danger.
 
+## ⭐ VERDICT G2 (2026-07-18, en cours) : infra + G2-0 PASS + prédicteur entraîné (sélectivité OOD = dette)
+**Infra label** (commité) : champ `torso` (pose x,z,yaw) ajouté au payload Godot→serveur
+(`policy_player.gd` whitelist) + loggé dans le BC_LOG (`serve_planner_command.py`, `wm.torso0`) + hook
+local `main.gd` (non stagé) → **déplacement RÉALISÉ** disponible = le label commandé-vs-réel.
+
+**G2-0 (GRATUIT, `diag_obstacle_g2.py`) : PASSÉ** — label auto-supervisé « commandé avant + réalisé ≈ 0
+APRÈS avoir bougé » (exclut le reset) = **1230 bloqués / 4916 libres** ; profondeur devant méd bloqué
+**0.70 m** vs libre **10.0 m** → **AUC(géométrie seule) = 1.000** (apprenable) ; obstacle cyan devant :
+bloqués **100 %** vs libres 20 % (le label NE regarde PAS la couleur). → licencie l'entraînement.
+
+**Prédicteur entraîné** (`train_obstacle_affordance.py`, jumeau `DangerSaliency` : MIL max-pool
+`s(rgb)·g(dist)`, BCE + parcimonie, `obstacle_points()` déployable) :
+- **(G-auc) AUC CV-par-segment = 1.000** ✅ — apprend « bloqué » du seul label moteur ; **ρ̂ = 0.63 m** appris.
+- **(G-sel) sélectivité** : `s(cyan)=1.00` (obstacle) ✅, **`s(rouge)=0.00`** (bouffe) ✅ — **il a DÉCOUVERT,
+  du SEUL label moteur, que la bouffe ne bloque PAS et l'obstacle si** (le résultat central : la
+  discrimination appearance-agnostic MARCHE). **MAIS `s(bleu)=1.00`, `s(vert)=1.00`** ❌.
+- **Diagnostic honnête (§2)** : bleu/vert sont **HORS-DISTRIBUTION** — le monde d'entraînement était
+  food-only + obstacle (seules couleurs présentes : rouge + cyan) → la MLP d'apparence extrapole
+  n'importe comment sur une teinte jamais vue. Ce n'est PAS un échec de la méthode ; c'est que le
+  prédicteur ne peut être sélectif que sur les couleurs **vues**. AUC=1.0 reflète aussi un monde SIMPLE
+  (un seul type de bloqueur). **DETTE** : pour un monde multi-drive, ré-entraîner sur un corpus
+  CONTENANT eau(bleu)+danger(vert) comme NÉGATIFS (perçus, non-bloquants) → sélectivité robuste.
+- **Deux voies pour la suite** (choix owner) : (i) **intégrer + G3 en monde food+obstacle** (couleurs
+  bleu/vert ABSENTES → le prédicteur cyan-sélectif suffit, pas de faux positif) et noter la dette
+  multi-drive ; (ii) **d'abord ré-collecter en monde riche** (food+eau+danger+obstacle) pour une
+  sélectivité juste, puis G3. PROCHAIN quel que soit le choix : `_obstacle_lens` + `SYLVAN_WP_OBSTACLE`
+  dans `waypoint_layer.py` (jumeau du swap `_lens`, marge de standoff DÉCLARÉE, pas la ρ̂ réfutée) → G3.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
 transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les

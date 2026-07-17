@@ -424,6 +424,7 @@ class _PlannerService:
         water_fine = list(payload.get("vision_water") or [])
         thirst = float(payload.get("thirst", 100.0))
         health = float(payload.get("health", 100.0))   # MONDE v2 : additif (ancien Godot → 100 = plein)
+        torso = list(payload.get("torso") or [])        # G2 obstacle : pose (x,z,yaw) → déplacement RÉALISÉ pour le label commandé-vs-réel (absent = [] = non-régression)
         with self._lock:
             # RE-MESURE PÉRIODIQUE (embryon jour/nuit) : bufferise CE tick, applique si la fenêtre
             # est due. Absent (self.remeasure is None, défaut) : bloc entier sauté, non-régression.
@@ -594,6 +595,7 @@ class _PlannerService:
                     "wm": {
                         "retina0": retina,
                         "cmd":     [float(vx), float(om)],
+                        "torso0":  torso,   # G2 obstacle : pose (x,z,yaw) réalisée ([] si Godot ne l'envoie pas)
                     },
                 }
                 # CIBLE DU PLANNER (clé additive, seulement au tick du replan) : la ressource que le

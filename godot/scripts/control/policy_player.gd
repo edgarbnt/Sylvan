@@ -99,6 +99,7 @@ func predict_planner(obs: Dictionary) -> Dictionary:
 		"health": obs.get("health", 100.0),          # MONDE v2 : santé 0..100 (l'arbitrage du sprint
 		                                             # douloureux en a besoin ; additif, serveur tolérant)
 		"retina": obs.get("retina", []),             # RÉTINE étage 1: rayons couleur bruts → localisation apprise
+		"torso": obs.get("torso", []),               # G2 obstacle : pose (x,z,yaw) réalisée → label commandé-vs-réel (additif, serveur tolérant)
 		# Signal EXPLICITE de frontière d'épisode (Mode-1 collecte RL) : additif, ignoré par les autres
 		# serveurs. episode_step = index de pas DANS l'épisode (remis à 0 au respawn) ; prev_term = raison
 		# de fin de l'épisode PRÉCÉDENT, lisible au 1er tick du nouvel épisode ("death"/"truncated"/"none").
