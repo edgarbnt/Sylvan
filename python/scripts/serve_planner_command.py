@@ -158,6 +158,14 @@ class _PlannerService:
         wm.food_idx = meta.get("food_idx", 0)
         wm.water_idx = meta.get("water_idx")
         wm.hazard_idx = meta.get("hazard_idx")   # 3ᵉ slot danger (WM construit par build_hazard_slot) — None sinon
+        # MARGES PAR-REQUÊTE (P6-reopen) : le WM TYPÉ (build_typed_slots) porte des seuils MESURÉS
+        # par type dans meta — le buffer (non-persistant, défaut 0.55 = historique) les reçoit ici.
+        _qthr = meta.get("query_thr")
+        if _qthr is not None and getattr(wm.slot_encoder, "query_thr", None) is not None:
+            with torch.no_grad():
+                wm.slot_encoder.query_thr.copy_(torch.tensor(_qthr, dtype=torch.float32))
+            print(f"[planner-cmd] MARGES PAR-REQUÊTE (mesurées) : "
+                  f"{[round(float(v), 3) for v in wm.slot_encoder.query_thr]}")
         if meta.get("slot_resources", 1) > 1:
             print(f"[planner-cmd] SLOT-2 actif : {meta['slot_resources']} slots requêtés-couleur "
                   f"(food_idx={wm.food_idx}, water_idx={wm.water_idx}) → l'eau quitte l'oracle EMA")

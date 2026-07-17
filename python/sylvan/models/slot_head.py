@@ -53,8 +53,17 @@ class SelfSupervisedSlotHead(nn.Module):
             # (le violet fuyait dans les deux). Byte-identique pour n_resources ≤ 2 (le slice garde red,blue).
             q = torch.tensor([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]][:n_resources])
             self.register_buffer("color_queries", q / q.norm(dim=-1, keepdim=True))
+            # MARGE PAR-REQUÊTE (chantier P6-reopen, docs/design_perception_types.md — fix du Mur B) :
+            # le seuil GLOBAL 0.55 faisait deux boulots (décrire l'affinité ET séparer les types) —
+            # avec des requêtes APPRISES (couleurs vraies : cos(bleu-vrai, vert-vrai)=0.61 > 0.55),
+            # un seuil global fuit structurellement. La marge devient PAR TYPE, MESURÉE de l'écart
+            # réel entre groupes d'apparence (build_typed_slots). persistent=False : absent du
+            # state_dict → tous les checkpoints existants chargent inchangés ; défaut 0.55 partout
+            # = BIT-IDENTIQUE au seuil historique ; le WM typé la porte via meta["query_thr"].
+            self.register_buffer("query_thr", torch.full((n_resources,), 0.55), persistent=False)
         else:
             self.color_queries = None
+            self.query_thr = None
 
     def _attend(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Shared helper: returns (dist, sal, a_list) without allocating positions.
@@ -77,7 +86,8 @@ class SelfSupervisedSlotHead(nn.Module):
             rgb = r[..., 1:4]
             rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)     # [..., NRAY, 3]
             aff = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)  # [..., K, NRAY]
-            aff = (aff - 0.55).clamp(min=0.0)
+            # marge PAR-REQUÊTE [K,1] broadcast sur [..., K, NRAY] (défaut 0.55 = bit-identique)
+            aff = (aff - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
             # SOFTMAX MASQUÉ (K>1) : le gating saillance×affinité×proximité entre DANS le softmax
             # comme log-prior. Leçon (slot-eau effondré, 2026-07-04) : gater APRÈS le softmax crée une
             # région morte — le scoreur peut fuir les rayons de sa couleur (masse gatée → 0, position →
@@ -168,7 +178,8 @@ class SelfSupervisedSlotHead(nn.Module):
         if self.color_queries is None:
             return sal.amax(-1, keepdim=True).expand(*sal.shape[:-1], self.n_resources)
         rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
-        aff = (torch.einsum("...nc,kc->...kn", rgbn, self.color_queries) - 0.55).clamp(min=0.0)
+        aff = (torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)
+               - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
         return (aff * sal.unsqueeze(-2)).amax(-1)
 
     @torch.no_grad()
