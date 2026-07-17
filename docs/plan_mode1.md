@@ -1,8 +1,6 @@
 # Mode-1 — Plan d'implémentation (phasé par gates)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
-> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
-> Spec de référence : `docs/design_mode1.md`. Gate-0 ✅ déjà PASS (la rétine porte le signal courte-portée).
+> Spec de référence : `docs/design_mode1.md`. Gate-0 déjà PASS (la rétine porte le signal courte-portée).
 
 **Goal:** Une politique APPRISE drive-symétrique qui décide `(vx,ω)` pour survivre à plusieurs pulsions, à la
 place du coût designed du planner — model-free PPO, perception rétine, warm-start BC, récompense = douleur
