@@ -85,6 +85,28 @@ régression) ; sur les trames **baie-seule**, erreur de position/visibilité du 
   slot food **ne se verrouille jamais sur la couleur-buisson** (pas de poursuite de buissons).
 - **KILL précoce** : seed 1 sous le seuil de repas, OU le buisson détourne le slot food.
 
+## ⭐ VERDICT G0 (2026-07-17, `diag_credit_g0.py`, 0 run / 0 Godot / 0 train) : PASSÉ — mécanisme validé
+Corpus PROPRE poolé (typcorp + 6 runs, 267 137 ticks-contact) + buisson synthétique injecté (baie
+DANS un buisson **92 %**, buissons vides **1 %** = décorrélation ; **83 % des repas en buisson**).
+K=3 retrouvé (rouge/vert/bleu). **Plancher-bruit MESURÉ (pas réglé)** = p95 `|coeff|` d'un placebo
+**MÊME-STRUCTURE** (même fréquence + même collinéarité 92 % avec la baie — un indice quasi-collinéaire
+a une variance de coeff GONFLÉE ; un aléatoire indépendant la sous-estime, leçon de la 1ʳᵉ passe) =
+**0.0015**. Contingence PARTIELLE (Rescorla-Wagner = régression de la conséquence sur le vecteur des
+indices présents) :
+- **(a) baie→énergie** coeff **+0.0117** (8× le plancher) ✅ ;
+- **(b) buisson NEUTRE** coeff **−0.0006** (dans la bande-nulle) **MALGRÉ 83 % de repas en buisson** ✅
+  — le distracteur neutre est BLOQUÉ ;
+- **(c) CONTRASTE** : le naïf `P(énergie|indice)` NE SÉPARE PAS (buisson 0.0091 ≈ baie 0.0112 ; pire,
+  son argmax-par-cluster lie le buisson→**DÉGÂTS** 0.33 par co-occurrence) ; la partielle RENVERSE
+  (buisson −0.0006 ≪ baie +0.0117) ✅ ;
+- **(d) non-régression** : eau→soif (+0.0136), danger→dégâts (+0.31), et **vert PAS→énergie**
+  (+0.0001 : Mur A dissous) ✅.
+Mécanisme (contingence partielle + plancher mesuré par placebos) VALIDÉ hors-ligne → **G1 (objet
+buisson Godot) LICENCIÉ**. Résidu noté (hors G0) : le rouge garde un coeff dégâts +0.14 (baies au
+cœur du danger = confond Mur-A résiduel sur les DÉGÂTS, traité ailleurs par la lunette saillance —
+n'affecte pas la liaison énergie/neutre). Refinement banké : **le plancher-neutre se MESURE par
+placebos même-structure**, pas par un indice aléatoire indépendant.
+
 ## Ce qu'on ne touche JAMAIS
 WM (gelé, invariant à l'apparence), readout géométrique du slot, transport, corps/physique (pas
 d'obstacle ici), les drives eux-mêmes. On ne change QUE l'étage de LIAISON (argmax → ΔP + neutre) +
