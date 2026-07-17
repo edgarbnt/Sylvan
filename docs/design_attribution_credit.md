@@ -127,6 +127,30 @@ la marge du voisin se resserre pour l'exclure — c'est tout le point du chantie
 ~0.6 (pas 0.9) = géométrie (petit buisson parfois occulté au repas) ET **favorable à
 l'identifiabilité** (plus de décorrélation).
 
+## ⭐ VERDICT G2 (2026-07-17, `build_typed_slots_credit.py`, 0 run / 0 train) : PASSÉ — WM crédit-typé émis
+Poolé : G1 `critic_kin_g1` (baie + buisson réel) + typcorp + DEFAULT_RUNS (eau/danger réels), 280 406
+ticks, reliefs E=148 T=199 dgr=16256. K=4 découvert (baie/danger/eau/buisson), marges mesurées AVEC
+le buisson.
+
+**RAFFINEMENT (négatif informatif banké)** : la contingence ΔP sur la **PRÉSENCE** multi-indice (celle
+validée en G0 synthétique) **RÉINTRODUIT le Mur A sur données réelles** — le rouge, PRÉSENT quand on se
+fait mordre au cœur du danger, hérite d'un coeff DÉGÂTS (+0.13) > son coeff énergie rare (+0.011) →
+argmax = DÉGÂTS (faux). Fix = le mécanisme VIVANT : contingence au **PLUS PROCHE** au contact (on est
+le plus proche de ce qu'on CONSOMME) + test de **SIGNIFICATIVITÉ** ΔP > 3·SE pour le neutre. Résultat :
+- **baie→ÉNERGIE** (ΔP +0.0135 ; et ΔP DÉGÂTS = **−0.2155** : rouge-proche ⇒ on mange, PAS on se fait
+  mordre → le Mur A est renversé, les dégâts vont au vert) ✅ ;
+- **eau→SOIF** (ΔP +0.0140), **danger→DÉGÂTS** (ΔP +0.3048) ✅ (non-régression) ;
+- **BUISSON→NEUTRE** (aucun lift significatif : énergie −0.0013, soif −0.0019, dégâts −0.2314 — malgré
+  8996 ticks-plus-proche) ✅ ;
+- **(c) transfert baie-seule : erreur 0.061 m méd** (n=39) ≪ 0.5 m ✅ — le slot food localise une baie
+  NUE quasi parfaitement.
+
+**Marges émises [food 0.761, water 0.976, danger 0.936]** : water/danger RESSERRÉES (le cluster teal
+buisson est leur voisin) → elles **excluent le buisson** = le fix « espace couleur encombré » (le
+buisson ne fire plus water/danger sous le WM complet — testé en G3). Émis :
+`data/checkpoints/wm_objcentric_kin_typed_credit/wm_best.pt` (WM gelé ; seuls color_queries+meta ;
+buisson = cluster NEUTRE, pas de slot). PROCHAIN = **G3** (juge closed-loop, monde complet + buisson).
+
 ## Ce qu'on ne touche JAMAIS
 WM (gelé, invariant à l'apparence), readout géométrique du slot, transport, corps/physique (pas
 d'obstacle ici), les drives eux-mêmes. On ne change QUE l'étage de LIAISON (argmax → ΔP + neutre) +
