@@ -151,6 +151,27 @@ buisson ne fire plus water/danger sous le WM complet — testé en G3). Émis :
 `data/checkpoints/wm_objcentric_kin_typed_credit/wm_best.pt` (WM gelé ; seuls color_queries+meta ;
 buisson = cluster NEUTRE, pas de slot). PROCHAIN = **G3** (juge closed-loop, monde complet + buisson).
 
+## ⭐⭐ VERDICT G3 (2026-07-17, `scripts/judge_gate_credit_g3.sh`, closed-loop) : PASS-PARITÉ — CHANTIER CLOS
+Bras CRÉDIT (WM crédit-typé + monde COMPLET + buisson co-localisé), 2×24 vies seeds 1+2 :
+s1 **17 repas / 5 morts**, s2 **19 / 6** → **POOLÉ 36 repas / 11 morts** vs gate ≥36 ET ≤13 → **PASS**.
+Réf vivante SANS buisson = 42/10. **Honnêteté** : parité à la LIMITE BASSE (36 = plancher), l'écart
+~6 repas est DANS le bruit (±5-7/48 vies) — le buisson (clutter) coûte un peu sans casser le forage.
+« Le slot food ne se verrouille jamais sur le buisson » est PROUVÉ perceptuellement (cos teal 0.59 <
+marge food 0.761 ; water 0.92 < 0.976 ; danger 0.86 < 0.936 → buisson exclu de TOUS les slots ; le WM
+VIVANT, lui, aurait fire water à 0.92 > 0.859 = poursuite de buissons). **Dettes** : (1) bras CONTRÔLE
+non tourné (démonstration de valeur behavioral = le vivant échoue en monde-buisson) ; (2) seed-3
+(règle ≥3 seeds) ; (3) parité monde-plat du credit WM non mesurée closed-loop.
+
+**CHANTIER ATTRIBUTION DE CRÉDIT CLOS (G0-G3 ✅)** : l'entité DÉCOUVRE de la conséquence qu'un objet
+neutre (buisson) ne veut RIEN, attribue « nourrit » au BON indice (baie) parmi co-occurrents (Mur A
+géré par contingence-au-plus-proche), et forage en vies avec le distracteur présent — sans une seule
+couleur ni un seul lien codé-main. **La dernière clé-apparence (requêtes-ressource) est dissoute :
+la perception est 100 % apprise au sens connaissance-du-monde** (substrat WM/géométrie/drives =
+conçu, §3, comme il se doit). Le WM crédit-typé = ARTEFACT reproductible (`build_typed_slots_credit`),
+NON promu vivant (décision owner ; le typé hand-declared reste le défaut jusqu'à promotion +
+seed-3 + parité monde-plat). PROCHAIN (recommandation) : canal OBSTACLE (nouvelle nature de
+conséquence), pas la purification des échafaudages de décision (pureté au signal, pas au cas où).
+
 ## Ce qu'on ne touche JAMAIS
 WM (gelé, invariant à l'apparence), readout géométrique du slot, transport, corps/physique (pas
 d'obstacle ici), les drives eux-mêmes. On ne change QUE l'étage de LIAISON (argmax → ΔP + neutre) +
