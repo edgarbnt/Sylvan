@@ -35,6 +35,9 @@ from sylvan.models.perception_head import RETINA_DIM
 
 RELIEF = 5.0                 # remontée de drive/tick = consommation (convention partagée)
 SAT = 0.15                   # saturation min pour classer une couleur (oracle)
+CONTACT_M = 1.5              # « à portée » : un drive se soulage / mord au CONTACT, pas à 6 m
+                             # (reach bas ~1.2, morsure ~1.3) → sort les reliefs rares du plancher
+                             # de bruit (refinement G-pré, contingence à portée-contact)
 RUNS = ["data/replay_buffer/critic_kin_g24as1", "data/replay_buffer/critic_kin_g24bs1",
         "data/replay_buffer/critic_kin_judge1", "data/replay_buffer/critic_kin_pure2"]
 CLASSES = ("rouge", "vert", "bleu")           # canal dominant 0/1/2 (oracle)
@@ -66,8 +69,9 @@ def _dominant(rgb: np.ndarray) -> int | None:
 def scan(runs: list[str], gen: torch.Generator) -> dict:
     """Par tick usable : rgbn du rayon le plus proche (perturbé ET propre), classe dominante propre,
     et les 3 outcomes vécus (relief énergie/soif à t+1, dégâts à t). Frontières de vie = saut vital."""
-    pert = {"rgbn": [], "y": {o: [] for o in OUTCOMES}}
+    pert = {"rgbn": [], "depth": [], "y": {o: [] for o in OUTCOMES}}
     clean_by_class: dict[int, list[np.ndarray]] = {0: [], 1: [], 2: []}
+    pert_by_class: dict[int, list[np.ndarray]] = {0: [], 1: [], 2: []}   # même rayon, apparence perturbée
     for run in runs:
         recs = []
         p = Path(run) / "ep_0000.jsonl.gz"
@@ -92,6 +96,7 @@ def scan(runs: list[str], gen: torch.Generator) -> dict:
                          "texture", 0.05, gen), "desat", 0.4, gen)     # combiné modéré réaliste
             rp = _rgbn(pr.view(RETINA_DIM), k)
             pert["rgbn"].append(rp)
+            pert["depth"].append(float(ret.view(NRAY, 4)[k, 0]))       # profondeur du plus proche
             pert["y"]["energy"].append(float(not boundary and e1 - e > RELIEF))
             pert["y"]["thirst"].append(float(not boundary and t1 - t > RELIEF))
             dmg = (i > 0 and recs[i - 1][3] - h > DMG_DROP
@@ -102,9 +107,13 @@ def scan(runs: list[str], gen: torch.Generator) -> dict:
             dom = _dominant(rc)
             if dom is not None:
                 clean_by_class[dom].append(rc)
-    return {"X": np.array(pert["rgbn"]), "y": {o: np.array(pert["y"][o]) for o in OUTCOMES},
+                pert_by_class[dom].append(rp)                  # apparence perturbée du même rayon
+    return {"X": np.array(pert["rgbn"]), "depth": np.array(pert["depth"]),
+            "y": {o: np.array(pert["y"][o]) for o in OUTCOMES},
             "oracle": {c: np.median(np.array(clean_by_class[c]), axis=0)
-                       for c in range(3) if clean_by_class[c]}}
+                       for c in range(3) if clean_by_class[c]},
+            "pert_oracle": {c: np.median(np.array(pert_by_class[c]), axis=0)
+                            for c in range(3) if pert_by_class[c]}}
 
 
 def _kmeans(X: np.ndarray, k: int, rng: np.random.Generator, iters: int = 50):
@@ -155,10 +164,12 @@ def main() -> None:
     gen = torch.Generator().manual_seed(0)
     rng = np.random.default_rng(0)
     d = scan(args.runs, gen)
-    X, Y, oracle = d["X"], d["y"], d["oracle"]
+    X, Y, oracle, pert_oracle = d["X"], d["y"], d["oracle"], d["pert_oracle"]
+    dist_m = d["depth"] * 10.0 + 0.35                                  # profondeur → mètres (offset slot)
+    contact = dist_m < CONTACT_M
     Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)         # directions (teinte)
-    print(f"[g-pre] {len(Xn)} ticks avec objet ; outcomes "
-          f"{ {o: int(Y[o].sum()) for o in OUTCOMES} } ; oracle classes {sorted(oracle)}")
+    print(f"[g-pre] {len(Xn)} ticks avec objet ({int(contact.sum())} à portée<{CONTACT_M}m) ; "
+          f"outcomes { {o: int(Y[o].sum()) for o in OUTCOMES} } ; oracle classes {sorted(oracle)}")
 
     # ÉTAPE A — regrouper : découvrir K par silhouette (2..5), sur un sous-échantillon déterministe.
     idx = rng.choice(len(Xn), size=min(args.cluster_cap, len(Xn)), replace=False)
@@ -181,16 +192,22 @@ def main() -> None:
     print(f"\n[g-pre] ÉTAPE A : K découvert = {K} (marge mesurée = {margin:.3f})")
     for cl in sorted(match):
         j, cs = match[cl]
-        print(f"[g-pre]   {CLASSES[cl]:6s} → groupe {j} (cos au vrai = {cs:.4f})")
+        # DÉCOMPOSITION du cos-au-propre : cos au centre de la classe PERTURBÉE isole l'erreur de
+        # CLUSTERING du décalage dû à la perturbation (comparer un centre désaturé à un oracle propre
+        # sous-compte). cos-perturbé ≈ 1 ⇒ clustering parfait ⇒ le déficit-au-propre = l'artefact désat.
+        cs_p = _cos(C[j], pert_oracle[cl]) if cl in pert_oracle else float("nan")
+        print(f"[g-pre]   {CLASSES[cl]:6s} → groupe {j} (cos au vrai-PROPRE = {cs:.4f} | "
+              f"cos au centre PERTURBÉ = {cs_p:.4f})")
 
-    # ÉTAPE B — lier par CONTINGENCE forward P(outcome | groupe le plus proche).
+    # ÉTAPE B — lier par CONTINGENCE forward À PORTÉE-CONTACT : P(outcome | groupe le plus proche
+    # ET à portée). Le contact sort les reliefs rares du plancher de bruit (refinement G-pré).
     assign = np.argmin(((Xn[:, None, :] - C[None]) ** 2).sum(-1), axis=1)
-    print(f"\n[g-pre] ÉTAPE B : contingence P(outcome | groupe) — le lien appris")
+    print(f"\n[g-pre] ÉTAPE B : contingence P(outcome | groupe le plus proche ET à portée) — lien appris")
     print(f"[g-pre]   {'classe':<8}{'P(energy)':>11}{'P(thirst)':>11}{'P(damage)':>11}{'  → lié à':>12}")
     cont = {}
     for cl in sorted(match):
         j = match[cl][0]
-        m = assign == j
+        m = (assign == j) & contact
         row = {o: float(Y[o][m].mean()) if m.any() else float("nan") for o in OUTCOMES}
         cont[cl] = row
         bound = max(row, key=row.get)
