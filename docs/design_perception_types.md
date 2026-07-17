@@ -154,6 +154,18 @@ dfd91fd). Puis build (mesure pure, zéro gradient, zéro retrain) :
 (buffer) + meta changent ; meta porte query_thr + provenance + table de liaison). NON promu —
 restent : smoke 3 vies → juge parité/valeur → GATE-CAPACITÉ (swap d'apparence).
 
+## ⭐⭐⭐ VERDICT JUGE (2026-07-17 soir) : **PASS-PARITÉ 42/10 — LA PERCEPTION 100 % APPRISE NE PERD RIEN**
+Smoke 3 vies ✓ (bannière marges [0.808, 0.859, 0.92], 0 erreur) → juge 2×24 vies seeds 1+2,
+monde VARIÉ, WM typé + config vivante : s1 **20/5** (vivant monde-plat 23/3), s2 **22/5** (vivant
+18/6 — battu) → **POOLÉ 42 repas / 10 morts-danger vs gate ≥36 ET ≤11 ✓✓** — au niveau de la réf
+vivante 41/9 alors que le monde est PLUS DUR (apparences variées). Harnais :
+`scripts/judge_typed_slots.sh`. Honnêteté : PASS-VALEUR (appris ≫ main en varié) NON claimé —
+mesuré d'avance comme non-attendu à jitter 0.15 (baseline main 23/9 tient) ; la démonstration de
+valeur = le GATE-CAPACITÉ (swap d'apparence), qui exige encore 2 pièces : déclencheur de re-mesure
+(build périodique — l'embryon jour/nuit) + bouton Godot swap-au-tick-T. Dettes : multi-seed >1+2 ;
+parité monde-PLAT du WM typé non mesurée closed-loop (positions offline ≈ exactes, méd 0.000 m).
+Promotion = décision owner (parité + pureté totale acquises ; capacité = le BUT restant).
+
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
    synthétique. Échec → corriger la reco, pas Godot.
