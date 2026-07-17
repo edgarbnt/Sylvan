@@ -86,6 +86,27 @@ et water→soif ; (c) le blocage met la liaison vert→énergie à ≈0 malgré 
 la machinerie de reconnaissance est fautive, on la corrige AVANT de rendre quoi que ce soit dans
 Godot (zéro coût). Réussite → le bump Godot est licencié.
 
+## ⭐ VERDICT G-pré (2026-07-17, `diag_pretypes_recognition.py`, 0 train) : SUBSTANCE VALIDÉE, 2 quasi-ratés de seuil
+Corpus réel perturbé (teinte 20°+texture 0.05+désat 0.4, combiné dur), 150 361 ticks-objet.
+- **Étape A** : K=3 découvert NET (silhouette 0.903 à K=3, pic franc vs 0.71/0.67/0.43) ; prototypes
+  recouvrés cos **rouge 0.967 / bleu 0.973 / vert 0.945**. G-pré-A ❌ SEULEMENT car cos_min 0.945 <
+  0.95 — le vert, très saturé, bouge le plus sous désat 0.4 (perturbation VOLONTAIREMENT dure ;
+  le vrai gate est cos≥0.98 sur données RENDUES, pas ce stress triple-empilé). Quasi-raté, pas un
+  échec de machinerie.
+- **Étape B** : liaison par contingence **rouge→énergie ✓, bleu→soif ✓** (G-pré-B ✅).
+- **⭐ Étape C (le cœur — ce que P6 ne savait pas faire)** : **vert→DÉGÂTS (0.151), PAS énergie
+  (0.001)**. Contraste décisif : la vue NAÏVE (l'approche P6) donne au repas énergie **vert 0.73** /
+  rouge 0.26 → le vert dominait ; la CONTINGENCE forward le RENVERSE (green→damage, red→energy).
+  **Le blocage Rescorla-Wagner résout le Mur A.** G-pré-C ❌ sur une seule sous-clause MAL FORMÉE
+  par moi (P(en|vert) < ½·P(en|rouge) en ABSOLU) : les reliefs sont rares (95/150k) → toutes les
+  contingences-relief sont au plancher de bruit (~0.001), la comparaison absolue est indiscernable ;
+  l'argmax, lui, est correct (green≠energy). Défaut de MÉTRIQUE, pas de mécanisme.
+**Diagnostic (gratuit) → refinement identifié AVANT tout Godot** : contingence à PORTÉE-CONTACT
+(P(relief | groupe le plus proche ET à portée) ) pour sortir les reliefs du plancher de bruit ;
+et le vrai gate cluster reste 0.98 sur données rendues (le 0.945 est l'artefact du stress synthétique
+dur). La machinerie est validée EN SUBSTANCE : 3 types découverts, blocage opérant. Décision owner :
+appliquer le refinement (gratuit) et re-run, ou accepter substance-validée et passer au bump Godot.
+
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
    synthétique. Échec → corriger la reco, pas Godot.
