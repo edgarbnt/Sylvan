@@ -166,6 +166,37 @@ pure** (research AXE 3 : la voie la mieux étayée). Le diag a **tranché à co�
 discipline anti-boucle §1 respectée. **PROCHAIN = G1** (obstacle bloquant Godot + le corps
 cinématique respecte les solides + viabilité du monde mesurée).
 
+## ⭐ VERDICT G1 (2026-07-18, `obstacle_manager.gd` + `_kinematic_step` respecte les solides + `diagnostics/diag_obstacle_g1.py`) : PASSÉ
+Construit : **`godot/scripts/world/obstacle_manager.gd`** (mur SOLIDE + perceptible, opt-in
+`SYLVAN_OBSTACLE_*` défaut OFF bit-identique, patron buisson/hazard ; cyan déclaré 2026-07-17,
+cos≈0 avec le rouge-bouffe → ne fire aucun slot en collecte food-only) + **collision MANUELLE dans
+`sylvan_agent._kinematic_step`** (le corps cinématique est GELÉ → aucune résolution physique → un
+raycast sur une couche dédiée bit 2 arrête le glide ; jamais le sol bit 0 ni le corps bit 1 ;
+bit-identique quand `SYLVAN_OBSTACLE_COUNT=0` : masque 0 → no-op). Hooks `main.gd` LOCAUX non stagés
+(placement + `SYLVAN_OBSTACLE_AHEAD`/`SYLVAN_DRIVE_STRAIGHT` pour le test A/B).
+
+- **(a) LE CORPS S'ARRÊTE** — A/B drive-straight SOLIDE vs PASSABLE (mur droit devant le spawn, profondeur
+  du rayon-mur = odomètre) : **SOLIDE `min_devant 0.69 m`, 0 pénétration** (le corps ne descend JAMAIS sous
+  la distance d'arrêt, épinglé 1404/1404 frames ; le déplacement cumulé Godot plafonne à 1.53 m au mur) ;
+  **PASSABLE `min 0.35 m`, 41 pénétrations** (il TRAVERSE). ✅ La collision manuelle arrête le corps.
+- **(b) VIABILITÉ géométrique** (le critère PRÉ-INSCRIT) : détour autour du mur étroit (demi-largeur
+  0.35 m) = **0.7 m ≤ portée soutenable 4 m**, bouffe reachable autour (mur non-enclosant). ✅
+  **Occlusion RÉELLE rapportée honnêtement (§2, pas cachée)** : bouffe perçue **21 %** — un mur SOLIDE
+  occulte la ligne de vue frontale (tension fondamentale, cf. leçon hazard : rétine horizontale). Ce
+  n'est PAS un death-trap (détour court, bouffe perceptible hors-axe) mais une **FEATURE de topologie** :
+  elle rendra la MÉMOIRE décisive, et explique que l'agent NAÏF forage mal (7 repas / 12 vies = attendu,
+  l'évitement n'existe pas encore). ⚠️ **Dette G3** : le juge devra DISSOCIER « évite le solide » de
+  « peine à cause de l'occlusion » — la baseline `SYLVAN_OBSTACLE_SOLID=0` (obstacle rendu mais
+  traversable) est déjà branchée exactement pour ça.
+- **(c) SÉPARABILITÉ** : `cos(bouffe, obstacle) 0.39 ≪ intra 1.00` → cluster couleur distinct → voie B
+  pourra l'apprendre. ✅
+
+**➜ G1 PASSÉ** : monde-obstacle bâti, le corps respecte les solides (physique du CORPS, jamais le
+cerveau), monde viable (détour court ; l'occlusion est une feature, pas un death-trap), obstacle
+séparable. Harnais : `scripts/collect_obstacle_g1.sh`. **PROCHAIN = G2** : entraîner le prédicteur
+d'affordance (voie B) sur le signal commandé-vs-réel (le WM prédit un déplacement, le réel ≈ 0 ⇒
+blocage), lu par le planner comme un coût — jumeau de la lunette saillance-danger.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
 transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les

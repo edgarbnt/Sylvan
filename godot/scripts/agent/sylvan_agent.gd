@@ -669,6 +669,40 @@ func _com_metrics() -> Vector2:
 	heading = heading.normalized()
 	return Vector2(com_vel.dot(heading), 0.5 * (tf.angular_velocity.y + tb.angular_velocity.y))
 
+# --- Collision cinématique avec les OBSTACLES solides (chantier obstacle, 2026-07-17) ---
+# Le corps cinématique est GELÉ (FREEZE_MODE_KINEMATIC → aucune résolution physique) : on BLOQUE donc le
+# glide par un raycast MANUEL contre la couche dédiée OBSTACLE (bit 2 ; JAMAIS le sol bit 0 ni les segments
+# du corps bit 1). C'est la PHYSIQUE DU CORPS (§3), pas le cerveau : aucune décision, juste « un solide
+# arrête le corps ». Bit-identique quand SYLVAN_OBSTACLE_COUNT=0 (masque 0 → _kin_collide renvoie la cible
+# inchangée, aucun raycast).
+const _KIN_OBSTACLE_LAYER := 1 << 2       # doit égaler ObstacleManager.OBSTACLE_LAYER
+const _KIN_PROBE_HEIGHT := 0.4            # hauteur du rayon horizontal (dans [0, hauteur obstacle])
+const _KIN_SKIN := 0.35                   # marge d'arrêt avant la surface (~demi-corps) → pas de pénétration
+var _obstacle_mask := -1                  # -1 = pas encore lu ; 0 = pas d'obstacle dans ce run ; sinon la couche
+
+func _kin_collide(from_pos: Vector3, to_pos: Vector3) -> Vector3:
+	if _obstacle_mask == 0:
+		return to_pos
+	var motion := to_pos - from_pos
+	var dist := motion.length()
+	if dist < 1e-6:
+		return to_pos
+	var dir := motion / dist
+	var probe := Vector3(0.0, _KIN_PROBE_HEIGHT, 0.0)
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(from_pos + probe, to_pos + probe + dir * _KIN_SKIN)
+	q.collision_mask = _obstacle_mask
+	q.collide_with_bodies = true
+	q.collide_with_areas = false
+	var hit := space.intersect_ray(q)
+	if hit.is_empty():
+		return to_pos
+	var hit_pos: Vector3 = hit["position"]
+	var hit_dist := Vector2(hit_pos.x - from_pos.x, hit_pos.z - from_pos.z).length()   # distance horizontale
+	var allowed := maxf(0.0, hit_dist - _KIN_SKIN)                                       # s'arrête _KIN_SKIN avant
+	return from_pos + dir * minf(dist, allowed)
+
+
 func _kinematic_step(delta: float) -> void:
 	# Glisse l'assemblage entier rigidement à (vx, omega) — réutilise le placement de reset_agent
 	# (PhysicsServer3D.body_set_state + initial_transforms). Poses relatives FIGÉES (pose neutre) → la
@@ -685,7 +719,9 @@ func _kinematic_step(delta: float) -> void:
 	var vel := (forward * (kin_speed * cpg_command.x)) if moving else Vector3.ZERO
 	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
 	if moving:
-		global_position += vel * delta
+		if _obstacle_mask < 0:
+			_obstacle_mask = _KIN_OBSTACLE_LAYER if OS.get_environment("SYLVAN_OBSTACLE_COUNT").to_int() > 0 else 0
+		global_position = _kin_collide(global_position, global_position + vel * delta)
 	for b_name in bodies:
 		var body: RigidBody3D = bodies[b_name]
 		var base_transform: Transform3D = initial_transforms[body]
