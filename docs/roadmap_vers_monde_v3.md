@@ -17,6 +17,15 @@ Pré-enregistrement avant tout run ; diag gratuit avant tout train ; budget 1 tr
 diagnostiqué ; juge closed-loop poolé (bruit ±5 repas/24 vies) ; négatif = commité ; promotion à
 ≥3 seeds (dette historique à résorber au passage) ; carte à jour dans le même commit.
 
+## ⚠️ CHANTIER COURANT TRANCHÉ (2026-07-17 soir, owner) — PURETÉ-DU-MONDE AU MAX D'ABORD
+Décision : pousser le curseur de pureté-du-monde à son maximum atteignable AVANT tout gros build.
+Cible unique et bien scopée = **reconnaissance des types d'objets** (requêtes-couleur + lien
+slot→drive, les deux tombent ensemble) — pré-enregistré avec gates dans
+`docs/design_perception_types.md`. Diag WM déjà fait → bump apparences = CHEAP (substrat invariant).
+Les autres restes NE sont PAS de la connaissance-du-monde (proposeur, hints = échafaudage archi) ou
+ne se purifient qu'en construisant le gros build (eau-EMA = chercher+mémoire) → hors de ce scope.
+Chercher+mémoire (capacité) vient APRÈS, sur substrat pur.
+
 ## ⚠️ ORDRE RÉVISÉ (2026-07-17, owner) — voir `docs/design_monde_incremental.md`
 L'objectif COURANT = **zéro connaissance du monde codée-main dans l'entité**. Vis-à-vis de CET
 objectif, l'ordre ci-dessous est FAUX : jour/nuit (chantier 2) est orthogonal à la pureté (il

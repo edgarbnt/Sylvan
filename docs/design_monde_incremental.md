@@ -80,7 +80,10 @@ dé-risque le SUBSTRAT (établi), pas la requête face à un rendu réel désatu
 ici) — mais la requête est la pièce qu'on remplace de toute façon ; son comportement réel se
 mesure au check open-loop du vrai bump.
 
-## Prochain pas — plan de réouverture (PRÉ-NOTÉ, rien lancé)
+## Prochain pas — plan de réouverture (PRÉ-ENREGISTRÉ dans `docs/design_perception_types.md`, rien lancé)
+> Le chantier de réouverture a maintenant son doc dédié avec gates falsifiables :
+> `docs/design_perception_types.md` (décision owner 2026-07-17 : pousser le curseur de
+> pureté-du-monde au max AVANT tout gros build). Le résumé ci-dessous en est l'esquisse.
 1. **Bump apparences** (opt-in Godot, défaut OFF = bit-identique) : les 3 types rendus avec de la
    variété intra-type (teinte/texture/forme), même `retina_color` moyen.
 2. **Diag WM gratuit** (ci-dessus) : décide cheap-vs-recollecte.
