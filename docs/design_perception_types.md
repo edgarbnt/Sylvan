@@ -120,6 +120,19 @@ erreur de parse. PROCHAIN : collecte corpus varié → automatisation (cluster+b
 dessus → vrais gates ci-dessous. (Hazard = même patron, non touché : sa perception est déjà apprise
 par la saillance P5.)
 
+## ⭐ CORPUS VARIÉ COLLECTÉ (2026-07-17, `critic_kin_typcorp`, config vivante seed 3, flag ON)
+24 vies, monde v2 vivant (waypoint + saillance + sprint decont) avec `SYLVAN_FOOD/WATER_APPEARANCE_VAR=0.15`.
+- **Baseline système CODÉ-MAIN sous variété = 23 repas / 9 morts** (≈ niveau monde plat) → à jitter
+  0.15, la requête-main rouge (seuil 0.55) attrape encore la plupart des tons ; **le système actuel
+  ne s'effondre pas** → la démonstration de VALEUR viendra du GATE-CAPACITÉ (swap d'apparence), pas
+  du jitter modéré. Le parity gate, lui, est testable ici.
+- **Confond Mur A confirmé sur données réelles** : au repas énergie, couleur la plus proche =
+  vert 70 % / rouge 30 % (bouffe au cœur du danger) → le blocage est genuinement nécessaire.
+- **Variété OK** (eau teinte std 0.068) ; **reliefs rares** (23 énergie / 24 soif ; dégâts 3001).
+  Clustering + liaison-danger robustes ; liaison food/water = fine (argmax attendu OK cf G-pré ;
+  si bruité → 2ᵉ collecte seed, dette notée).
+Prochain : Unité automatisation (slot marge-par-requête + `build_typed_slots`) sur ce corpus.
+
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
    synthétique. Échec → corriger la reco, pas Godot.
