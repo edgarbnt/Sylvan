@@ -35,6 +35,8 @@ var _rng := RandomNumberGenerator.new()
 var _positions: Array[Vector3] = []
 var _meshes: Array[MeshInstance3D] = []
 var _material: StandardMaterial3D
+var _appearance_var := 0.0    # SYLVAN_<prefix>_APPEARANCE_VAR : jitter d'apparence par instance (0=OFF, bit-identique)
+var _areas: Array = []        # Area3D perceptibles — maj de retina_color quand l'apparence varie
 var consumed_this_episode := 0
 # COLLECTE EAT-RICHE (vers 🅑) — leviers de RÉGIME, gated env, défaut = comportement actuel inchangé.
 # eat_hunger_max < 1 : ne consommer une pastille QUE si l'énergie (fraction) est sous ce seuil → chaque
@@ -65,6 +67,27 @@ func set_seed(value: int) -> void:
 	_rng.seed = value
 
 
+func _jitter(base: Color) -> Color:
+	# Teinte/saturation/valeur perturbées autour de la couleur de base (même TYPE, apparence variée).
+	# Déterministe (via _rng) → corpus reproductible ; magnitude = _appearance_var.
+	var h := fposmod(base.h + _rng.randf_range(-_appearance_var, _appearance_var), 1.0)
+	var s := clampf(base.s + _rng.randf_range(-_appearance_var, _appearance_var), 0.0, 1.0)
+	var v := clampf(base.v + _rng.randf_range(-0.5 * _appearance_var, 0.5 * _appearance_var), 0.0, 1.0)
+	return Color.from_hsv(h, s, v)
+
+
+func _apply_appearance(i: int) -> void:
+	# Ré-échantillonne l'apparence de l'item i (couleur du matériau + meta retina_color lue par le
+	# raycast). OFF (_appearance_var<=0) : ne touche à rien → couleur unique partagée, bit-identique.
+	if _appearance_var <= 0.0 or i >= _areas.size():
+		return
+	var c := _jitter(_albedo)
+	var mat := _meshes[i].material_override as StandardMaterial3D
+	if mat != null:
+		mat.albedo_color = c
+	_areas[i].set_meta("retina_color", c)
+
+
 func _ensure_built() -> void:
 	var _fc_env := OS.get_environment("SYLVAN_%s_COUNT" % _prefix)  # sparse pellets → one clear target
 	if _fc_env != "":
@@ -89,6 +112,9 @@ func _ensure_built() -> void:
 	var _rmax_env := OS.get_environment("SYLVAN_%s_RESPAWN_MAX" % _prefix)
 	if _rmax_env != "":
 		respawn_max = maxf(respawn_min, float(_rmax_env))
+	var _var_env := OS.get_environment("SYLVAN_%s_APPEARANCE_VAR" % _prefix)
+	if _var_env != "":
+		_appearance_var = maxf(0.0, float(_var_env))
 	if _material == null:
 		_material = StandardMaterial3D.new()
 		_material.albedo_color = _albedo
@@ -101,7 +127,15 @@ func _ensure_built() -> void:
 			sphere.radius = 0.18
 			sphere.height = 0.36
 			m.mesh = sphere
-			m.material_override = _material
+			# apparence VARIÉE (opt-in) : matériau PAR INSTANCE (couleur ré-échantillonnée à chaque
+			# (re)spawn via _apply_appearance) ; OFF = matériau partagé, bit-identique.
+			if _appearance_var > 0.0:
+				var mat := StandardMaterial3D.new()
+				mat.emission_enabled = true
+				mat.emission = _emission
+				m.material_override = mat
+			else:
+				m.material_override = _material
 			add_child(m)
 			# RÉTINE (perception apprise) : rendre la pastille PERCEPTIBLE par le raycast couleur, SANS
 			# perturber la physique du gait. Area3D (jamais bloquante) sur la couche 8 dédiée (mask 0 :
@@ -119,6 +153,7 @@ func _ensure_built() -> void:
 			area.add_child(cs)
 			m.add_child(area)
 			_meshes.append(m)
+			_areas.append(area)
 
 
 func reset(_episode_index: int = 0) -> void:
@@ -130,6 +165,7 @@ func reset(_episode_index: int = 0) -> void:
 		_positions.append(p)
 		_meshes[i].global_position = p
 		_meshes[i].visible = true
+		_apply_appearance(i)
 
 
 func _random_pos() -> Vector3:
@@ -162,6 +198,7 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 			# sparse/clustered to force real directed foraging.)
 			_positions[i] = _respawn_near(agent_pos)
 			_meshes[i].global_position = _positions[i]
+			_apply_appearance(i)
 	return restored
 
 

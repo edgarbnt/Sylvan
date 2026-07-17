@@ -107,6 +107,19 @@ seul ❌ strict (A à 0.945-au-propre) est un artefact de comparand diagnostiqu�
 rendu (0.98). **Bump Godot LICENCIÉ** (décision owner). Refinement banké : contingence
 portée-contact + décomposition cos-perturbé = la bonne métrique du pré-gate synthétique.
 
+## ⭐ UNITÉ « BUMP APPARENCES » CONSTRUITE + VÉRIFIÉE (2026-07-17, `food_manager.gd`)
+Ré-séquençage assumé (§2) : automatiser sur couleurs plates ne créait aucune valeur (les requêtes
+apprises = vraies couleurs FUIENT sous seuil global 0.55 = Mur B ; parité impossible sans la
+machinerie de marge) → le vrai 1ᵉʳ pas est l'ingrédient de monde. FAIT : couleur PAR INSTANCE tirée
+d'une distribution HSV autour de l'albedo de base, ré-échantillonnée à chaque (re)spawn, déterministe
+(`_rng`). Opt-in `SYLVAN_<FOOD|WATER>_APPEARANCE_VAR` (un seul FoodManager sert food ET water),
+défaut absent = **bit-identique** (garde `_appearance_var<=0` → matériau partagé + early-return).
+**Vérifié end-to-end (Godot headless, 2 ép)** : OFF corpus plat = écart-type de teinte food 0.0000 ;
+ON (var=0.15) = **0.0324** (R±0.03 G±0.21 B±0.10) — la rétine perçoit des apparences variées, zéro
+erreur de parse. PROCHAIN : collecte corpus varié → automatisation (cluster+bind+marge par-requête)
+dessus → vrais gates ci-dessous. (Hazard = même patron, non touché : sa perception est déjà apprise
+par la saillance P5.)
+
 ## Gates PRÉ-ENREGISTRÉS (falsifiables, ordre cheaper-first ; budget 1 train + 1 re-train diagnostiqué)
 0. **G-pré** (ci-dessus, gratuit) : 3 prototypes + liaisons correctes + blocage à ≈0 sur corpus
    synthétique. Échec → corriger la reco, pas Godot.
