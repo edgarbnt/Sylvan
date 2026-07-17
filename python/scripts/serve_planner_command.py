@@ -169,6 +169,22 @@ class _PlannerService:
         if meta.get("slot_resources", 1) > 1:
             print(f"[planner-cmd] SLOT-2 actif : {meta['slot_resources']} slots requêtés-couleur "
                   f"(food_idx={wm.food_idx}, water_idx={wm.water_idx}) → l'eau quitte l'oracle EMA")
+        # RE-MESURE PÉRIODIQUE (Gate-capacité, docs/design_gate_capacite.md) — l'embryon jour/nuit :
+        # toutes les N pas, relance cluster+lien (build_typed_slots) sur la fenêtre récente vécue et
+        # met à jour LIVE color_queries/query_thr. Requiert un WM TYPÉ (slot_resources>1, query_thr
+        # présent) — sinon ignoré. OFF (env absente, défaut) : self.remeasure reste None, zéro effet.
+        self.remeasure = None
+        _re_every = int(os.environ.get("SYLVAN_REMEASURE_EVERY", "0"))
+        if _re_every > 0:
+            if meta.get("slot_resources", 1) > 1 and getattr(wm.slot_encoder, "query_thr", None) is not None:
+                from sylvan.control.remeasure import PeriodicRemeasure
+                self.remeasure = PeriodicRemeasure(_re_every)
+                print(f"[planner-cmd] RE-MESURE PÉRIODIQUE active : every={_re_every} pas "
+                      f"(embryon jour/nuit, MAJ live color_queries/query_thr ; food_idx={wm.food_idx} "
+                      f"water_idx={wm.water_idx} hazard_idx={wm.hazard_idx})")
+            else:
+                print(f"[planner-cmd] ⚠️ SYLVAN_REMEASURE_EVERY demandé mais WM non-typé "
+                      f"(slot_resources={meta.get('slot_resources', 1)}) → ignoré")
         if meta.get("with_slot", False):
             print(f"[planner-cmd] WM OBJECT-CENTRIC : out['slot'] actif (slot appris dans le WM) → "
                   f"la perception+permanence vient du WM, plus de coordonnée codée-main dans le planner")
@@ -409,6 +425,18 @@ class _PlannerService:
         thirst = float(payload.get("thirst", 100.0))
         health = float(payload.get("health", 100.0))   # MONDE v2 : additif (ancien Godot → 100 = plein)
         with self._lock:
+            # RE-MESURE PÉRIODIQUE (embryon jour/nuit) : bufferise CE tick, applique si la fenêtre
+            # est due. Absent (self.remeasure is None, défaut) : bloc entier sauté, non-régression.
+            if self.remeasure is not None and len(retina) == RETINA_DIM:
+                self.remeasure.observe(retina, energy, thirst, health)
+                if self.remeasure.due():
+                    wm_live = self.planner.world_model
+                    updated = self.remeasure.apply(wm_live, wm_live.food_idx,
+                                                   getattr(wm_live, "water_idx", None),
+                                                   getattr(wm_live, "hazard_idx", None))
+                    if updated:
+                        print(f"[planner-cmd] RE-MESURE : mis à jour {updated} "
+                              f"(tick={self._ticks}, bound={self.remeasure.last_bound})", flush=True)
             # MÉMOIRE SPATIALE (Task 3) : mise à jour du belief par tick (dead-reckon + re-ground si saillant).
             # Doit s'exécuter AVANT le bloc de replan pour que belief soit à jour quand le planner est appelé.
             # Quand slot_memory est None (défaut) : cette section est absente → non-régression totale.
@@ -711,6 +739,8 @@ class _PlannerService:
     def reset(self) -> None:
         with self._lock:
             self._ticks = 0
+            if self.remeasure is not None:    # RE-MESURE PÉRIODIQUE : fenêtre/compteur par-vie
+                self.remeasure.reset_life()
             self._cmd = self.planner.cfg.no_food_command
             self._radar_ema = None
             self._water_ema = None

@@ -38,6 +38,13 @@ var _material: StandardMaterial3D
 var _appearance_var := 0.0    # SYLVAN_<prefix>_APPEARANCE_VAR : jitter d'apparence par instance (0=OFF, bit-identique)
 var _areas: Array = []        # Area3D perceptibles — maj de retina_color quand l'apparence varie
 var consumed_this_episode := 0
+# BASCULE D'APPARENCE EN COURS DE VIE (Gate-capacité, docs/design_gate_capacite.md) — FOOD only
+# (jamais lu pour l'eau : _prefix reste "WATER", ces vars restent à leur défaut OFF). Opt-in
+# SYLVAN_FOOD_SWAP_TICK/SYLVAN_FOOD_SWAP_HUE, absent = _swap_tick<=0 = jamais appelé, bit-identique.
+var _swap_tick := 0           # pas DANS LA VIE où l'apparence bascule (0 = OFF)
+var _swap_hue := 0.0          # teinte cible [0,1) (HSV) ; S/V de _albedo conservés
+var _swapped := false         # déjà basculé cette vie (une seule fois)
+var _life_tick := 0           # compteur de pas depuis le dernier reset() (remis à 0 par reset())
 # COLLECTE EAT-RICHE (vers 🅑) — leviers de RÉGIME, gated env, défaut = comportement actuel inchangé.
 # eat_hunger_max < 1 : ne consommer une pastille QUE si l'énergie (fraction) est sous ce seuil → chaque
 # repas a une vraie MARGE (le WM voit la bosse +energy_per_food non écrêtée à 100) → apprend l'eat-dynamics.
@@ -115,6 +122,15 @@ func _ensure_built() -> void:
 	var _var_env := OS.get_environment("SYLVAN_%s_APPEARANCE_VAR" % _prefix)
 	if _var_env != "":
 		_appearance_var = maxf(0.0, float(_var_env))
+	# Gate-capacité : bascule d'apparence en cours de vie — FOOD SEULEMENT (le nom n'est pas
+	# préfixé par _prefix : l'eau n'y touche jamais, cf déclaration des vars ci-dessus).
+	if _prefix == "FOOD":
+		var _st_env := OS.get_environment("SYLVAN_FOOD_SWAP_TICK")
+		if _st_env != "":
+			_swap_tick = maxi(0, int(_st_env))
+		var _sh_env := OS.get_environment("SYLVAN_FOOD_SWAP_HUE")
+		if _sh_env != "":
+			_swap_hue = fposmod(float(_sh_env), 1.0)
 	if _material == null:
 		_material = StandardMaterial3D.new()
 		_material.albedo_color = _albedo
@@ -159,6 +175,8 @@ func _ensure_built() -> void:
 func reset(_episode_index: int = 0) -> void:
 	_ensure_built()
 	consumed_this_episode = 0
+	_life_tick = 0
+	_swapped = false
 	_positions.clear()
 	for i in range(food_count):
 		var p := _random_pos()
@@ -182,6 +200,10 @@ func _random_pos() -> Vector3:
 # Eat every pellet within eat_radius (horizontally) of the agent; respawn each eaten one.
 # Returns the total energy to restore this step.
 func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
+	# Gate-capacité : compteur de pas DANS LA VIE + bascule éventuelle — en tête, appelé chaque
+	# tick (main.gd) donc le même rythme que le monde. No-op tant que _swap_tick est OFF (0).
+	_life_tick += 1
+	_maybe_swap_appearance()
 	# Régime eat-riche : ne pas consommer tant qu'on n'est pas assez affamé (seuil eat_hunger_max).
 	# energy_frac = énergie/max. Défaut 1.0 + seuil 1.0 → mange toujours (inchangé).
 	if energy_frac > eat_hunger_max:
@@ -200,6 +222,24 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 			_meshes[i].global_position = _positions[i]
 			_apply_appearance(i)
 	return restored
+
+
+func _maybe_swap_appearance() -> void:
+	# Gate-capacité (docs/design_gate_capacite.md) : à _swap_tick pas DANS CETTE VIE, la couleur
+	# de base _albedo bascule vers la teinte-cible (HSV, S/V conservés — propriété du MONDE
+	# déclarée, jamais ajustée pour faciliter) et se ré-applique à TOUS les items déjà spawnés,
+	# une seule fois par vie. OFF (_swap_tick<=0, défaut) : jamais atteint, bit-identique.
+	if _swap_tick <= 0 or _swapped or _life_tick < _swap_tick:
+		return
+	_swapped = true
+	_albedo = Color.from_hsv(_swap_hue, _albedo.s, _albedo.v)
+	if _material != null:
+		_material.albedo_color = _albedo
+	for i in range(_meshes.size()):
+		if _appearance_var > 0.0:
+			_apply_appearance(i)          # ré-échantillonne le jitter autour de la NOUVELLE base
+		elif i < _areas.size():
+			_areas[i].set_meta("retina_color", _albedo)   # matériau partagé déjà remis à jour ci-dessus
 
 
 func _respawn_near(center: Vector3) -> Vector3:

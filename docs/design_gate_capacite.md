@@ -78,3 +78,59 @@ DIRECTE de « survit à un changement de monde » — celle que le monde figé n
 (Mur C). Si PASS : la re-mesure périodique (embryon jour/nuit) est promue ; le jour/nuit v1 (têtes
 de décision) hérite d'un squelette validé. Si échec : négatif commité, la perception statique reste
 le vivant (parité déjà acquise), l'embryon retourne au tiroir avec la cause diagnostiquée.
+
+## ⭐ VERDICT (2026-07-17, juge 4×24 vies + diagnostic offline GRATUIT) : ÉCHEC DIAGNOSTIQUÉ — le monde ne peut pas poser ce test
+Juge 2 bras × 2 seeds (contrôle STATIQUE / appris RE-MESURE, seeds 1+2, swap magenta T=700). Les
+DEUX gates ratent : contrôle ratio tardif/pré = **0.50** (effondrement exigé ≤0.3 — ne s'effondre
+PAS) ; appris **0.48 ≈ contrôle** (récupération exigée ≥0.6 ; Δtardif 0.00003 < bruit → ZÉRO
+bénéfice). `scripts/judge_gate_capacite.sh` + `scripts.judge_gate_capacite` (segmentation des vies
+via godot.log = vérité-terrain ; l'heuristique par saut de drive FUSIONNAIT des vies).
+
+Diagnostic OFFLINE gratuit (0 run neuf, rejeu des corpus déjà collectés,
+`diagnostics/diag_gate_capacite_offline.py`) — 3 causes, la 1ʳᵉ **décisive** :
+1. **CAUSE-RACINE — le swap n'aveugle JAMAIS l'œil.** Le slot lit par COSINUS en RGB-normalisé, pas
+   par teinte. Le magenta (teinte 0.83, « libre » en HUE) partage le canal ROUGE avec la requête
+   food → **cos 0.90 > seuil 0.808 → 94 % des rayons magenta restent VISIBLES**. Le contrôle
+   continue de forager (approche dirigée mesurée 85 %→62 %, baisse modeste, pas d'effondrement).
+   `G-swap-control` était **structurellement inatteignable**. Piège de fond : aveugler le rouge
+   exigerait une couleur à faible-R = vert(danger)/bleu(eau), OCCUPÉES → food inséparable (G-sep).
+   **Dans un monde à 3 teintes primaires, AUCUNE couleur n'est à la fois invisible-au-rouge ET
+   séparable → l'espace couleur est trop encombré pour poser un swap propre.** (G-pré-swap avait
+   « passé » car il testait la MESURE/clustering — qui retrouve le magenta comme point distinct —
+   PAS la cécité de la requête statique. « Libre en teinte » ≠ « loin en cosinus-RGB » : le trou
+   qui a laissé passer un swap trop faible.)
+2. **Le mécanisme n'isole pas food en live.** Food = ~8 % des rayons touchés, dominé par le vert
+   (50 %, confond Mur A). K-means à K-découvert isole rarement un cluster food propre ; quand
+   « energy » se lie, il choisit le vert (gclrn1, 1 fois — faux) ou un mélange rouge-dominant
+   (gclrn2) — **jamais magenta**. Dépendant de la graine (1 vs 43 liaisons). Mauvaise liaison =
+   risque de régression de la perception.
+3. **Confond de protocole — swap par-vie + buffer inter-vies.** Le collecteur `policy_server`
+   n'envoie jamais de reset TCP entre les vies → le buffer glissant (6000) mêle toujours rouge
+   (pré-swap) et magenta (post-swap) de vies différentes → jamais de « changement de monde » stable
+   auquel s'adapter.
+
+**Conclusion honnête (§2)** : la capacité « survit à un changement de monde » reste NON prouvée —
+pas parce que le mécanisme est impossible, mais parce que **CE MONDE ne peut pas poser le test**
+(viabilité du test mesurée avant de juger l'agent — leçon métabolique appliquée à l'apparence).
+Interdit de relâcher le gate. La perception STATIQUE reste la config vivante (parité 42/10 acquise).
+Pièces construites conservées, défaut OFF **bit-identique**, re-mesure **NON promue** :
+`SYLVAN_FOOD_SWAP_TICK/HUE` (`food_manager.gd`), `PeriodicRemeasure`
+(`python/sylvan/control/remeasure.py` + `SYLVAN_REMEASURE_EVERY` dans `serve_planner_command.py`),
+juge 2-bras.
+
+## ⭐ PIVOT (owner, 2026-07-17) : de « swap d'apparence » vers « apparence→conséquence découverte »
+Le swap-vers-couleur-proche est intestable dans un espace à 3 teintes (cause-racine ci-dessus). La
+BONNE capacité, plus générale : l'entité se construit elle-même un dictionnaire {apparence →
+interaction découverte du vécu}, OUVERT, sur PLUSIEURS canaux de conséquence — drives intéroceptifs
+(déjà là) ET affordances physiques (obstacle bloque / herbe traverse), ces dernières apprises de
+l'**ERREUR DE PRÉDICTION du WM** (déplacement commandé ≠ réalisé). Idée-clé : **absorber la dynamique
+d'obstacle DANS le WM** → le planner l'évite par rollout imaginé, **zéro coût codé** (principiel §3 :
+dynamique agnostique-drive, PAS un raccourci `--w-ressource`). Le coût d'ajout scale par **CANAL**
+(sens — peu nombreux, fixés au corps à la conception), PAS par type d'objet (ouvert, découvert) : un
+canal-mouvement payé une fois → toute la famille d'affordances physiques arrive découverte. 1ʳᵉ
+instance testable = désambiguïsation **baie-buisson** (attribuer la conséquence au bon indice parmi
+co-occurrents ; exige une DÉCORRÉLATION dans le monde = identifiabilité — buisson parfois sans baie,
+baie parfois seule = ce qui la rend apprenable ET la teste). Deep research lancée (GVF/Horde, cue
+competition, affordance par prédiction, découverte d'objets continue, motivation intrinsèque) puis
+STOPPÉE (coût) et sauvegardée `.claude/workflows/deep-research.js` pour reprise. Prochain chantier à
+pré-inscrire sur cette base.
