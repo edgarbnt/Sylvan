@@ -161,6 +161,31 @@ mort d'un drive pendant que l'autre est plein — corrigée sur la signature de 
 flottement vécu n'est PAS un contrefactuel de bascule TENUE ; la machinerie ε-cible est à écrire),
 puis PIN de la forme voie A + seuils G2/G3 chiffrés dans ce doc AVANT tout train.
 
+## ⭐ VERDICT G1 (2026-07-18, machinerie commit dfd4a75 + corpus arb3/arb4) : PASSÉ — corpus contrefactuel livré
+**Machinerie ε-CIBLE** : `SYLVAN_TARGET_EXPLORE_EPS` (command_planner.py, branche `plan_multi_surv`)
+flippe le choix de cible avec prob ε et le **TIENT K replans** (un flip non tenu = le flottement
+pathologique de G0, pas un contrefactuel) ; RNG dédié seedé, décisions forcées **flaggées
+`explore_target`** dans le BC_LOG (le trainer sépare politique et contrefactuel). Sonde de
+placement préalable (gratuite) : 55,5 % des replans sont MULTI dans ce monde et **127/131 morts-
+par-arbitrage ont les deux ressources visibles au dernier replan utile** → la branche multi est le
+bon point d'injection. Bit-identité à ε=0 : **par construction** (garde `eps>0` = zéro instruction
+nouvelle exécutée, aucun tirage, aucune clé de log) — déviation assumée de la lettre du gate (pas
+d'A/B ε=0 payé) ; smoke fonctionnel à ε=0.6 : tenues 15-45 replans, 72 % des forcés contredisent
+le choix designé.
+**Corpus** (`collect_arb_corpus.sh`, base = CONFIG VIVANTE waypoint [lunette + sprint-critic
+décontaminé] = parité train/déploiement ; ε=0.05, K=15 calibrés et déclarés ; seeds 3+4) :
+- **48 vies (24+24, cross-check godot.log exact)**, 34.7k ticks/run, 3471 replans/run,
+  847+983 décisions forcées.
+- **128 bascules TENUES** (segments n≥5, méd 12-15 replans ≈ 2.4-3 m de poursuite) ;
+  **désaccord avec le choix designé à l'initiation : 108/128 (84 %)** = vrais contrefactuels ;
+- **contraste d'issue : 54/128 (42 %) des poursuites forcées PAIENT** (conso du type forcé
+  pendant/juste après la tenue) — ni degeneré (0 %) ni trivial (100 %) → apprenable ;
+- **viabilité sous ε** : 19+24 et 13+21 repas+boissons /24 vies (bande des réfs designées) ;
+  structure de morts inchangée (danger 5/run ≈ réf) ; les morts-par-arbitrage PERSISTENT sous ε
+  (13 et 11) — l'ε n'a pas « réglé » le déficit par accident, attendu.
+**➜ G1 PASSÉ. PROCHAIN = PIN DE FORME voie A + seuils G2 chiffrés dans ce doc (owner), AVANT
+tout train** (budget dur : 1 train + 1 re-train diagnostiqué).
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
