@@ -130,6 +130,37 @@ designée MESURÉE en G0 (pas de re-run de la réf). **PASS pré-chiffré à l'i
 repas+boissons / morts-par-arbitrage poolés, seuils écrits dans ce doc avant le run). **KILL
 précoce** : premier seed < réf − bruit. Échec → négatif commité, le designé RESTE (il est jugé).
 
+## ⭐ VERDICT G0 (2026-07-18, `diagnostics/diag_arbitrage_g0.py`, gratuit 0 run/0 train) : PASSÉ — place LARGE, voie A
+240 vies vécues (10 runs instrumentés monde v2 1+1 : g24×4, spx×2, judge×2, pure×2), selfcheck
+découpage de vies 24/24 vs godot.log (la 1ʳᵉ détection ratait exactement le cas intéressant —
+mort d'un drive pendant que l'autre est plein — corrigée sur la signature de reset MESURÉE
+(70,70,100)).
+- **LA PLACE** : morts-par-arbitrage (ressource du drive mortel VUE + métaboliquement ATTEIGNABLE
+  au dernier replan utile, cible AUTRE choisie à ce moment) = **13.1/24 vies** (atteignabilité
+  ligne-droite) et **16.1/24** (errance ×2) — **2.6-3.2× la barre pré-enregistrée (5.0)**. NB
+  honnête : les deux facteurs d'atteignabilité ne bornent pas la place de façon monotone
+  (resserrer déplace des « poursuites échouées » vers « bascule tardive ») ; les DEUX lectures
+  concordent largement au-dessus de la barre — c'est le critère.
+- **Contrôle dilemme (§2)** : à la mort, l'AUTRE drive = q1/méd/q3 **40/40/80**, **92-94 % > 40**
+  → vrais ratés d'arbitrage (le pic à 40 = l'autre ressource VENAIT d'être consommée : signature
+  du campement), PAS des dilemmes perdus d'avance.
+- **Localisation** : jamais-basculé **73**, bascule-tardive **58-93**, **campements 116/240 vies
+  (48 %)**, flottement **2022 bascules food↔water sans consommation** (~8.4/vie). Le déficit est
+  LE CHOIX DE CIBLE ET LE MOMENT DE BASCULE, pas le modèle interne de continuation. **→ VOIE A
+  (liens composés au niveau cible)**, avec la CONSISTANCE (hystérésis pro-cible-courante) en
+  contrainte DURE (le flottement mesuré est déjà pathologique) ; voie C = fallback étroit ; voie B
+  non indiquée par les données.
+- **Découverte** : metabolique_vue = **0**, jamais_vue = **1** → dans ce monde, quasi TOUTES les
+  morts de drive avaient leur ressource vue+atteignable à un moment de la vie ; la mort venait du
+  CHOIX. (Le plafond « métabolique » documenté reste vrai en SOUTENABILITÉ long-terme : la borne
+  hindsight par-décision est une borne SUPÉRIEURE — récupérer une décision peut ne faire que
+  reporter la mort. C'est le juge G3, en vies, qui dira la part réellement convertible.)
+- **Sanity croisée** : morts-danger 56/240 = 5.6/24 vies ≈ réf juge g24 (11/48 = 5.5) ✓ ;
+  237/240 morts (3 tronquées) = monde dur, cohérent avec les réfs.
+**➜ CHANTIER LICENCIÉ (per pré-enregistrement). PROCHAIN = G1** (collecte ε-CIBLE seeds 3+4 — le
+flottement vécu n'est PAS un contrefactuel de bascule TENUE ; la machinerie ε-cible est à écrire),
+puis PIN de la forme voie A + seuils G2/G3 chiffrés dans ce doc AVANT tout train.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
