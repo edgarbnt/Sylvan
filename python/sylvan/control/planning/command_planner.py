@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 import os
+import random
 from dataclasses import dataclass, field
 
 import torch
@@ -298,6 +299,19 @@ class CommandPlanner:
         _am = os.environ.get("SYLVAN_PLANNER_ALIGN_MODE")  # mean (défaut) | end (anti-spirale)
         if _am not in (None, ""):
             self.cfg.align_mode = _am
+        # ε-CIBLE (G1 chantier critique-arbitrage, docs/design_critique_arbitrage.md §G1) :
+        # exploration du CHOIX DE CIBLE au replan multi (les deux ressources visibles), TENUE
+        # sur K replans — un flip non tenu n'est pas un contrefactuel (le flottement vécu est
+        # déjà pathologique, G0). Opt-in, défaut OFF = bit-identique (aucun état, aucun tirage).
+        self._tgt_eps = float(os.environ.get("SYLVAN_TARGET_EXPLORE_EPS", "0") or 0)
+        self._tgt_persist = int(os.environ.get("SYLVAN_TARGET_EXPLORE_PERSIST", "15") or 15)
+        _ts = os.environ.get("SYLVAN_TARGET_EXPLORE_SEED")
+        self._tgt_rng = random.Random(int(_ts) if _ts not in (None, "") else 0)
+        self._tgt_hold: str | None = None
+        self._tgt_hold_left = 0
+        if self._tgt_eps > 0.0:
+            print(f"[planner] epsilon-CIBLE ACTIF eps={self._tgt_eps} "
+                  f"persist={self._tgt_persist} replans (G1 critique-arbitrage)")
         _pv = os.environ.get("SYLVAN_PLANNER_PIVOT")  # candidats pivot in-band (pur)
         if _pv not in (None, ""):
             self.cfg.pivot = _pv not in ("0", "false", "False")
@@ -888,6 +902,20 @@ class CommandPlanner:
                 target_first = "water" if best_w >= best_f - delta else "food"
             else:
                 target_first = "food" if best_f >= best_w else "water"
+            # ε-CIBLE (G1 critique-arbitrage) : APRÈS le choix designé (incumbent inclus), avec
+            # prob ε, forcer la cible NON choisie et la TENIR K replans multi. L'incumbent est
+            # aligné sur la cible forcée pour que le committment ne combatte pas la tenue.
+            explore_target = False
+            if self._tgt_eps > 0.0:
+                if self._tgt_hold_left > 0 and self._tgt_hold in ("food", "water"):
+                    target_first = self._tgt_hold
+                    self._tgt_hold_left -= 1
+                    explore_target = True
+                elif self._tgt_rng.random() < self._tgt_eps:
+                    target_first = "water" if target_first == "food" else "food"
+                    self._tgt_hold = target_first
+                    self._tgt_hold_left = self._tgt_persist - 1
+                    explore_target = True
             self._incumbent_target = target_first
             score = s_food if target_first == "food" else s_water
             best = int(torch.argmax(score).item())
@@ -908,6 +936,8 @@ class CommandPlanner:
                 "order_scores": [best_f, best_w],
                 "first_target": target_first,
             }
+            if explore_target:
+                out_d["explore_target"] = 1   # corpus honnête : décision FORCÉE, pas la politique
             if debug_scores:  # sondes offline (diag_survcost_omega_gradient, diag_orbit_scoring) : par candidat
                 out_d["scores"] = score.tolist()
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()

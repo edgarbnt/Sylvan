@@ -112,6 +112,8 @@ def _plan_target_record(plan_res: dict) -> dict:
     if "order_scores" in plan_res:               # instrumentation committment (écarts d'ordre)
         out["sf"], out["sw"] = (round(float(v), 1) for v in plan_res["order_scores"])
         out["first"] = plan_res.get("first_target")
+    if "explore_target" in plan_res:             # ε-CIBLE (G1 critique-arbitrage) : décision FORCÉE
+        out["explore_target"] = 1                # — le corpus doit pouvoir l'écarter/l'isoler
     if "wp" in plan_res:                         # ÉTAGE WAYPOINT : pendant un leg, food/water du plan
         out["wp"] = plan_res["wp"]               # sont des OVERRIDES (wp) — marquer le record (honnêteté
                                                  # corpus : un lecteur critique doit pouvoir les écarter)
