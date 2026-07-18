@@ -239,6 +239,26 @@ chemin → contournement pur, testable sans mémoire), soit (b) activer la mémo
 B (perception+intégration) est bâtie et branchée ; la preuve-en-vies du contournement attend ce choix
 de monde G3.
 
+## ⭐ GEL DU CHANTIER (2026-07-18, owner) : voie B bâtie + branchée ; G3 DIFFÉRÉ (pas escamoté)
+Le chantier est **GELÉ** à l'état « perception + intégration LIVRÉES, preuve-en-vies EN ATTENTE » :
+- **BANKÉ** : G0 PASS (voie B tranchée à coût nul), G1 PASS (monde solide viable + le corps respecte
+  les solides), G2 PASS offline (AUC CV 1.000, sélectivité cyan-vs-bouffe DÉCOUVERTE du seul label
+  moteur), intégration `SYLVAN_WP_OBSTACLE` dans `waypoint_layer.py` (opt-in, défaut OFF
+  bit-identique). WM intact, zéro coût-obstacle codé-main dans la décision.
+- **G3 (preuve-en-vies du contournement) = DIFFÉRÉ sur finding structurel**, pas relâché (§2) : un
+  mur occluant fait perdre la cible au slot single-food → l'agent erre AVANT d'engager le mur → le
+  contournement n'est **pas exerçable sans persistance de cible (mémoire)**. Deux réouvertures
+  pré-inscrites : **(a)** monde G3 NON-occluant (mur décalé, protubérant dans le chemin, bouffe
+  visible → contournement pur testable sans mémoire) ; **(b)** mémoire de slot (module
+  `memoire_spatiale`) — la voie qui révèle la vraie dépendance = le chantier mémoire.
+- **Dettes déclarées à la réouverture** : sélectivité OOD (ré-entraîner la lentille sur un corpus
+  riche avec eau/danger comme négatifs perçus non-bloquants) ; test « survit au changement
+  d'apparence » (critère de pureté officiel) pas encore payé.
+- **Pourquoi geler ICI** : l'interface de l'étage waypoint est désormais STABLE (lunette danger +
+  lentille obstacle branchées, plus personne n'édite `waypoint_layer.py`) → c'est le socle gelé
+  qu'exige le chantier suivant (**critique appris à l'étage waypoint**, pré-inscription
+  `docs/design_critique_waypoint.md`) sans cible mouvante ni train-deploy mismatch.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé — **sauf** voie A explicitement gatée par G0+G2) ; le readout géométrique du slot ; le
 transport ; les drives eux-mêmes ; le planner bas (coût de décision). Le corps qui **respecte les

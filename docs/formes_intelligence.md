@@ -21,7 +21,7 @@ On classe en trois familles : **Percevoir**, **Décider/planifier**, **Intellige
 | Perception typée (couleur→drive DÉCOUVERT par contingence) | ✅ oui | la perception vivante, 100 % apprise du vécu (`wm_objcentric_kin_typed`). |
 | Lunette saillance-danger (visuel → « fait mal », appris des dégâts) | ✅ promue | juge PASS 41/9 ; la clé-apparence « danger=vert » dissoute. |
 | Attribution de crédit (baie-vs-buisson, classe NEUTRE, bon indice) | ✅ juge PASS | crédit au bon indice parmi co-occurrents + reconnaît un neutre. |
-| Prédicteur d'affordance (visuel → « bloque », voie B, canal mouvement) | 🟡 en cours | appris (AUC 1.0, sélectivité cyan-vs-bouffe) ; pas encore jugé en vies. |
+| Prédicteur d'affordance (visuel → « bloque », voie B, canal mouvement) | 🟡 bâti+branché, GELÉ | appris (AUC 1.0, sélectivité cyan-vs-bouffe) + intégré à l'étage waypoint ; la preuve-en-vies (G3) est DIFFÉRÉE sur finding structurel : contourner un mur OCCLUANT exige la mémoire (gel 2026-07-18, `design_obstacle_affordance.md`). |
 
 **→ C'est ici que le projet a une intelligence RÉELLE et utile.** L'entité *sait ce qu'est le monde*
 (bouffe/eau/danger/obstacle et leurs conséquences) **sans qu'on le lui code** — chaque « sens » est une
