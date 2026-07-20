@@ -280,6 +280,14 @@ de lancer le bras appris, par cette formule :
 - **KILL précoce** : au seed 1, conso(arb) < conso_réf_s1 − 10 → stop avant le seed 2.
 Échec → négatif commité, le designé reste (il est jugé), la tête reste bankée.
 
+**⭐ RÉF G3 MESURÉE (2026-07-20, AVANT le bras appris — runs arbj_ref_s1/s2)** :
+s1 = 62 conso / 24 morts (16 par-arbitrage, 3 danger) ; s2 = 46 / 24 (18, 2) → **POOLÉ 108 conso,
+48 morts dont 34 PAR-ARBITRAGE** (≈17/24 vies : le finding G0 se reproduit sur les seeds du juge).
+**PASS CHIFFRÉ (formule ci-dessus, figé avant le bras appris)** : conso(arb) **≥ 103** ET
+morts-par-arbitrage(arb) **≤ 26** ; morts totales ≤ 50 = NON-CONTRAIGNANT dans ce monde (chaque
+vie finit par une mort : 48/48 aux deux réfs) — noté honnêtement, les deux critères liants sont
+conso et morts-par-arbitrage. **KILL précoce : seed 1 conso < 52.**
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
