@@ -186,6 +186,43 @@ décontaminé] = parité train/déploiement ; ε=0.05, K=15 calibrés et déclar
 **➜ G1 PASSÉ. PROCHAIN = PIN DE FORME voie A + seuils G2 chiffrés dans ce doc (owner), AVANT
 tout train** (budget dur : 1 train + 1 re-train diagnostiqué).
 
+## ⭐ PIN DE FORME (D1, tranché owner 2026-07-20) + seuils G2 — écrits AVANT tout train
+**Forme au déploiement (voie A, réplique exacte de la doctrine sprint)** — à chaque replan MULTI,
+pour chaque cible t ∈ {food, water} visible :
+```
+S(t) = dist(t) − 0.02 · max(0, P̂(obtenir|s,t)·bénéfice(t) − κ_data·douleur̂(t)·100 − P̂mort(t)·κ_data·100)
+```
+choix = argmin S(t), avec COMMITTMENT pro-cible-courante : le challenger doit battre l'incumbent
+de **δ = 75 pas × 0.02 = 1.5 m d'équivalent-score** — l'ancre de bruit slot-jitter DÉJÀ calibrée
+du planner (commentaire COMMITTMENT, command_planner.py), réutilisée telle quelle : zéro constante
+nouvelle.
+- **P̂(obtenir|s,t) = LA SEULE TÊTE ENTRAÎNÉE** : MLP jumeau SprintCritic (14-d), BCE sur `got`
+  (le type POURSUIVI consommé dans la fenêtre de poursuite : jusqu'à bascule de cible /
+  consommation / mort / cap 600 pas), corpus = replans MULTI des 12 runs instrumentés (10 runs G0
+  + arb3/arb4, les lignes ε flaggées incluses), **CV-4 par VIE**. Entrées = contrat
+  `sprint_inputs` INCHANGÉ appliqué au candidat DIRECT-vers-t : `candidate_features(t, t, greens)`
+  (10-d) + [énergie/100, soif/100, santé/100, douleur̂(t)/100].
+- **GELÉ** : douleur̂ = `waypoint_pain_decont` (le vivant) ; P̂mort = `sprint_critic/death_best.pt`
+  (bankée P2-bis, AUC 0.839) ; greens offline = lunette `danger_saliency` (la vivante) sur le
+  retina0 loggé — parité featurization train/déploiement.
+- **MESURÉ (zéro constante fittée)** : bénéfice(t) = min(restore_mesuré, 100−drive(t))/drain_mesuré
+  (satiété exacte, pas apprise) ; κ_data re-mesuré sur le corpus poolé ; 0.02 m/pas = corps calibré.
+- **Interdits reconduits** : label U net ; distillation du designé (blanchiment) ; constante
+  ajustée pour faire passer un gate ; toucher au scoring waypoint/sprint (interface gelée).
+
+**Seuils G2 (pré-enregistrés, offline, gratuits — écrits ICI avant le train)** :
+1. **G-rank** : AUC(P̂, got) > **0.70** en CV-4 par vie sur les décisions tenues (ε incluses).
+2. **G-res** : précision du choix simulé (argmin S + committment) vs la cible empiriquement
+   meilleure du bucket (état drives × écart de distance) ≥ **designé + 10 pts** sur décisions
+   tenues.
+3. **G-consist** : taux de bascule du choix simulé, rejoué sur les séquences réelles de replans
+   multi, ≤ **1.2×** celui du designé (LE tueur historique v2/v3).
+4. **G-mono** : P̂·bénéfice strictement DÉCROISSANT par bande de satiété du drive de la cible ET
+   remise CROISSANTE par bande d'urgence (buckets peuplés).
+Budget dur : **1 train + 1 re-train** sur hypothèse nouvelle diagnostiquée sur trace ; au-delà →
+négatif commité + STOP. Le juge G3 (2×24 vies seeds 1+2, PASS chiffré vs réf vivante MESURÉE avant
+le run) n'est payé QUE si G2 passe.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
