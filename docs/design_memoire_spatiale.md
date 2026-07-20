@@ -130,6 +130,31 @@ notée du pivot cinématique ; OU monde moins épars) — décision de SUBSTRAT,
 Chantier mémoire re-scopé : ne le rouvrir que couplé à l'occlusion PHYSIQUE (monde obstacle), avec
 son G0 propre sur un corpus-obstacle.
 
+## ⭐⭐ VERDICT G0 MONDE-OBSTACLE (2026-07-21, `diagnostics/diag_obstacle_memory_g0.py`, gratuit) : place RÉELLE mais MODESTE, range-entangled → A/B en-vies gaté (pas de retrain)
+Mesuré sur les corpus obstacle EXISTANTS (`obstacle_g1nav`/`g2nav`, food-only + mur solide), vs
+sparse 360° :
+- **STRUCTUREL — l'occlusion est réelle et grande** : bouffe visible **22 %** (obstacle) vs **63 %**
+  (sparse). Monde food-only → l'occlusion est la SEULE cause (pas d'arbitrage).
+- **COÛT réel** : forage ~divisé par 2 (15 repas vs 40 sparse à ticks comparables).
+- **BEHAVIORAL (le finding G3-gelé quantifié)** : la bouffe disparaît à **6,9 m** (méd) et réapparaît
+  à **6,8 m** → l'agent naïf **ne progresse PAS** vers la bouffe cachée pendant qu'il est aveugle
+  (même distance avant/après) → sans mémoire, il n'avance pas vers ce qu'il ne voit plus. C'est LE
+  travail de la mémoire.
+- **CAVEAT honnête (§2)** : l'occlusion arrive surtout à ~7 m (range-borderline), PAS de près —
+  seulement ~10 % des transitions concernent une bouffe <3,5 m. Donc la place est RÉELLE mais MODESTE
+  et **entangled avec le plafond de portée** (7 m = bord de l'enveloppe métabolique). Le raffinement
+  « belief dead-reckon <3,5 m » a donné 0 % = ARTEFACT DE SEUIL (la bouffe est à 7 m, pas 3,5 m), jeté
+  honnêtement (comme la sous-mesure tautologique de l'arbitrage).
+**➜ VERDICT : place mémoire RÉELLE (la plus claire de toutes les directions essayées : occlusion +
+coût + agent naïf qui échoue, sans confond d'arbitrage) MAIS modeste et range-entangled — PAS un
+slam-dunk.** Pas un STOP (le signal structurel est net) ni un PASS franc. **PROCHAIN = A/B EN VIES
+CHEAP** (mémoire `MultiSlotMemory` ON vs OFF dans le monde-mur, ZÉRO retrain — juste brancher le
+module ; harnais forage obstacle) = le vrai arbitre, avec attentes TEMPÉRÉES (le plafond de portée à
+~7 m cape le gain possible). Si l'A/B est plat → la mémoire ne récupère pas le coût d'occlusion sur ce
+substrat, négatif commité, et le plafond de portée est confirmé comme limiteur PERVASIF (il revient à
+CHAQUE direction). Note owner : ce pattern — toute direction bute sur la portée ~7 m — est lui-même le
+signal fort que le levier réel est la PORTÉE/vitesse (substrat), pas un étage de plus.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; le slot_encoder / la saillance / l'EgomotionHead (déjà appris, GELÉS) ; les drives ;
 le sprint-critic et les lentilles waypoint (interface gelée) ; le choix de cible designé (l'arbitrage
