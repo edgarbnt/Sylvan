@@ -95,6 +95,41 @@ plan par tick), reconstruire par vie et TRANCHER, pour les **morts-par-arbitrage
   valeur. Budget dur : pas d'entraînement (la mémoire est sans-paramètre-appris nouveau — tout est
   déjà appris : egomotion, saillance) → le coût est la calibration + les juges, pas un run PPO/WM.
 
+## ⭐⭐ VERDICT G0 (2026-07-20, `diagnostics/diag_memory_g0.py`, gratuit 0 run/0 train) : STOP — le mur d'arbitrage est la PORTÉE, pas la mémoire ; le négatif occlusion TIENT
+288 vies, 155-195 morts-par-arbitrage. Décomposition (rétine RED/BLUE = ce que l'œil a vu ;
+dead-reckoning rejoué par `EgomotionHead` R² 0.95-0.99 + `transport_geom`, exactement
+`MultiSlotMemory`) :
+- **`never_seen` = 0** partout → AUCUN trou de perception : chaque mort-par-arbitrage avait vu sa
+  ressource. La mémoire est *en principe* pertinente ; mais elle ne suffit pas — voir ci-dessous.
+- **`seen_in_critical` DOMINE = 114/155 (73 %) à 154/195 (79 %)** : la ressource nécessiteuse était
+  **ENCORE EN VUE au moment critique** → ce n'est PAS un problème de mémoire (rien à re-cibler de
+  mémoire, elle est sous les yeux). C'est le problème de CHOIX (arbitrage G3, réfuté) et surtout de
+  PORTÉE (investigation post-juge : basculer vers la nécessiteuse ne réussit que 37.7 % — elle est
+  LOIN).
+- **`seen_then_lost` = 41 bruts (3.4/24)** MAIS **FAISABLES = 1.9/24 (optimiste), 0.0/24
+  (conservateur)** — LARGEMENT sous la barre 5. Et **bord-de-champ = 41/41** : la ressource perdue
+  était TOUJOURS en train de reculer sur le côté/derrière (l'agent fonce vers l'autre cible). En
+  rétine 360°, elle n'est « perdue » qu'une fois **au-delà de 10 m** → hors portée métabolique de
+  toute façon (d'où faisable 0/41 conservateur). La mémoire re-ciblerait un souvenir **inatteignable**.
+**➜ STOP per pré-enregistrement (verdict « ≤ bruit »).** Le négatif occlusion TIENT, re-dérivé
+d'un angle indépendant. **Diagnostic unifié des DEUX G0** : le mur multi-drive épars est un
+**PLAFOND DE PORTÉE/MÉTABOLIQUE** (la nécessiteuse est trop LOIN quand elle devient urgente),
+que ni une meilleure tête de choix (arbitrage G3) ni la mémoire (ici) ne cassent — la ressource
+est *vue-mais-inatteignable* ou *souvenue-mais-inatteignable*, jamais *atteignable-mais-oubliée*.
+
+**Où vit ENCORE une place mémoire (NON testable sur ces corpus, à ne PAS deviner)** :
+1. **Occlusion PHYSIQUE** (monde obstacle : un mur solide cache la ligne de vue même à &lt;10 m) — la
+   seule vraie perte « atteignable-mais-invisible ». Mais ces corpus n'ont pas d'obstacle → couplé
+   au G3 obstacle gelé (il faudrait collecter le monde-obstacle), pas un gain autonome.
+2. **Cône de vision RÉEL** (dette #1 de la carte : WM ré-entraîné sur perception en cône, pas un
+   masque OOD sur WM-360°) — alors « derrière moi » devient vraiment invisible. Coûteux (cycle WM),
+   non gaté par une place mesurée ici.
+**Recommandation (owner) : ne PAS bâtir la mémoire sur la justification arbitrage — elle est
+réfutée.** Le vrai levier que les deux G0 pointent = la PORTÉE (corps plus rapide `kin_speed`, dette
+notée du pivot cinématique ; OU monde moins épars) — décision de SUBSTRAT, pas un étage à empiler.
+Chantier mémoire re-scopé : ne le rouvrir que couplé à l'occlusion PHYSIQUE (monde obstacle), avec
+son G0 propre sur un corpus-obstacle.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; le slot_encoder / la saillance / l'EgomotionHead (déjà appris, GELÉS) ; les drives ;
 le sprint-critic et les lentilles waypoint (interface gelée) ; le choix de cible designé (l'arbitrage
