@@ -358,6 +358,17 @@ de **COMMITMENT/hystérésis** (déjà designé : δ committment), pas de valeur
 cheap (owner) : tuner le dwell-time / l'hystérésis pro-cible-courante et re-mesurer la courbe
 atteinte-vs-distance à 0-3 m — SANS apprendre. Le loin reste substrat (portée).
 
+**A/B COMMITMENT (pré-inscrit 2026-07-20, `scripts/collect_reachprobe.sh` DELTA=…)** : bras
+`SYLVAN_PLANNER_COMMIT_DELTA` ∈ {0 (défaut vivant), 75, 150} pas, multi-drive apparié (no hazard,
+ε OFF), 16 vies. **Mesure DOUBLE (le garde-fou §2 est dans la mesure)** :
+- **PRÈS (la cible du fix)** : atteinte 0-3 m doit REMONTER vers le mono (100/99 %) — succès = au
+  moins un delta gagne ≥ +5 pts à 0-2 m OU ≥ +10 pts à 2-3 m vs delta=0 ;
+- **SURVIE (le garde-fou anti-fausse-solution)** : conso/vie NE DOIT PAS chuter (un delta trop têtu
+  ignore une bascule urgente → conso ↓ = REJET, même si le près monte).
+Verdict pré-enregistré : le meilleur delta = celui qui monte le près SANS régression conso. Si
+AUCUN ne fait les deux → le flottement n'est pas cassable par un commitment STATIQUE (négatif noté ;
+piste = commitment fonction de l'écart d'urgence, hors scope de cet A/B).
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
