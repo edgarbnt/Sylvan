@@ -288,6 +288,35 @@ morts-par-arbitrage(arb) **≤ 26** ; morts totales ≤ 50 = NON-CONTRAIGNANT da
 vie finit par une mort : 48/48 aux deux réfs) — noté honnêtement, les deux critères liants sont
 conso et morts-par-arbitrage. **KILL précoce : seed 1 conso < 52.**
 
+## ⭐⭐ VERDICT G3 (2026-07-20, runs arbj_{ref,arb}_s{1,2}) : ÉCHEC per pré-enregistrement — négatif commité, designé conservé
+| bras | conso poolées | morts | par-arbitrage | danger | campements |
+|---|---|---|---|---|---|
+| réf (designé) | **108** | 48 | **34** | 5 | 27 |
+| appris (arb) | **96** ❌ (<103) | 48 | **25** ✅ (≤26) | **13** | 23 |
+- **Le critère VISÉ passe** : morts-par-arbitrage 34→25 (−9 ; s1 16→13, s2 18→12) — la tête fait
+  exactement ce pour quoi elle a été construite. Pas de KILL (s1 conso 54 ≥ 52).
+- **Mais l'échec est EXPORTÉ, pas résorbé** : morts-danger 5→13 (+8) et conso 108→96 (−12). Les
+  vies sauvées de l'arbitrage meurent au danger ; la monnaie de survie baisse. Per
+  pré-enregistrement : **ÉCHEC — le designé reste le vivant, la tête reste bankée.**
+- **DIAGNOSTIC (sur trace, gratuit) — l'écho exact de P2-bis** : la forme pinnée price le risque
+  EN ESPÉRANCE (`κ·douleur̂·100 + P̂mort·κ·100`, linéaire) ; or P2-bis a prouvé MATHÉMATIQUEMENT
+  qu'une tarification risque-neutre ne refuse pas une option rentable-en-moyenne qui tue (~130
+  pas de prime à P̂mort=0.15 vs bénéfice ~500). Au niveau waypoint, c'est **W = l'aversion du
+  CORPS** qui porte ce refus ; mon déploiement a REMPLACÉ l'ordre designé (argmin dist−remise)
+  sans AUCUNE ancre d'aversion — et a partiellement violé la doctrine gagnante du chantier sprint
+  (« ni le remplacement, ni le monolithe : socle analytique consistant + remise PLAFONNÉE »).
+  La signature comportementale colle : choix plus risqués en route (danger +8), suivi d'urgence
+  plus mou, conso en baisse.
+- **Deux suites possibles (owner à trancher ; le re-train du budget n'est PAS consommé)** :
+  (i) **clore en négatif** — l'arbitrage de cible reste designé, acquis : la place existe (G0),
+  le corpus ε (G1), une tête P̂(obtenir) calibrée AUC 0.787 (G2), et la preuve-en-vies que la
+  forme-remplacement échoue au niveau cible comme ailleurs ;
+  (ii) **amendement de forme SANS re-train** (déploiement seul, pré-inscrit avant tout run) :
+  revenir à la lettre de la doctrine — le choix DESIGNÉ (sf/sw, l'aversion et le foresight du
+  corps intacts) reste le socle, la tête P̂ n'apporte qu'une CORRECTION PLAFONNÉE de l'ordre
+  (jumeau composed_v1 : elle ne peut qu'adoucir un écart sf/sw en faveur de la cible qu'elle
+  juge obtenable, jamais créer un choix risqué) ; A/B 2×24 vies même protocole, mêmes seuils.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
