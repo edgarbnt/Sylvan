@@ -387,6 +387,11 @@ le « mur multi-pulsion » ([[sylvan-second-drive-arbitration]]) : servir deux b
 proches avec un MPC glouton mono-cible. Le seul levier non-essayé = ARCHITECTURAL (planifier une
 TOURNÉE courte « prends la proche, puis l'autre » au lieu de re-choisir une seule cible chaque
 replan) — changement plus lourd, décision owner.
+**⭐ AFFINEMENT (2026-07-20, sonde cône gratuite)** : sur 12 239 moments de dithering, la ressource
+URGENTE abandonnée est DERRIÈRE l'entité 41 % (90-180°) / 56 % (>60°), le distracteur suivi est
+DEVANT (49 % <30°). Donc un cône frontal cacherait l'urgente (CASSE 70 % à ±45°) = réfute le cône
+comme fix du dithering ; ET révèle que le près est en partie le mur « ne s'engage pas vers une cible
+DERRIÈRE » (véhicule forward-only, `sylvan-keystone-3b-geometric-wall`), pas que du multi-objectif.
 
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
