@@ -223,6 +223,41 @@ Budget dur : **1 train + 1 re-train** sur hypothèse nouvelle diagnostiquée sur
 négatif commité + STOP. Le juge G3 (2×24 vies seeds 1+2, PASS chiffré vs réf vivante MESURÉE avant
 le run) n'est payé QUE si G2 passe.
 
+## ⭐ VERDICT G2 (2026-07-20, `train_arb_critic.py`, 1 train — budget re-train NON consommé) : 3/4 GATES ✅, G-mono ❌ DIAGNOSTIQUÉ CRITÈRE CONFONDU → correction owner en attente
+Corpus : 288 vies / 11 688 décisions multi (842 ε ; 13 114 records waypoint-override ÉCARTÉS —
+positions non fiables, honnêteté corpus), got=0.45, mesures κ=9.14 / drain 0.05 / restore 39.95
+(cohérentes sprint). Featurization = parité stricte (candidate_features + lunette saillance +
+douleur̂ decont importés des modules vivants).
+- **G-rank ✅ AUC CV-4 par vie = 0.787** (plis 0.749/0.767/0.772/0.861, tous > barre 0.70).
+  Nettement au-dessus du plafond ~0.68 du niveau sprint — le niveau CIBLE a le rapport
+  signal/bruit que le diagnostic de la fente prédisait.
+- **G-res ✅ 85.9 % vs designé 69.6 % (+16.3 ≥ +10)** — sans fuite : table de buckets sur plis
+  d'entraînement, scores par le réseau du pli, jugé sur plis tenus (11 688 décisions).
+- **G-consist ✅ 3.7 % ≤ 6.5 %** (1.2× designé 5.4 %) — le choix appris + committment δ=1.5 m
+  bascule MOINS que le designé (le tueur historique est absent).
+- **G-mono ❌ — mais le diagnostic gratuit sur trace montre un CRITÈRE CONFONDU, pas un modèle
+  pervers** : (1) `bén = min(40, 100−drive)/drain` est PLAT (=799) sous drive 60 → les bandes
+  [0,30) et [30,60) comparaient P̂ seul, pas la satiété ; (2) P̂ est CALIBRÉE par bande
+  (P̂ vs got réel : 0.367/0.387, 0.513/0.486, 0.479/0.484, 0.341/0.326) et sa chute à drive<30
+  est la VÉRITÉ vécue — **52 % de ces poursuites meurent avant d'obtenir** ; exiger P̂·bén ↓
+  strict sur cette zone = exiger que la tête MENTE sur la mortalité du désespoir. (3) Là où bén
+  varie réellement (drive>60) : **P̂·bén = 325 → 86, strictement décroissant ✓**. Le volet
+  urgence↑remise est confondu par la même mortalité (la remise DOIT baisser quand mourir en
+  route est probable — c'est précisément ce que la forme doit pricer).
+- Sonde comportementale annexe (consignée, pas un gate) : le choix appris suit l'urgence plus
+  DOUCEMENT que le designé (choix-food 0.32→0.36→0.42 par bande d'écart d'urgence vs designé
+  0.12→0.35→0.74) — c'est le juge G3, en vies, qui dira si cette pondération douce (informée par
+  P̂/mortalité) bat le suivi d'urgence raide du designé.
+**PROPOSITION G-mono-v2 (correction à découvert, précédent sprint volet-blessés — décision
+OWNER, juge G3 INCHANGÉ)** : remplacer les deux volets confondus par (a) P̂·bén strictement
+décroissant sur la zone où bén VARIE (bandes [60,80) vs [80,100] — mesuré 325 > 86 ✓) ET
+(b) CALIBRATION : |P̂ − taux réel d'obtention| ≤ 0.05 par bande de satiété (mesuré
+0.020/0.027/0.005/0.015 ✓). Le volet urgence-remise est RETIRÉ comme confondu (la mortalité est
+pricée par construction). Si l'owner tranche G-mono-v2 → gates 4/4 → **G3 licencié** (2×24 vies
+seeds 1+2, PASS chiffré vs réf vivante mesurée AVANT le run). Sinon → négatif commité, designé
+conservé. Ckpt bankée : `data/checkpoints/arb_critic/arb_best.pt` (gates_pass=False tant que
+G-mono n'est pas tranché).
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
