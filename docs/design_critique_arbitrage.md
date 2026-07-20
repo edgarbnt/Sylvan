@@ -392,6 +392,11 @@ URGENTE abandonnée est DERRIÈRE l'entité 41 % (90-180°) / 56 % (>60°), le d
 DEVANT (49 % <30°). Donc un cône frontal cacherait l'urgente (CASSE 70 % à ±45°) = réfute le cône
 comme fix du dithering ; ET révèle que le près est en partie le mur « ne s'engage pas vers une cible
 DERRIÈRE » (véhicule forward-only, `sylvan-keystone-3b-geometric-wall`), pas que du multi-objectif.
+**⭐ CORRECTION §2 (métrique juste)** : la 360° est une commodité de test, pas l'état final — compter
+« raté à 2m » avec les cibles DERRIÈRE (invisibles en vue réaliste) SUR-ESTIME le déficit. Atteinte
+à 0-2m DEVANT (±60°) = 74,9 % vs DERRIÈRE 36,0 % ; et DEVANT+engagée = 90,6 % (mono 100 %). Donc le
+« close » à 2m est BON quand c'est juste ; le déficit réel de près est PETIT (arbitrage entre proches),
+pas le 35 % brut. Le moteur n'est pas en cause.
 
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
