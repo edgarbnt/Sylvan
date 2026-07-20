@@ -312,6 +312,41 @@ class CommandPlanner:
         if self._tgt_eps > 0.0:
             print(f"[planner] epsilon-CIBLE ACTIF eps={self._tgt_eps} "
                   f"persist={self._tgt_persist} replans (G1 critique-arbitrage)")
+        # CRITIQUE-ARBITRAGE (G3, docs/design_critique_arbitrage.md pin D1, owner 2026-07-20) :
+        # le CHOIX de cible multi-drive (food/eau) devient la forme composée APPRISE ; le scoring
+        # des commandes vers la cible choisie reste le coût survie designé. Opt-in, défaut OFF
+        # bit-identique. Toutes les constantes viennent du ckpt (mesurées au train, parité).
+        self._arb: dict | None = None
+        _ac = os.environ.get("SYLVAN_ARB_CRITIC")
+        if _ac not in (None, ""):
+            from scripts.train_danger_saliency import DangerSaliency
+            from scripts.train_sprint_critic import SprintCritic
+            from scripts.train_waypoint_pain import PainCritic
+            ck = torch.load(_ac, map_location="cpu", weights_only=True)
+            if ck.get("form") != "arb_p_v1":
+                raise ValueError(f"SYLVAN_ARB_CRITIC: forme inattendue {ck.get('form')!r}")
+
+            def _sd(path: str) -> dict:
+                c = torch.load(path, map_location="cpu", weights_only=True)
+                return c["state_dict"] if isinstance(c, dict) and "state_dict" in c else c
+
+            head = SprintCritic()
+            head.load_state_dict(ck["state_dict"])
+            head.eval()
+            pain = PainCritic()
+            pain.load_state_dict(_sd(ck["pain_ckpt"]))
+            pain.eval()
+            death = SprintCritic()
+            death.load_state_dict(_sd(ck["death_ckpt"]))
+            death.eval()
+            sal = DangerSaliency()
+            sal.load_state_dict(_sd(ck["sal_ckpt"]))
+            sal.eval()
+            self._arb = {"head": head, "pain": pain, "death": death, "sal": sal,
+                         "kappa": float(ck["kappa_data"]), "drain": float(ck["drain"]),
+                         "restore": float(ck["restore"]), "delta": float(ck["delta_commit_m"])}
+            print(f"[planner] CRITIQUE-ARBITRAGE ACTIF ({_ac}) "
+                  f"kappa={self._arb['kappa']:.2f} delta={self._arb['delta']:.2f} m")
         _pv = os.environ.get("SYLVAN_PLANNER_PIVOT")  # candidats pivot in-band (pur)
         if _pv not in (None, ""):
             self.cfg.pivot = _pv not in ("0", "false", "False")
@@ -397,6 +432,47 @@ class CommandPlanner:
         return torch.tensor(seqs, dtype=torch.float32, device=self.device)  # [N, H, 2]
 
     @torch.no_grad()
+    def _arb_choice(self, obs: torch.Tensor, food_pos: tuple[float, float],
+                    water_pos: tuple[float, float], e0: float, t0: float,
+                    health: float | None, inc: str | None) -> tuple[str, list[float]]:
+        """Pinned voie-A target choice (docs/design_critique_arbitrage.md D1, G-mono-v2 owner).
+
+        S(t) = dist(t) - 0.02*max(0, P(obtain|s,t)*benefit - kappa*pain*100 - Pdeath*kappa*100),
+        argmin with the pro-incumbent commitment delta from the ckpt. Featurization = the EXACT
+        training contract (candidate_features on the direct-to-target candidate + saliency lens
+        on the t0 retina + frozen pain head), drives on the payload 0-100 scale.
+        """
+        from scripts.train_danger_saliency import saliency_points
+        from scripts.train_sprint_critic import sprint_inputs
+        from ..waypoint_layer import candidate_features
+        a = self._arb
+        assert a is not None
+        pd = self.world_model.proprio_dim
+        retina = [float(v) for v in obs[pd:pd + RETINA_DIM].tolist()]
+        greens = saliency_points(a["sal"], retina)
+        drives = (float(e0) * 100.0, float(t0) * 100.0,
+                  float(health) * 100.0 if health is not None else 100.0)
+        scores: list[float] = []
+        for pos, lvl in ((food_pos, drives[0]), (water_pos, drives[1])):
+            feats = candidate_features((float(pos[0]), float(pos[1])),
+                                       (float(pos[0]), float(pos[1])), greens)
+            with torch.no_grad():
+                pain = float(a["pain"].pain(torch.tensor([feats], dtype=torch.float32))[0])
+                x = sprint_inputs([feats], drives, [pain])
+                p_obt = float(a["head"].p(x)[0])
+                p_die = float(a["death"].p(x)[0])
+            ben = min(a["restore"], 100.0 - lvl) / a["drain"]
+            rem = 0.02 * max(0.0, p_obt * ben - a["kappa"] * pain * 100.0
+                             - p_die * a["kappa"] * 100.0)
+            scores.append(math.hypot(float(pos[0]), float(pos[1])) - rem)
+        if inc == "food":
+            tgt = "food" if scores[0] <= scores[1] + a["delta"] else "water"
+        elif inc == "water":
+            tgt = "water" if scores[1] <= scores[0] + a["delta"] else "food"
+        else:
+            tgt = "food" if scores[0] <= scores[1] else "water"
+        return tgt, [round(scores[0], 3), round(scores[1], 3)]
+
     def plan(
         self,
         obs: torch.Tensor,
@@ -404,6 +480,8 @@ class CommandPlanner:
         water_radar: list[float] | None = None,
         energy: float | None = None,
         thirst: float | None = None,
+        health: float | None = None,
+        arb_ok: bool = True,
         override_pos: bool = False,
         food_override: tuple[float, float] | None = None,
         water_override: tuple[float, float] | None = None,
@@ -902,6 +980,14 @@ class CommandPlanner:
                 target_first = "water" if best_w >= best_f - delta else "food"
             else:
                 target_first = "food" if best_f >= best_w else "water"
+            arb_scores: list[float] | None = None
+            if self._arb is not None and arb_ok:
+                # CRITIQUE-ARBITRAGE (G3, pin D1) : le CHOIX de cible devient la forme composée
+                # apprise ; les sf/sw designés restent loggés en DIAGNOSTIC (parité corpus) et le
+                # scoring des commandes vers la cible choisie reste designé. Pas pendant un leg
+                # waypoint (arb_ok=False : positions = overrides, exclues du corpus au train).
+                target_first, arb_scores = self._arb_choice(
+                    obs, (fx, fz), (wx, wz), e0, t0, health, inc)
             # ε-CIBLE (G1 critique-arbitrage) : APRÈS le choix designé (incumbent inclus), avec
             # prob ε, forcer la cible NON choisie et la TENIR K replans multi. L'incumbent est
             # aligné sur la cible forcée pour que le committment ne combatte pas la tenue.
@@ -938,6 +1024,8 @@ class CommandPlanner:
             }
             if explore_target:
                 out_d["explore_target"] = 1   # corpus honnête : décision FORCÉE, pas la politique
+            if arb_scores is not None:
+                out_d["arb_scores"] = arb_scores   # G3 : S(food), S(water) de la forme apprise (m)
             if debug_scores:  # sondes offline (diag_survcost_omega_gradient, diag_orbit_scoring) : par candidat
                 out_d["scores"] = score.tolist()
                 out_d["cand_cmd0"] = self._cmd_seqs[:, 0, :].tolist()

@@ -258,6 +258,28 @@ seeds 1+2, PASS chiffré vs réf vivante mesurée AVANT le run). Sinon → néga
 conservé. Ckpt bankée : `data/checkpoints/arb_critic/arb_best.pt` (gates_pass=False tant que
 G-mono n'est pas tranché).
 
+## ⭐ G-mono-v2 TRANCHÉ (owner 2026-07-20) → gates 4/4 → G3 LICENCIÉ + protocole pré-enregistré
+**Décision owner** : G-mono-v2 accepté tel que proposé — (a) monotonie P̂·bén sur la zone où bén
+varie (mesuré 325 > 86 ✓) + (b) calibration |P̂−réel| ≤ 0.05 par bande (mesuré 0.005-0.027 ✓) ;
+volet urgence-remise retiré (confondu par la mortalité, pricée par construction). **G2 = 4/4.**
+**Déploiement (commit de ce jour)** : `SYLVAN_ARB_CRITIC=<ckpt>` dans `command_planner.py` —
+remplace le CHOIX de cible du replan multi par la forme pinnée (toutes constantes lues du ckpt :
+κ, drain, restore, δ committment) ; le scoring des COMMANDES vers la cible choisie reste designé ;
+sf/sw designés toujours loggés (diagnostic) + `arb_scores`/flag `arb` au BC (corpus honnête) ;
+`arb_ok=False` pendant les legs waypoint (positions = overrides, exclues du corpus au train =
+parité) ; santé passée au planner (parité features). Opt-in, défaut OFF bit-identique.
+**Protocole G3 (pré-enregistré AVANT tout run)** : 2 bras × 2 seeds (1+2, propriété du juge) ×
+24 vies, monde v2, config vivante waypoint (lunette + sprint décontaminé), ε OFF, harnais
+`scripts/judge_arb_critic.sh <ref|arb> <seed>` (même collecte instrumentée BC que les corpus).
+**La réf (bras designé) est RE-MESURÉE D'ABORD**, puis le PASS est chiffré à partir d'elle AVANT
+de lancer le bras appris, par cette formule :
+- **conso poolées** (repas+boissons) du bras arb ≥ **réf − 5** (bruit d'instrument) ;
+- **morts-par-arbitrage poolées** (`diag_arbitrage_g0`, facteur 1.0, même parseur pour les 2
+  bras) ≤ **réf_arb − 8** (une vraie baisse, au-delà du bruit) ;
+- **morts totales** ≤ **réf + 2** ;
+- **KILL précoce** : au seed 1, conso(arb) < conso_réf_s1 − 10 → stop avant le seed 2.
+Échec → négatif commité, le designé reste (il est jugé), la tête reste bankée.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les

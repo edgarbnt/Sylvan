@@ -114,6 +114,8 @@ def _plan_target_record(plan_res: dict) -> dict:
         out["first"] = plan_res.get("first_target")
     if "explore_target" in plan_res:             # ε-CIBLE (G1 critique-arbitrage) : décision FORCÉE
         out["explore_target"] = 1                # — le corpus doit pouvoir l'écarter/l'isoler
+    if "arb_scores" in plan_res:                 # G3 : le choix de cible venait de la forme APPRISE
+        out["arb"] = 1
     if "wp" in plan_res:                         # ÉTAGE WAYPOINT : pendant un leg, food/water du plan
         out["wp"] = plan_res["wp"]               # sont des OVERRIDES (wp) — marquer le record (honnêteté
                                                  # corpus : un lecteur critique doit pouvoir les écarter)
@@ -518,6 +520,7 @@ class _PlannerService:
                         wm_obs, self._radar_ema,
                         water_radar=None if self._retina_n_res > 1 else self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
+                        health=health / 100.0,
                         override_pos=True, food_override=food_pos,
                         water_override=water_pos if self._retina_n_res > 1 else (
                             None),
@@ -535,6 +538,7 @@ class _PlannerService:
                     plan_res = self.planner.plan(
                         wm_obs, self._radar_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
+                        health=health / 100.0,
                         override_pos=True, food_override=_frp, water_override=_wxz,
                     )
                     self._cmd = self._explore(plan_res["command"])
@@ -548,6 +552,7 @@ class _PlannerService:
                         wm_obs, self._radar_ema,
                         water_radar=self._water_ema,
                         energy=energy / 100.0, thirst=thirst / 100.0,
+                        health=health / 100.0,
                         slot_belief=self._slot_belief,
                         slots_belief=self._slots_belief,
                     )
@@ -706,6 +711,7 @@ class _PlannerService:
                 wm_obs, self._radar_ema,
                 water_radar=self._water_ema,
                 energy=energy / 100.0, thirst=thirst / 100.0,
+                arb_ok=False,  # leg waypoint : positions = overrides (wp), exclues du corpus arb
                 override_pos=True, food_override=food_ov, water_override=water_ov,
             )
         finally:
