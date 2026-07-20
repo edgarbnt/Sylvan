@@ -317,6 +317,35 @@ conso et morts-par-arbitrage. **KILL précoce : seed 1 conso < 52.**
   (jumeau composed_v1 : elle ne peut qu'adoucir un écart sf/sw en faveur de la cible qu'elle
   juge obtenable, jamais créer un choix risqué) ; A/B 2×24 vies même protocole, mêmes seuils.
 
+## ⭐⭐ INVESTIGATION POST-JUGE (2026-07-20, 4 sondes GRATUITES sur les corpus payés) : le mur n'est PAS une meilleure tête de choix
+1. **Attribution des +8 morts-danger** : les vies mortes au danger (bras appris) ne sont PAS
+   enrichies en choix divergents dans leur fenêtre finale (26 % vs 42 % pour les morts-drive) →
+   mécanisme = EXPOSITION globale (trajectoires/transits différents près du hazard, engulf P=0.5),
+   pas des choix fatals ponctuels. Un plafond n'y changerait rien.
+2. **Zone d'action d'une forme plafonnée** (|sf−sw| < 75 pas, l'ancre de bruit) : 6 % des
+   décisions seulement, et P̂ n'y ajoute RIEN (got 13.3 % préférée-P̂ vs 14.2 % anti-P̂ —
+   pile-ou-face). Tout le signal de P̂ vit dans la zone GRAND écart (84 % des décisions : 59.4 %
+   vs 19.8 %, > designé 51.1 %) — exactement là où un plafond interdit d'agir. **L'amendement
+   « correction plafonnée » est mort-né — refusé AVANT de payer son juge.**
+3. **États campés** (cible poursuivie rassasiée ≥60, autre <40 — la pathologie G0) : basculer
+   vers la nécessiteuse ne paie que **37.7 %** (n=1702) vs rester campé 52.4 % (elle est LOIN,
+   c'est la raison du campement) ; et P̂ préfère la nécessiteuse **48 %** du temps = aucun signal
+   de licence. Le label `got` ne VOIT pas la pathologie (obtenir la rassasiée = facile et
+   inutile ; la nécessiteuse = dur et vital) — la composition bén×P̂ le corrige au niveau du
+   PRIX mais aucun prix n'améliore un taux de succès de 38 % : c'est un mur de PORTÉE/NAVIGATION
+   (poursuite lointaine) et d'ANTICIPATION (basculer TÔT, avant que ce soit dur).
+**CONCLUSION** : les trois angles convergent — la place G0 (13-16 morts-par-arbitrage/24 vies)
+est réelle mais N'EST PAS convertible par une meilleure tête de CHOIX sur ce substrat. Elle est
+verrouillée par (a) le taux de succès des poursuites lointaines (enveloppe métabolico-
+géométrique) et (b) la bascule PRÉCOCE, qui exige de viser une ressource ABSENTE DE LA VUE — or
+le choix multi n'existe que quand les deux sont visibles ; campée, l'entité a PERDU la
+nécessiteuse de vue et ne peut plus la choisir. **La brique manquante est la MÉMOIRE SPATIALE**
+(re-choisir une ressource mémorisée hors-vue → bascule tôt informée) — la MÊME brique qui
+débloque le G3 de l'obstacle (gelé sur occlusion→mémoire). Deux chantiers indépendants pointent
+la même dépendance : signal de convergence fort. Le module `memoire_spatiale` existe (SlotMemory,
+opt-in, non promu — « aucun gain » mesuré sur SON gate occlusion, jamais testé sur la bascule
+d'arbitrage) → chantier suivant recommandé, avec son propre G0 gratuit pré-inscrit.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
