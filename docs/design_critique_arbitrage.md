@@ -369,6 +369,25 @@ Verdict pré-enregistré : le meilleur delta = celui qui monte le près SANS ré
 AUCUN ne fait les deux → le flottement n'est pas cassable par un commitment STATIQUE (négatif noté ;
 piste = commitment fonction de l'écart d'urgence, hors scope de cet A/B).
 
+**⭐ VERDICT A/B COMMITMENT (2026-07-20, provisoire — collecte parallèle sous charge, ~5 pts de
+bruit, owner OK pour ne pas re-run) : NÉGATIF.** delta 0/75/150 : le flottement BAISSE bien
+(flips 233→214→147) SANS régression conso (46→46→53, delta=150 même 17 vies) — le mécanisme MARCHE
+— MAIS le près NE remonte PAS (0-2 m : 81/74/77 %, dans le bruit). Réduire l'oscillation ne
+récupère pas l'atteinte de près → **le déficit de près n'est PAS de l'oscillation, c'est de
+l'ATTENTION DIVISÉE.**
+**⭐ DÉCOMPOSITION FINALE du raté de près (sonde gratuite, 7930 moments urgent-en-vue-à-2m)** :
+moteur BON (poursuit-la-bonne-devant, 81 % des moments → atteinte **90,6 %**, ≈ mono) ; géométrie
+négligeable (derrière 0,5 %) ; **attention divisée = 64 % des ratés** (18,6 % des moments elle
+poursuit l'AUTRE ressource, atteinte 22,8 %). Et l'autre poursuivie est AUSSI proche (médiane
+2,4 m ; 94 % < 4 m) → PAS « court au loin », mais **hésite entre deux ressources PROCHES** et perd
+la plus urgente. **CONCLUSION DE CHANTIER** : le déficit de près = arbitrage multi-objectif entre
+ressources proches, RÉSISTANT à (a) une meilleure valeur apprise (G3 exporté au danger), (b) un
+commitment statique (ici). Le moteur, la perception, la portée-de-près NE sont PAS en cause. C'est
+le « mur multi-pulsion » ([[sylvan-second-drive-arbitration]]) : servir deux besoins concurrents
+proches avec un MPC glouton mono-cible. Le seul levier non-essayé = ARCHITECTURAL (planifier une
+TOURNÉE courte « prends la proche, puis l'autre » au lieu de re-choisir une seule cible chaque
+replan) — changement plus lourd, décision owner.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
