@@ -83,6 +83,29 @@ impossible) → **STOP, négatif commité**, la 360° reste (on ne paie pas le r
 - **KILL précoce** : forage s'effondre (l'entité tourne en rond sans acquérir) → le sens actif est
   hors de portée du substrat actuel, négatif commité (piste = corps/tête d'orientation, hors scope).
 
+## ⭐⭐ VERDICT G0 (2026-07-21, `diagnostics/diag_cone_g0.py`, gratuit 0 run/train) : PARTAGÉ → retrain NON licencié (§1), redirection vers l'obstacle
+288 vies, cône appliqué OFFLINE (1er ordre : orientations vécues en 360°).
+- **(A) perception active = PASSE modestement** : ressource urgente HORS-cône en portée = ±90° 15,6 %
+  / ±120° 9,4 % / ±150° 3,5 % (360° = 0). Un cône crée bien du « tourner pour voir » — réel mais
+  modeste, et 1er ordre (un VRAI cône verrait l'entité s'orienter vers sa cible → moins).
+- **(B) place mémoire = ÉCHOUE la barre** : « vu-puis-perdu FAISABLE » = ±90° **1,0/24 vies** (barre
+  5), ±120° 0,5, ±150°/360° 0. `seen_in_critical` DOMINE (151-176) : même sous cône, au moment
+  critique la ressource est ENCORE devant → peu de « perdu quand j'en ai besoin ».
+- **Nuance honnête (§2, ne pas maquiller mais ne pas sur-lire)** : (B) est aussi structurellement
+  SOUS-MESURÉ — le comportement qui CRÉE le vu-puis-perdu (tourner le dos à une ressource puis en
+  avoir besoin) n'existe QUE sous un vrai cône ; les corpus 360° ne le contiennent pas. Donc (B)=1/24
+  est un PLANCHER, pas une preuve d'absence. Mais il ne PASSE pas le gate pré-enregistré.
+**➜ VERDICT per pré-enregistrement (« (1) mémoire > bruit ET (2) active ET (3) faisable → licencié ;
+sinon STOP ») : la condition (1) échoue → le RETRAIN WM n'est PAS licencié.** Le G0 gratuit a fait
+son travail (§1) : il a évité de payer un cycle WM cher sur un pari dont le payoff (B) n'est même pas
+mesurable offline. Le cône n'est pas RÉFUTÉ (son payoff exige l'investissement pour être testé) — il
+est « non cheaply justifiable ». **REDIRECTION (evidence-driven)** : le but « hors-vue → mémoire »
+est atteint PLUS CHER par le cône (retrain + gate inconclusif) que par l'OBSTACLE — l'occlusion
+PHYSIQUE (un mur cache une ressource ATTEIGNABLE = le vrai « atteignable-mais-invisible ») est
+concrète, géométrique, DÉJÀ à moitié bâtie (monde_obstacle, gelé au G2), et ne demande PAS de retrain.
+Reco : obstacle-first pour la mémoire ; le cône (réalisme + perception active) reste un pari de
+substrat PLUS TARD, une fois la mémoire prouvée utile en occlusion physique. Décision owner.
+
 ## Ce qu'on ne touche JAMAIS
 Les drives (pulsions du corps) ; le moteur (locomotion = prérequis DONNÉ) ; le readout géométrique du
 slot ; le transport. Le WM EST ré-entraîné — c'est le but (nouveau SENS, §3) — mais UNE fois, pas par
