@@ -155,6 +155,31 @@ substrat, négatif commité, et le plafond de portée est confirmé comme limite
 CHAQUE direction). Note owner : ce pattern — toute direction bute sur la portée ~7 m — est lui-même le
 signal fort que le levier réel est la PORTÉE/vitesse (substrat), pas un étage de plus.
 
+## ⭐⭐⭐ VERDICT A/B EN VIES (2026-07-21, `scripts/ab_obstacle_memory.sh`) : PASS robuste — la mémoire récupère le forage à l'occlusion (PREMIER JALON POSITIF)
+Monde-mur food-only IDENTIQUE par seed (même bouffe/mur/spawn), `SlotMemory` ON vs OFF, 2 seeds ×
+16 épisodes, ZÉRO retrain (module branché via `--slot-memory --egomotion-head`, WM `wm_objcentric_kin`).
+| bras | seed 1 | seed 2 | repas poolés |
+|---|---|---|---|
+| OFF (naïf) | 18 | 21 | **39** |
+| ON (mémoire) | 26 | 25 | **51** |
+- **ON > OFF sur LES DEUX seeds** (26>18, 25>21) → **PASS** (+12 repas poolés, +31 %). Énergie médiane
+  aussi ↑ (s1 58 vs 47). Pas de KILL (aucune chasse de fantômes : ON ≥ OFF partout).
+- **Mécanisme confirmé** : la `SlotMemory` persiste le belief bouffe derrière le mur (dead-reckon
+  egomotion + re-ground saillance) → le planner continue de la viser → contournement ÉMERGENT (zéro
+  comportement codé). Log serveur : « MÉMOIRE SPATIALE active ».
+- **Caveats honnêtes (§2)** : magnitude varie par layout (s1 +44 %, s2 +19 % ; poolé +31 %) — le gain
+  dépend de la géométrie ; 2 seeds seulement ; gain CAPÉ par le plafond de portée (~7 m, comme le G0
+  obstacle le prédisait) ; food-only + SlotMemory single-slot (multi-drive/MultiSlotMemory non testé) ;
+  non-déterminisme collecte godot↔serveur.
+**➜ PREMIER JALON RÉEL de la session** : une capacité APPRISE (permanence spatiale, pure — egomotion
++ saillance apprises, WM gelé) qui AJOUTE du forage dans un monde structuré, au lieu de buter sur un
+mur. Valide la direction obstacle+mémoire et le raisonnement « le monde structuré donne un vrai
+travail à la mémoire ». Le négatif mémoire-en-sparse (G0 STOP) TIENT (c'était le mauvais monde) ; la
+mémoire vit là où il y a de l'occlusion physique.
+**PROCHAIN (owner, plus tard)** : multi-seed élargi + multi-drive (`MultiSlotMemory` + eau) ;
+promotion vers la config vivante si robuste ; brancher dans le monde-danger. Ne PAS survendre : c'est
+modeste (+31 %) et capé par la portée — mais c'est POSITIF et robuste, le premier de l'arc.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; le slot_encoder / la saillance / l'EgomotionHead (déjà appris, GELÉS) ; les drives ;
 le sprint-critic et les lentilles waypoint (interface gelée) ; le choix de cible designé (l'arbitrage
