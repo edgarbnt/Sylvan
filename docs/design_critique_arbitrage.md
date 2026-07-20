@@ -346,6 +346,18 @@ la même dépendance : signal de convergence fort. Le module `memoire_spatiale` 
 opt-in, non promu — « aucun gain » mesuré sur SON gate occlusion, jamais testé sur la bascule
 d'arbitrage) → chantier suivant recommandé, avec son propre G0 gratuit pré-inscrit.
 
+## ⭐ SONDE MONO vs MULTI (2026-07-20, `scripts/collect_reachprobe.sh`) : le trou de PRÈS est le FLOTTEMENT, pas le moteur
+Collecte appariée (tout identique sauf l'eau ; mono = bouffe seule + soif gelée = zéro arbitrage).
+Atteinte d'une ressource EN VUE à distance égale : **0-2 m mono 100 % vs multi 87 %**, **2-3 m mono
+99 % vs multi 73 %** ; **6 m+ = 0 % dans les deux**. Verdict : (1) le moteur ferme le près
+quasi-parfaitement — le déficit de près est **la TENSION D'ARBITRAGE (flottement)**, il disparaît
+sans 2ᵉ drive ; (2) le mur de portée (6 m+) est arbitrage-indépendant (métabolique).
+**Conséquence pour ce chantier (clos en négatif)** : le critique-arbitrage a échoué parce qu'il
+attaquait QUEL cible choisir (valeur), alors que le déficit de près est l'OSCILLATION — un problème
+de **COMMITMENT/hystérésis** (déjà designé : δ committment), pas de valeur apprise. Piste future
+cheap (owner) : tuner le dwell-time / l'hystérésis pro-cible-courante et re-mesurer la courbe
+atteinte-vs-distance à 0-3 m — SANS apprendre. Le loin reste substrat (portée).
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; slots/transport ; les drains/restores du CORPS réel (homeostasis — §3, conception) ;
 W/marges/aversion (préférences du corps, closes P2/P2-bis) ; le sprint-critique vivant et les
