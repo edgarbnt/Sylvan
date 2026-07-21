@@ -132,11 +132,28 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
    Limite réelle de « purifier = mettre la vraie valeur » : **on ne corrige pas une constante sans
    corriger ce qu'elle compensait**.
 
-2. **Phase 3 EN COURS** : la falaise est supprimée (`SYLVAN_PLANNER_TAIL_GRADED`, défaut OFF) — on
-   retire le plancher, la marge devient le **manque** `−(travel − t_die) × drain`. Continu, monotone,
-   **zéro paramètre ajouté**. Vérifié avant run : bit-identique sur cible atteignable, gradient
-   restauré à −10 pts/m (même pente que la zone vivante). Testé **avec la vraie vitesse** : si ça
-   tient, on gagne le gradient **et** un modèle du corps honnête.
+2. **Phase 3 : NÉGATIF — et l'audit des constantes est CLOS.** Supprimer le plateau plat (marge =
+   manque, zéro paramètre ajouté) **ne rachète pas** la vraie vitesse : [4,6) 78,0 → **71,2** (−6,8),
+   [6,8) 47,2 → **35,5** (−11,7). Comparé à la vraie vitesse *seule* (75,0 / 32,5), le gradient donne
+   −3,8 / +3,0 = **un lavage**.
+   **Pourquoi** : à énergie 0,30, une cible à 3 m score 3030, à 7 m **600**. Le gradient (−10 pts/m)
+   ordonne les cibles lointaines entre elles, mais l'écart avec une cible proche reste **~2430** —
+   une cible lointaine ne redevient jamais compétitive. **Le plateau était réel mais SECONDAIRE ;
+   c'est la FALAISE qui décide, et je l'avais délibérément laissée.** Flag **retiré du code** (il
+   n'achète rien ; garder un bouton de plus contredit la doctrine). Sonde `diag_survival_tail.py`
+   **conservée** — c'est elle qui a localisé la falaise.
+
+3. **CONCLUSION DE L'AUDIT : les constantes ne sont pas le levier.** La queue analytique n'est pas
+   réparable par ses paramètres : sa **forme** suppose un monde statique (trajet atomique, sans
+   replanification ni respawn) et déclare « mortelle » une cible atteinte en vrai 47 % du temps.
+   **Cause-racine derrière elle : l'HORIZON D'IMAGINATION.** Le WM déroule 80 pas = **0,8 m** dans un
+   monde où les ressources sont à **2-8 m** → la queue codée main doit estimer ~97 % de l'avenir,
+   d'où ses quinze boutons. C'est aussi la raison déjà consignée de l'échec du critique appris
+   (`command_planner.py:745-760`) : rêve de 0,8 m → 33 candidats quasi ex-æquo (marge 0,003-0,005).
+   ⇒ **Ni régler les constantes, ni remplacer la queue par de l'appris ne marchent tant que
+   l'imagination est trop courte.** Vrai choix structurel : rollout plus long (~5× le coût, fidélité
+   dégradée) ou **abstraction temporelle** (WM qui saute dans le temps — H-JEPA, amorcé par l'étage
+   waypoint). Détail : `docs/design_audit_peremption.md`.
    `far_align` avait été calibré pour le corps à **pattes** et jamais revu après le pivot cinématique
    → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
    trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté

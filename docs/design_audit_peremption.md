@@ -208,6 +208,53 @@ atteignables (énergie 0,3/0,5/0,9 × distances 1-5 m), et gradient restauré da
 corrigé. C'est délibéré — « y aller me tue » est un signal juste ; c'était l'**absence de préférence
 entre cibles lointaines** qui était le bug. Ne pas revendiquer plus que ça.
 
+### RÉSULTAT (2026-07-21) — **NÉGATIF**, et la limite assumée était en fait la cause principale
+
+| bande | témoin (falaise + 0.02) | gradué + vraie vitesse | Δ |
+|---|---|---|---|
+| [0,2) | 94,4 % | 94,3 % | −0,1 |
+| [2,4) | 89,7 % | 88,5 % | −1,2 |
+| **[4,6)** | **78,0 %** | **71,2 %** | **−6,8** |
+| **[6,8)** | **47,2 %** | **35,5 %** | **−11,7** |
+
+Deux bandes régressent de ≥ 5 pts (n ≥ 845) → **négatif informatif** selon la règle écrite d'avance.
+Et surtout : comparé à la Phase 2 (vraie vitesse **seule** : 75,0 / 32,5), le gradient donne
+**−3,8 / +3,0** — un **lavage**. Il n'apporte rien.
+
+**Pourquoi il ne pouvait rien apporter** (sondé après coup, gratuitement). À énergie 0,30, vraie
+vitesse : cible à 3 m → score 3030 ; à 7 m → **600**. Le gradient de −10 pts/m **ordonne les cibles
+lointaines entre elles**, mais l'écart avec une cible proche reste de **~2430**. Une cible lointaine
+ne redevient **jamais** compétitive. **Le plateau était réel mais SECONDAIRE ; c'est la FALAISE qui
+décide — et je l'avais délibérément laissée.** J'ai corrigé le symptôme mesurable en laissant la
+cause, tout en l'écrivant comme une « limite assumée ».
+
+**Décision.** Le flag `SYLVAN_PLANNER_TAIL_GRADED` est **RETIRÉ du code** : il n'achète rien, et
+garder un bouton de plus sur une fonction qui en compte déjà quinze contredit la doctrine de
+l'audit (« chercher ce qui peut être RETIRÉ »). Le constat reste écrit ici et dans la sonde
+`diagnostics/diag_survival_tail.py`, qui est **conservée** — c'est elle qui a localisé la falaise.
+
+## CONCLUSION DE L'AUDIT (2026-07-21)
+
+**Les constantes ne sont pas le levier.** Trois runs payés, deux négatifs, et le vrai résultat est
+structurel : la queue analytique ne peut pas être réparée par ses paramètres, parce que sa **forme**
+suppose un monde statique (un trajet atomique, sans replanification, sans respawn) et déclare
+« mortelle » une cible que l'entité atteint en réalité 47 % du temps.
+
+**Et derrière la queue, la cause-racine est l'HORIZON D'IMAGINATION.** Le WM déroule 80 pas
+= **0,8 m**, dans un monde où les ressources sont à **2-8 m**. La phase 2 doit donc estimer ~97 % de
+l'avenir — d'où sa nécessité, ses quinze boutons, et son modèle du monde codé à la main. C'est aussi
+la raison déjà consignée de l'échec du critique appris (`command_planner.py:745-760`) : avec un rêve
+de 0,8 m, les 33 candidats sont quasi ex-æquo (marge relative 0,003-0,005), et on demande à une tête
+entraînée à *prédire une valeur* de *classer* des options indiscernables.
+
+⇒ **Ni « régler les constantes » ni « remplacer la queue par de l'appris » ne marchent tant que
+l'imagination est trop courte.** Le vrai choix structurel est l'horizon : rollout plus long (≈5× le
+coût, fidélité open-loop dégradée) ou **abstraction temporelle** (WM qui saute dans le temps —
+direction H-JEPA, déjà amorcée par l'étage waypoint).
+
+**Négatifs bankés — ne pas répéter** : `nominal_speed` seule (KILL) ; `nominal_speed` + gradient de
+zone morte (négatif) ; `surv_turn_rate` (déjà correct, réfuté gratuitement).
+
 ## Honnêteté sur le gain attendu
 Un audit qui ne fait que retirer ne rendra pas l'entité intelligente. Sa valeur est **(i)** une ligne
 de base à laquelle on peut se fier et **(ii)** éventuellement de la performance gratuite, comme
