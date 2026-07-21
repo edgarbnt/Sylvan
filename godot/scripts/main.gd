@@ -11,8 +11,11 @@ const ACTION_ADAPTER_SCRIPT = preload("res://scripts/agent/action_adapter.gd")
 const HOMEOSTASIS_SCRIPT = preload("res://scripts/agent/homeostasis.gd")
 const POLICY_PLAYER_SCRIPT = preload("res://scripts/control/policy_player.gd")
 const FOOD_MANAGER_SCRIPT = preload("res://scripts/world/food_manager.gd")
+const HAZARD_MANAGER_SCRIPT = preload("res://scripts/world/hazard_manager.gd")
+const OBSTACLE_MANAGER_SCRIPT = preload("res://scripts/world/obstacle_manager.gd")  # hook local non stagé (chantier obstacle)
 const PERCEPTION_SCRIPT = preload("res://scripts/agent/perception.gd")
 const FOREST_MANAGER_SCRIPT = preload("res://scripts/world/forest_manager.gd")
+const HUD_SCRIPT = preload("res://scripts/ui/hud.gd")
 
 @export var world_scene: PackedScene
 @export var agent_scene: PackedScene
@@ -30,8 +33,11 @@ var action_adapter = ACTION_ADAPTER_SCRIPT.new()
 var homeostasis = HOMEOSTASIS_SCRIPT.new()
 var policy_player = POLICY_PLAYER_SCRIPT.new()
 var food_manager = FOOD_MANAGER_SCRIPT.new()
+var hazard_manager = HAZARD_MANAGER_SCRIPT.new()  # zone nocive OPT-IN (SYLVAN_HAZARD_COUNT>0), sinon inerte
+var obstacle_manager = OBSTACLE_MANAGER_SCRIPT.new()  # mur solide OPT-IN (SYLVAN_OBSTACLE_COUNT>0), sinon inerte — hook local non stagé
 var water_manager = FOOD_MANAGER_SCRIPT.new()  # 2ᵉ pulsion: eau (même classe, préfixe WATER)
 var _water_enabled := false
+var _hud = null  # HUD in-game (signes vitaux), visual-only — reste null en headless
 var collecting := false
 var target_num_episodes := 0
 var completed_episodes := 0
@@ -68,6 +74,8 @@ func _ready() -> void:
 	# owner sees them in the viewer too; positions reset per episode below.
 	add_child(food_manager)
 	food_manager.reset(0)  # initial layout (so pellets show even before the episode loop)
+	add_child(hazard_manager)  # zone nocive perceptible (opt-in) — doit être dans l'arbre avant begin_episode
+	add_child(obstacle_manager)  # mur solide perceptible (opt-in) — dans l'arbre avant begin_episode
 	# 2ᵉ PULSION (2026-06-18): l'EAU = un 2ᵉ FoodManager (même machinerie), préfixe d'env WATER,
 	# pastilles bleues. Planner-only (le WM ne la voit pas en étage 1). Activé seulement si demandé
 	# (SYLVAN_WATER_COUNT défini) → les runs mono-ressource existants restent identiques.
@@ -85,6 +93,10 @@ func _ready() -> void:
 		forest.name = "ForestManager"
 		add_child(forest)
 		forest.setup(world_instance, agent_instance, OS.get_environment("SYLVAN_SEED").to_int())
+		# HUD in-game (signes vitaux) — overlay sur la fenêtre, visual-only comme le décor forêt.
+		_hud = HUD_SCRIPT.new()
+		_hud.name = "SylvanHUD"
+		add_child(_hud)
 
 	collecting = OS.get_environment("SYLVAN_COLLECT") == "1"
 	if not collecting:
@@ -105,6 +117,8 @@ func _ready() -> void:
 	world_manager.set_seed(seed_value)
 	spawn_manager.set_seed(seed_value)
 	food_manager.set_seed(seed_value)
+	hazard_manager.set_seed(seed_value + 555)
+	obstacle_manager.set_seed(seed_value + 999)
 	if _water_enabled:
 		water_manager.set_seed(seed_value + 777)  # décalage → l'eau ne spawn pas SUR la bouffe
 	add_child(rollout_writer)
@@ -122,6 +136,21 @@ func _ready() -> void:
 	if not policy_host.is_empty() and policy_port > 0:
 		policy_player.connect_to_server(policy_host, policy_port)
 	_start_episode()
+
+
+func _update_hud() -> void:
+	# Alimente le HUD in-game (visual-only). No-op en headless (_hud jamais instancié).
+	if _hud == null:
+		return
+	_hud.update({
+		"energy": homeostasis.energy / homeostasis.max_energy,
+		"thirst": homeostasis.thirst / homeostasis.max_thirst,
+		"show_thirst": homeostasis.thirst_enabled,
+		"meals": food_manager.consumed_this_episode,
+		"drinks": water_manager.consumed_this_episode,
+		"step": episode_manager.current_step_id,
+		"max_step": episode_manager.max_episode_steps,
+	})
 
 
 func _apply_curriculum() -> void:
@@ -461,6 +490,7 @@ func _physics_process(delta: float) -> void:
 			var _ptorso2: Node3D = agent_instance.bodies.get("torso")
 			if _ptorso2 != null:
 				latest_obs["vision_fine"] = PERCEPTION_SCRIPT.food_radar(_ptorso2.global_position, _ptorso2.global_transform.basis.z, food_manager.get_positions(), 36)
+				latest_obs["torso"] = [_ptorso2.global_position.x, _ptorso2.global_position.z, atan2(_ptorso2.global_transform.basis.z.x, _ptorso2.global_transform.basis.z.z)]   # G2 obstacle : pose réalisée (label commandé-vs-réel) -- hook local non stagé
 				# RÉTINE étage 1 : rayons couleur BRUTS live → le serveur localise via la tête APPRISE
 				# (remplace l'oracle food_xz). Envoyé seulement quand demandé (SYLVAN_RETINA_PLANNER=1).
 				if _retina_planner:
@@ -469,6 +499,7 @@ func _physics_process(delta: float) -> void:
 				if _water_enabled:
 					latest_obs["vision_water"] = PERCEPTION_SCRIPT.food_radar(_ptorso2.global_position, _ptorso2.global_transform.basis.z, water_manager.get_positions(), 36)
 					latest_obs["thirst"] = homeostasis.thirst
+				latest_obs["health"] = homeostasis.health   # MONDE v2 (hook local non stagé)
 			# Mode-1 collecte RL : signal EXPLICITE de frontière d'épisode. episode_step = index de pas
 			# DANS l'épisode (episode_manager.current_step_id, remis à 0 par start_episode au respawn) ;
 			# le serveur détecte une frontière quand episode_step CHUTE. prev_term porte la raison de la
@@ -481,6 +512,9 @@ func _physics_process(delta: float) -> void:
 			var cmd: Array = resp.get("command", [])
 			if cmd.size() == 2:
 				agent_instance.set_cpg_command(float(cmd[0]), float(cmd[1]))
+				var _ds := OS.get_environment("SYLVAN_DRIVE_STRAIGHT")  # test G1(a) : force (vx,0), ignore le planner -- hook local
+				if _ds != "":
+					agent_instance.set_cpg_command(_ds.to_float(), 0.0)
 			var act: Array = resp.get("action", [])
 			var typed_action: Array[float] = []
 			for v in act:
@@ -530,6 +564,7 @@ func _physics_process(delta: float) -> void:
 			if restored > 0.0:
 				homeostasis.restore_energy(restored)
 				_wm_ate += restored
+				hazard_manager.on_food_respawn(food_manager.get_positions(), torso.global_position)   # MONDE v2 (hook local non stagé)
 			# 2ᵉ pulsion: boire l'eau → restaure la soif (symétrique à manger).
 			if _water_enabled:
 				var drank: float = water_manager.try_consume(torso.global_position)
@@ -537,6 +572,10 @@ func _physics_process(delta: float) -> void:
 					homeostasis.restore_thirst(drank)
 		if agent_instance.has_fallen:
 			homeostasis.apply_damage(3.0)
+		if torso != null and hazard_manager.active():   # zone nocive : abîme la santé en aveugle (le coût
+			homeostasis.apply_damage(hazard_manager.damage_at(torso.global_position))  # inné l'ignore)
+
+	_update_hud()
 
 	current_action_repeat_step += 1
 	var done: bool = agent_instance.has_fallen if _no_homeostasis else (homeostasis.is_critical() or agent_instance.has_fallen)
@@ -621,6 +660,15 @@ func _start_episode() -> void:
 	if _water_enabled:
 		water_manager.reset(episode_index)
 	homeostasis.reset_state()
+	hazard_manager.begin_episode(episode_index, spawn_manager.get_agent_spawn_position(),
+		food_manager.get_positions())  # zone nocive sur le trajet spawn→bouffe (opt-in)
+	var _obst_targets = food_manager.get_positions()  # défaut : mur sur le trajet spawn→bouffe
+	if OS.get_environment("SYLVAN_OBSTACLE_AHEAD") != "":  # test G1(a) : mur DROIT DEVANT le spawn (drive-straight)
+		var _sy = spawn_manager.get_agent_spawn_yaw()
+		var _sp = spawn_manager.get_agent_spawn_position()
+		_obst_targets = [_sp + Vector3(sin(_sy), 0.0, cos(_sy)) * OS.get_environment("SYLVAN_OBSTACLE_AHEAD").to_float()]
+	obstacle_manager.begin_episode(episode_index, spawn_manager.get_agent_spawn_position(),
+		_obst_targets)  # mur solide (opt-in) — hook local non stagé
 	agent_instance.reset_agent(
 		spawn_manager.get_agent_spawn_position(),
 		spawn_manager.get_agent_spawn_yaw(),
