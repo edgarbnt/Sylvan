@@ -95,7 +95,26 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
 
 ## 6. Ce qu'il faut creuser (priorisé, cheaper-first)
 
-1. **AUDIT DE PÉREMPTION + ligne de base propre** (gratuit→1 run). **Tout le reste en dépend.**
+0. **FAIT — Phases 0 et 1 de l'audit (2026-07-21, zéro run).**
+   **Phase 0** : l'instrument de jugement existe enfin (`diagnostics/diag_reach_curve.py`), validé en
+   reproduisant le verdict `far_align` sur 2 seeds.
+   **Phase 1** : le modèle du corps interne du planner a été **mesuré** sur 3 corpus
+   (`diagnostics/diag_body_model_audit.py`). **Un vrai bug trouvé, un faux suspect réfuté :**
+   - 🚨 **`nominal_speed` déclaré 0.02, mesuré 0.0100** — périmé ×2, et `SYLVAN_PLANNER_SPEED`
+     n'est overridé par **aucun** harnais. Le planner croit qu'un trajet médian (3,15 m) coûte
+     **7,88** points de jauge au lieu de **15,76** → il sous-estime d'un facteur 2 le prix
+     métabolique du déplacement, et croit tourner 2× plus cher qu'en vrai.
+     *Hypothèse à tester, pas conclusion* : cela pourrait contribuer aux morts « vue mais
+     inatteignable » — le motif qui a fait clore mémoire et arbitrage en l'imputant au substrat.
+   - ✅ **`surv_turn_rate = 0.015` est CORRECT** (mesuré 0,0150 rad/pas) : mon estimation
+     analytique « ≈0,019 » était fausse. Elle n'avait été avancée qu'assortie de l'obligation de
+     la mesurer — c'est ce qui a évité de « corriger » une constante juste.
+   - ✅ drain (0.0005 / 0.00035 par jauge) et restore absorbé (0.3995) : corrects.
+
+1. **AUDIT DE PÉREMPTION — Phase 2** (runs, gatée). **Tout le reste en dépend.**
+   Item n°1 : **`nominal_speed` 0.02 → 0.010**, jugé sur la courbe d'atteinte. ⚠️ Le coût est
+   **comparatif** entre candidats : un biais partagé peut laisser l'argmax inchangé → l'A/B tranche,
+   pas le raisonnement.
    `far_align` avait été calibré pour le corps à **pattes** et jamais revu après le pivot cinématique
    → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
    trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté

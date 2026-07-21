@@ -37,18 +37,37 @@ confirmés ; les niveaux absolus diffèrent car la définition diffère. **Ne pl
 **Or TOUS les autres réglages de décision sont dans le même cas** — ajustés à la main sur un corps qui
 n'existe plus, jamais revalidés depuis :
 
-**Le suspect n°1, trouvé en vérifiant ce prompt** (`command_planner.py:121`) :
+## ✅ PHASE 1 FAITE (2026-07-21) — le modèle du corps a été MESURÉ
 
-```
-surv_turn_rate: float = 0.015   # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ...)
-```
+`diagnostics/diag_body_model_audit.py`, sur 3 corpus (arène ouverte, monde-mur, mono-drive). Zéro run.
 
-**Le planner modélise encore le corps à PATTES.** C'est sa vitesse de virage *imaginée* — donc tout
-le coût de survie raisonne sur un corps qui n'existe plus. Ordre de grandeur : `kin_turn=1.5` avec
-l'échelle de temps mesurée (0,8 → 0,0100 m/tick) donnerait plutôt **≈ 0,019 rad/pas** (~25 % de
-plus). ⚠️ **Ce calcul est le mien — MESURE-le sur corpus** (`guards.measured_constants`, virage réel
-rad/tick) avant d'en faire quoi que ce soit. C'est exactement le pattern `far_align` : une constante
-calibrée sur l'ancien corps, jamais revue.
+| constante | déclaré | mesuré | verdict |
+|---|---|---|---|
+| **`nominal_speed`** | **0.02 m/pas** | **0.0100** (0.0073 en monde-mur) | 🚨 **PÉRIMÉ ×2** |
+| `surv_turn_rate` | 0.015 rad/pas | 0.0150 (n=23 896) | ✅ **CORRECT** |
+| `resource_drain` (+ `_T`) | 0.0005 / 0.00035 | 0.0005 / 0.00035 | ✅ correct |
+| `resource_restore` | 0.4 | 0.3995 absorbé | ✅ correct |
+| `surv_horizon` | 3000 | — | reclassé **catégorie (b)** : c'est un plafond de simulation, pas un fait mesurable |
+
+**Mon « suspect n°1 » est RÉFUTÉ par la mesure.** J'avais estimé `surv_turn_rate ≈ 0,019` par le
+calcul ; le corps fait exactement **0,0150 rad/pas**. J'avais signalé que c'était mon arithmétique
+et qu'il fallait la mesurer — c'est précisément ce qui a évité de « corriger » une constante juste.
+
+**Le vrai bug est ailleurs : `nominal_speed`.** Déclaré `0.02`, le corps fait `0.0100` — la **même
+valeur fausse d'un facteur 2** qui avait fabriqué le faux « 1,88× d'inefficacité ». Et
+`SYLVAN_PLANNER_SPEED` n'est overridé par **aucun harnais** : elle tourne partout à sa valeur hexapode.
+
+**Conséquence mécanique** (`t_atteinte = distance / nominal_speed`, puis `coût = t × drain`) :
+pour l'opportunité médiane réelle (3,15 m), le planner croit que le trajet coûte **7,88 points de
+jauge** alors qu'il en coûte **15,76**. Il **sous-estime d'un facteur 2 le prix métabolique d'aller
+quelque part** — et, le coût de virage n'étant pas mis à l'échelle, il croit aussi que **tourner est
+relativement 2× plus cher** qu'en vrai.
+
+⚠️ **Hypothèse, pas conclusion** (§2) : ceci pourrait contribuer aux morts « ressource vue mais
+inatteignable » — le motif même qui a fait clore les chantiers mémoire et arbitrage en l'attribuant
+à un **plafond de substrat**. Mais le coût est utilisé de façon **comparative** entre candidats :
+un biais partagé peut laisser l'argmax inchangé. **À trancher par l'A/B, pas par le raisonnement.**
+⇒ **Item n°1 de la Phase 2 : `nominal_speed` 0.02 → 0.010, jugé sur la courbe d'atteinte.**
 
 ## ⚠️ Carte d'exécution — à connaître AVANT d'auditer quoi que ce soit
 
@@ -72,7 +91,8 @@ mesure du bruit sur du code mort. `heading_weight` n'est donc **pas** prioritair
 
 | constante | défaut code | env | rôle / branche |
 |---|---|---|---|
-| **`surv_turn_rate`** | **0.015** | `SYLVAN_PLANNER_TURN_RATE` | **virage imaginé — calibré HEXAPODE** ⇦ commencer ici |
+| **`nominal_speed`** | **0.02** | `SYLVAN_PLANNER_SPEED` | **PÉRIMÉ ×2 (Phase 1) — à corriger à 0.010 ⇦ commencer ici** |
+| ~~`surv_turn_rate`~~ | 0.015 | `SYLVAN_PLANNER_TURN_RATE` | ✅ mesuré correct — **rien à faire** |
 | `align_gain` | 60.0 | `SYLVAN_PLANNER_ALIGN_GAIN` | poids de far-align — **multi-drive survival seulement** |
 | `align_mode` | `"mean"` | `SYLVAN_PLANNER_ALIGN_MODE` | `mean` (spirale) vs `end` (tourne tôt puis commit) — **jamais A/B testé** |
 | `urgency_weight` | 6.0 | `SYLVAN_PLANNER_URGENCY_W` | poids de l'inconfort futur |
