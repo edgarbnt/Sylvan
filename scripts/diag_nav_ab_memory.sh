@@ -67,5 +67,5 @@ for A in $ANGLES; do
 done
 kill -9 $SRV 2>/dev/null
 echo "=== PARSE (engagement par bucket) ==="
-PYTHONPATH=python ./env_pytorch_3.12/bin/python parse_nav_ab.py
+PYTHONPATH=python ./env_pytorch_3.12/bin/python scripts/parse_nav_ab.py
 echo "ALL_DONE_NAV_AB_MEMORY"

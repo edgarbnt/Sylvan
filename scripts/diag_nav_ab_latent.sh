@@ -37,4 +37,4 @@ for A in $ANGLES; do
   ./tools/godot/godot --path godot --headless > /tmp/nav_ab_${A}.log 2>&1
 done
 kill -9 $SRV 2>/dev/null
-echo "DONE -> parse: PYTHONPATH=python ./env_pytorch_3.12/bin/python parse_nav_ab.py"
+echo "DONE -> parse: PYTHONPATH=python ./env_pytorch_3.12/bin/python scripts/parse_nav_ab.py"

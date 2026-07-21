@@ -5,6 +5,19 @@
 set +e
 ER=${1:-1.0}; HZ=${2:-160}; NEP=${3:-12}
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s1/wm_best.pt}
+# ASSAINISSEMENT DE L'INVENTAIRE (2026-07-21) : ce harnais est cite dans CLAUDE.md comme VIVANT
+# mais il servait le corps HEXAPODE, alors que le corps CINEMATIQUE est promu depuis le 2026-07-07.
+# Re-mesure de la baseline multi-drive sur la config promue : repas medians 2-3 -> 6,5-8, atteinte
+# [2,4) m 63,0 % -> 93,8 %. KIN=1 sert la config PROMUE (corps cinematique + wm_objcentric_kin).
+# Defaut KIN=0 = comportement INCHANGE, pour que les chiffres historiques restent reproductibles.
+KIN=${KIN:-0}
+if [[ "$KIN" == "1" ]]; then
+  WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
+  BODY="SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=1.5"
+else
+  BODY=""
+fi
+echo "=== corps : ${BODY:-hexapode CPG+residu (SUPERSEDE depuis 2026-07-07)} | WM=$WM ==="
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 pkill -9 -f serve_planner_command 2>/dev/null; pkill -9 -f 'godot --path godot' 2>/dev/null; sleep 1
 export SYLVAN_PLANNER_HEADING_W=${SYLVAN_PLANNER_HEADING_W:-0.0}
@@ -15,7 +28,7 @@ PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command
 SRV=$!
 for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ':6052' && break; sleep 1; done
 
-SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
+env $(echo $BODY) SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 SYLVAN_EAT_RADIUS=$ER \
 SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=$NEP SYLVAN_MAX_EPISODE_STEPS=1500 SYLVAN_SEED=1 SYLVAN_FOOD_COUNT=${FC:-6} \
 SYLVAN_COLLECTOR_MODE=policy_server SYLVAN_POLICY_HOST=127.0.0.1 SYLVAN_POLICY_PORT=6052 \

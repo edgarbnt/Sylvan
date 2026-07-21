@@ -11,6 +11,19 @@ set +e
 NEP=${1:-8}; MS=${2:-3000}; SEED=${3:-1}
 COST=${COST:-designed}
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_s2/wm_best.pt}
+# ASSAINISSEMENT DE L'INVENTAIRE (2026-07-21) : ce harnais est cite dans CLAUDE.md comme VIVANT
+# mais il servait le corps HEXAPODE, alors que le corps CINEMATIQUE est promu depuis le 2026-07-07.
+# Re-mesure de la baseline multi-drive sur la config promue : repas medians 2-3 -> 6,5-8, atteinte
+# [2,4) m 63,0 % -> 93,8 %. KIN=1 sert la config PROMUE (corps cinematique + wm_objcentric_kin).
+# Defaut KIN=0 = comportement INCHANGE, pour que les chiffres historiques restent reproductibles.
+KIN=${KIN:-0}
+if [[ "$KIN" == "1" ]]; then
+  WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
+  BODY="SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=1.5"
+else
+  BODY=""
+fi
+echo "=== corps : ${BODY:-hexapode CPG+residu (SUPERSEDE depuis 2026-07-07)} | WM=$WM ==="
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 PORT=${PORT:-6074}
 WORLDS=${WORLDS:-"55 11"}   # ex. WORLDS=11 = un seul monde (parallélisation multi-instances)
@@ -33,7 +46,7 @@ run_world() {  # $1 = 55|11 ; $2 = food_count ; $3 = water_count
       --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/hesit_srv_${tag}.log 2>&1 &
   local SRV=$!
   for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
-  SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
+  env $(echo $BODY) SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
   SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \
   SYLVAN_FOOD_COUNT=$fc SYLVAN_WATER_COUNT=$wc SYLVAN_ENERGY_DRAIN=0.05 SYLVAN_THIRST_DRAIN=0.05 \
   SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=$NEP SYLVAN_MAX_EPISODE_STEPS=$MS SYLVAN_SEED=$SEED \
