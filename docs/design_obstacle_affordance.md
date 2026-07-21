@@ -360,3 +360,31 @@ Ce corpus porte les trois apparences nécessaires : **arbres verts bloquants**, 
 
 **Si les 5 passent** → rejouer l'A/B court, mêmes critères que le G3 (blocages −30 %, immobilité
 ≤ 8 %). **Sinon** → ne pas brancher, et dire lequel a échoué.
+
+### RÉSULTAT — **ÉCHEC 3/5**, la sélectivité s'effondre en forêt dense
+
+| critère | attendu | obtenu |
+|---|---|---|
+| AUC CV | ≥ 0,90 | **0,951** ✅ |
+| `s(vert)` bloquant | > 0,5 | 1,00 ✅ |
+| `s(bleu)` passable | < 0,5 | **1,00** ❌ |
+| `s(rouge)` passable | < 0,5 | **1,00** ❌ |
+| `ρ̂` | ≥ 1,2 m | **0,29 m** ❌ |
+
+Il a appris **« tout bloque, et seulement de très près »** — un détecteur de **proximité pure**.
+
+**Ce n'est pas un défaut d'entraînement, c'est la solution optimale du problème posé.** Le score est
+`max_rayons s(couleur) × portée(distance)`. Avec 45 arbres, *être bloqué* est parfaitement prédit par
+« quelque chose est à 29 cm » : la couleur ne rapporte plus rien, il suffit de poser `s = 1` partout
+et de rétrécir `ρ̂`. AUC 0,951 sans aucune sélectivité.
+
+⇒ **La sélectivité d'origine (`s(cyan)=1`, `s(rouge)=0`) n'était pas une propriété de la MÉTHODE mais
+du MONDE D'ENTRAÎNEMENT** : un mur cyan unique et isolé, en monde food-only, où la couleur était le
+seul signal disponible. En forêt dense, la proximité la remplace avantageusement. Le « il a DÉCOUVERT
+la couleur bloquante » reste vrai — mais seulement dans ce monde-là, et c'est une limite qui n'avait
+jamais été formulée.
+
+**Checkpoint supprimé, non promu.** Négatif banké : ré-entraîner cette tête telle quelle sur un monde
+dense donne un détecteur de proximité, pas une affordance d'apparence. Un correctif exigerait de
+changer la FORME de la tête (ex. pénaliser la dépendance à la distance, ou entraîner sur un monde où
+des objets proches NE bloquent PAS) — ce n'est plus « quelques minutes ».
