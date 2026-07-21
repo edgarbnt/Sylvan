@@ -91,11 +91,21 @@ var _alive: Array[bool] = []      # une baie consommée devient invisible et non
 var _regrow_at: Array[int] = []   # tick de vie auquel elle réapparaît (-1 = vivante)
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
-# Vert feuillage DÉSATURÉ. Au seuil global 0.55 aucune couleur neutre n'est libre (le gris parfait
-# vaut 1/√3 = 0.5774 > 0.55 sur les trois requêtes) : le vert est le seul canal disponible. À
-# cos_vert = 0.728 le buisson reste SOUS les arbres (0.885) → quand les seuils par-type arriveront,
-# il sortira du slot danger et les arbres y resteront. Choisi par MESURE, pas à l'œil.
-const PATCH_BUSH_COLOR := Color(0.20, 0.30, 0.20)
+# Vert clair, CHOISI PAR RECHERCHE NUMÉRIQUE contre les requêtes RÉELLES des deux WM vivants, pas
+# à l'œil. Le buisson ne doit déclencher AUCUN slot : c'est un repère perceptible, pas une ressource.
+# Marges mesurées (seuil − cosinus, toutes doivent être > 0) :
+#   wm_objcentric_kin   (requêtes canaux purs, seuil 0.55) : rouge +0.142 · bleu +0.099
+#   wm_objcentric_kin_typed (requêtes = couleurs rendues mesurées, seuils 0.808/0.859/0.920)
+#                                            : bouffe +0.024 · eau +0.025 · danger +0.023
+# ⚠️ La teinte « naturelle » (0.20,0.30,0.20) était sûre sur le WM vivant (+0.065) mais déclenchait
+# le slot BOUFFE sur le WM typé (marge −0.032) : l'entité aurait essayé de MANGER les buissons.
+# Mesuré avant de lancer quoi que ce soit — c'est ce qui a évité un A/B gaspillé.
+# Compromis accepté : 9.8° seulement de l'arbre (0.13,0.35,0.13). Sans conséquence dans la boucle
+# vivante (le buisson n'est pas une ressource, l'arbre est un obstacle détecté par COLLISION, pas
+# par couleur), mais à re-mesurer si un jour une tête apprend à les distinguer par la teinte.
+# ⚠️ Marges du WM typé mesurées sur l'ANCIENNE palette : ajouter un type d'objet au monde impose
+# de les re-mesurer (build_typed_slots.py — une mesure, pas un ré-entraînement).
+const PATCH_BUSH_COLOR := Color(0.47, 0.93, 0.53)
 const PATCH_BUSH_R := 0.75        # rayon → 1,5 m de large = 21° à 8 m = échantillonné de façon fiable
 
 # 2ᵉ PULSION (2026-06-18): cette classe sert MAINTENANT n'importe quelle ressource (bouffe OU eau).
