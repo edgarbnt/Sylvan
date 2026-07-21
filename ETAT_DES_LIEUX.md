@@ -115,17 +115,28 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
    Corriger `nominal_speed` à sa valeur mesurée (0.02 → 0.010) **DÉGRADE** la portée lointaine :
    [6,8) m **47,2 → 32,5 %** (−14,7 pts, n=864/1012, direction cohérente 2 seeds) ; bandes proches
    dans le bruit ; survie inchangée. Critères pré-inscrits **avant** lancement (commit `8dd0216`).
-   **Mécanisme nommé** : `deficit = relu(d/vitesse × drain − niveau)` ; la vraie vitesse **double**
-   le prix imaginé d'un trajet (7 m : 35 points au lieu de 17,5) → la ressource lointaine devient
-   « fatalement inatteignable » et le planner l'**abandonne**, alors qu'elle est atteinte 40-54 % du
-   temps en vrai. Ce terme est une approximation **atomique sans replanification** (ignore la
-   re-décision, les respawns, la restauration à l'arrivée, l'autre ressource en route).
-   ⇒ **Deux erreurs se compensaient.** `nominal_speed=0.02` n'est pas un modèle du corps mais une
-   **compensation, désormais déclarée** — conservée, négatif banké, ne pas re-tester seule.
-   **Vrai fix, hors scope** : rendre le déficit conscient de la replanification et de la restauration
-   = refonte de la queue analytique du coût survie (déjà déclarée échafaudage).
+   **Mécanisme — ⚠️ ma 1ʳᵉ attribution était FAUSSE** (j'avais accusé `deficit = relu(...)`,
+   `command_planner.py:1084`, qui est **inerte** en config vivante). Tracé et **mesuré** ensuite
+   (`diagnostics/diag_survival_tail.py`, gratuit) : le vrai code est `_survival_extension`, et son
+   défaut est une **FALAISE suivie d'un PLATEAU PLAT**. `lived = min(t_die, travel)` **sature** et
+   `margin` reste **0** quand le candidat meurt en route → au-delà de la distance atteignable le
+   score est une **constante** (chute −2400 puis *exactement* plat). Score plat = **aucune préférence
+   entre candidats** = l'entité cesse de s'approcher. Et `Δtime` est **exactement 0** : toute la
+   préférence passe par `margin_w × margin`.
+   **Pourquoi la vitesse fausse le cachait** : la falaise est à `niveau/drain × vitesse` — à énergie
+   0,30 elle passe de **11,9 m à 5,9 m**. Les ressources apparaissent entre **2 et 8 m** : avec la
+   vitesse fausse la falaise est **hors du monde**, avec la vraie elle tombe **dedans**.
+   ⇒ `nominal_speed=0.02` n'est pas un modèle du corps mais **le réglage qui poussait une falaise
+   hors du monde** — conservé, déclaré, négatif banké, ne pas re-tester seul.
    **Leçon de méthode** : insérer la vérité mesurée aurait coûté 15 points de portée en silence.
-   Limite réelle de « purifier = mettre la vraie valeur ».
+   Limite réelle de « purifier = mettre la vraie valeur » : **on ne corrige pas une constante sans
+   corriger ce qu'elle compensait**.
+
+2. **Phase 3 EN COURS** : la falaise est supprimée (`SYLVAN_PLANNER_TAIL_GRADED`, défaut OFF) — on
+   retire le plancher, la marge devient le **manque** `−(travel − t_die) × drain`. Continu, monotone,
+   **zéro paramètre ajouté**. Vérifié avant run : bit-identique sur cible atteignable, gradient
+   restauré à −10 pts/m (même pente que la zone vivante). Testé **avec la vraie vitesse** : si ça
+   tient, on gagne le gradient **et** un modèle du corps honnête.
    `far_align` avait été calibré pour le corps à **pattes** et jamais revu après le pivot cinématique
    → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
    trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté
