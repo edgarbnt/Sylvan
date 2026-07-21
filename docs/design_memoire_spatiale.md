@@ -180,6 +180,33 @@ mémoire vit là où il y a de l'occlusion physique.
 promotion vers la config vivante si robuste ; brancher dans le monde-danger. Ne PAS survendre : c'est
 modeste (+31 %) et capé par la portée — mais c'est POSITIF et robuste, le premier de l'arc.
 
+## ⭐⭐ VERDICT A/B MULTI-DRIVE (2026-07-21, `scripts/ab_obstacle_memory_multi.sh`) : EFFET DANS LE BRUIT → domaine de validité ÉTROIT, PAS de promotion
+Question de PROMOTION : le PASS food-only tient-il en MULTI-DRIVE (bouffe+eau+mur), la config
+vivante ? `MultiSlotMemory` (K=2, par-ressource, `SYLVAN_SLOT_MEMORY2=1`) ON vs OFF, WM slot-2
+`wm_objcentric_kin`, coût survival, 2 seeds × 16 ép, ZÉRO retrain.
+| bras | seed 1 | seed 2 | conso poolées |
+|---|---|---|---|
+| OFF | 39 (22+17) | 40 (23+17) | **79** |
+| ON | 42 (24+18) | 41 (23+18) | **83** (+4, **+5,1 %**) |
+- **ON > OFF sur les 2 seeds** (42>39, 41>40) → le critère pré-inscrit est *techniquement* rempli
+  **MAIS les écarts (+3, +1) sont DANS LE BRUIT** (~±5 sur ces comptes ; deux tirages du bon côté =
+  ~25 % par hasard à effet nul). Signaux secondaires tous directionnels mais minuscules (énergie méd
+  56/50 vs 51/49 ; soif 39/41 vs 37/39 ; passages critiques 15/13 vs 16/14).
+- **AUTOCORRECTION MÉTHODO (§2)** : mon critère pré-inscrit (« ON > OFF sur les 2 seeds ») testait la
+  DIRECTION sans exiger une magnitude > bruit — trop faible. Le verdict honnête n'est donc PAS
+  « PASS » mais **« effet non distinguable du bruit »**. Critère à durcir pour tout futur A/B :
+  magnitude poolée > bruit d'instrument, pas seulement le signe.
+- **LECTURE** : le bénéfice mémoire, NET en food-only (+31 %, écarts +8/+4), **s'évapore en
+  multi-drive** (+5 %, écarts +3/+1). Explication cohérente avec l'arc : en multi-drive l'agent
+  re-cible constamment (flottement mesuré) et dispose d'une 2ᵉ ressource quand la 1ʳᵉ est occultée →
+  persister un belief pèse beaucoup moins. **Le domaine de validité de la mémoire est ÉTROIT : elle
+  paie quand il y a UNE cible occultée à tenir, pas dans l'arbitrage multi-drive.**
+**➜ PAS DE PROMOTION** dans la config vivante (multi-drive) sur cette évidence. Le PASS food-only
+TIENT (résultat réel, borné à son domaine) ; la généralisation multi-drive est RÉFUTÉE-en-pratique
+(effet trop petit pour compter). Ne pas payer plus de seeds pour un effet de ~5 % : même réel, il ne
+justifierait pas une promotion. Acquis net : la mémoire est une capacité RÉELLE mais NARROW-SCOPE,
+et le multi-objectif la dilue — cohérent avec le mur multi-drive documenté tout l'arc.
+
 ## Ce qu'on ne touche JAMAIS
 Le WM (gelé) ; le slot_encoder / la saillance / l'EgomotionHead (déjà appris, GELÉS) ; les drives ;
 le sprint-critic et les lentilles waypoint (interface gelée) ; le choix de cible designé (l'arbitrage
