@@ -288,6 +288,33 @@ et il est en cours de collecte. **Règle : ne rien affirmer sur un harnais sans 
 - Juger un changement de substrat sur **la survie brute**.
 - Retirer `far_align` **en monde-mur** (il y est porteur).
 
+## ⭐ DIRECTION COURANTE (2026-07-21 soir) — CONSTRUIRE LE MONDE, PUIS LE GELER
+
+**Sept pistes de capacité réfutées en une session**, toutes sur critère pré-inscrit, et toutes pour
+la même raison : **rien dans le monde ne les demande.**
+
+- **mémoire** — portée rétine **12 m** ⩾ monde **9 m** : tout est toujours vu ;
+- **valeur apprise** — survivre ≈ géométrie, l'inné est *exact* pour classer ;
+- **prédiction** — le corps cinématique obéit exactement à (vx, ω) : la trajectoire se calcule
+  **sans le WM** (vérifié). Le WM vaut comme **perception**, pas comme prédicteur ;
+- **évitement** — la sélectivité « apprise » du prédicteur n'était qu'une propriété du monde
+  d'entraînement (un mur cyan unique) ; en forêt dense il apprend « tout bloque de très près ».
+
+⇒ **L'entité navigue parce que naviguer suffit.** Le prochain chantier n'est pas une capacité, c'est
+le **monde** — construit proprement une bonne fois, puis **GELÉ** (le 2026-07-21 il a changé six fois
+en trois heures, invalidant chaque mesure : rien ne pouvait s'accumuler).
+
+Quatre exigences, déduites des échecs : **chercher** → monde plus grand que la perception ;
+**se souvenir** → ressources qui durent et s'épuisent ; **prédire** → conséquences différées, non
+calculables analytiquement ; **éviter** → dangers discriminables par l'apparence.
+
+⚠️ **Deux acquis corrigés le même soir** : (1) le « déficit de portée » [6,8) à 47 % est **largement
+artefactuel** — sur 416 opportunités à ≥ 6 m, **68 % ont l'autre ressource plus proche**, donc une
+non-atteinte est deux fois sur trois un **choix correct** ; (2) le monde forestier a une fenêtre
+navigable **mesurée à 45 arbres** (18 → aucun effet ; 54 → immobile 85 %).
+
+Prompt de démarrage : **`docs/prompt_construire_le_monde.md`**.
+
 ## Critère de succès (le BUT)
 
 L'entité fait un **choix complexe démontrable** : atteindre une ressource **vue puis cachée**, via un
