@@ -28,7 +28,13 @@ EPF=${EPF:-40}
 # l echafaudage agit) + ratio d errance ; JAMAIS la survie. Enjeu : la competence mesuree
 # aujourd hui (trajets 1.08, choix 98%) est-elle celle de l ENTITE ou celle de la bequille ?
 FA=${FA:-1}
-PORT=${PORT:-6270}; TAG="arbgrad_${ARM}_s${SEED}_r${EPF}_fa${FA}"
+# AUDIT DE PEREMPTION Phase 2, item n°1 (2026-07-21) : nominal_speed du planner. MESURE Phase 1 =
+# le corps fait 0.0100 m/pas, le planner declare 0.02 (command_planner.py:101, override par AUCUN
+# harnais) -> il sous-estime d'un facteur 2 le prix metabolique du deplacement (trajet median
+# 3,15 m : 7,88 points de jauge imagines contre 15,76 reels) et croit tourner 2x plus cher.
+# Defaut 0.02 = comportement INCHANGE -> les corpus deja collectes restent le bras TEMOIN valide.
+PSPEED=${PSPEED:-0.02}
+PORT=${PORT:-6270}; TAG="arbgrad_${ARM}_s${SEED}_r${EPF}_fa${FA}_v${PSPEED}"
 OUT="data/replay_buffer/${TAG}"; RUNDIR="data/replay_buffer/${TAG}_run"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$ARM" == "graded" ]]; then
@@ -38,8 +44,9 @@ else
 fi
 rm -rf "$OUT" "$RUNDIR"
 echo "=== ARB-GRADED $ARM : seed=$SEED port=$PORT | monde e=$EDRAIN t=$TDRAIN | planner drain_t=$PDRAIN_T ==="
+echo "=== audit : far_align=$FA | planner nominal_speed=$PSPEED (corps MESURE 0.0100 m/pas) ==="
 
-env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+env SYLVAN_PLANNER_SPEED=$PSPEED SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_DRAIN_T=$PDRAIN_T \
     SYLVAN_PLANNER_RESTORE=$(env_pytorch_3.12/bin/python -c "print($EPF/100)") SYLVAN_PLANNER_FAR_ALIGN=$FA SYLVAN_PLANNER_ALIGN_GAIN=60 \
     SYLVAN_CMD_EXPLORE_STD=0 SYLVAN_BC_LOG="$OUT" \

@@ -376,7 +376,11 @@ class CommandPlanner:
             print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
                   f"drain_e={self.cfg.resource_drain} drain_t={self.cfg.resource_drain_t} "
                   f"restore={self.cfg.resource_restore} "
-                  f"cap={self.cfg.surv_horizon:.0f} margin_w={self.cfg.surv_margin_weight:.0f}")
+                  f"cap={self.cfg.surv_horizon:.0f} margin_w={self.cfg.surv_margin_weight:.0f} "
+                  # MODÈLE DU CORPS : audité en Phase 1 (2026-07-21). Le corps MESURÉ fait
+                  # 0.0100 m/pas et tourne à 0.0150 rad/pas ; le défaut nominal_speed=0.02 est
+                  # PÉRIMÉ d'un facteur 2. Affiché pour que le log PROUVE la valeur servie.
+                  f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate}")
         # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
