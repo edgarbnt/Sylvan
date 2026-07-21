@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import glob as globmod
+import gzip
 import json
 import math
 import os
@@ -40,6 +41,22 @@ H_SURV = 10             # « vivant dans 10 replans » (= 100 pas Godot, G2)
 LOW, HIGH = 0.30, 0.50
 TOK_DIM = 5             # [niveau, dist/10, cos, sin, connu]
 STEPS_PER_REPLAN = 10   # 1 replan planner = 10 pas Godot (cf H_SURV)
+
+
+def _open_ep(d):
+    """Ouvre ep_0000.jsonl OU sa version .gz, ou renvoie None.
+
+    POURQUOI (2026-07-21) : collect_sprint_corpus_v2.sh GZIPPE le corpus a la fin, mais ce trainer
+    ouvrait `ep_0000.jsonl` en clair -> les corpus du MONDE VARIE (danger), justement ceux que la
+    pre-inscription exige pour rejouer le gate residual, n'ont JAMAIS ete lisibles ici. Le trainer
+    ne plantait pas : il ne trouvait aucune vie et concluait « rien a apprendre » -- indiscernable
+    d'un vrai negatif.
+    """
+    f = Path(d) / "ep_0000.jsonl"
+    if f.exists():
+        return open(f)
+    g = Path(d) / "ep_0000.jsonl.gz"
+    return gzip.open(g, "rt") if g.exists() else None
 
 
 def token(level: float, pos: list[float] | None) -> list[float]:
@@ -70,11 +87,11 @@ def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
     X, G, S, EID = [], [], [], []
     eid = 0
     for d in dirs:
-        f = Path(d) / "ep_0000.jsonl"
-        if not f.exists():
+        fh = _open_ep(d)
+        if fh is None:
             continue
         rows = []
-        for line in open(f):
+        for line in fh:
             try:
                 r = json.loads(line)
             except json.JSONDecodeError:
@@ -83,7 +100,8 @@ def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
             if p is None:
                 continue
             rows.append((float(r["obs"]["energy"]) / 100.0, float(r["obs"]["thirst"]) / 100.0,
-                         p.get("food"), p.get("water"), p.get("sf"), p.get("sw")))
+                         p.get("food"), p.get("water"), p.get("sf"), p.get("sw"),
+                         float(r["obs"].get("health", 100.0)) / 100.0))
         # split épisodes par respawn
         segs, cur = [], []
         for i, row in enumerate(rows):
@@ -96,8 +114,12 @@ def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
             L = len(seg)
             if L < 15:
                 continue
-            death = min(seg[-1][0], seg[-1][1]) < 0.03      # fin par mort (drive ~0) vs troncature
-            for t, (e, th, fp, wp, sf, sw) in enumerate(seg):
+            # MORT PAR DANGER (2026-07-21) : le detecteur ne regardait que les DRIVES, donc en
+            # monde-danger -- le monde VARIE que la pre-inscription exige pour rejouer ce gate --
+            # il voyait ZERO mort et refusait de tourner. La sante est desormais incluse.
+            # NON-REGRESSION : en monde plat la sante reste a 1.0, donc min(...) est inchange.
+            death = min(seg[-1][0], seg[-1][1], seg[-1][6]) < 0.03
+            for t, (e, th, fp, wp, sf, sw, _hp) in enumerate(seg):
                 X.append([token(e, fp), token(th, wp)])
                 G.append(1.0 - GAMMA ** (L - t))
                 S.append(0.0 if (death and (L - 1 - t) <= H_SURV) else 1.0)
@@ -174,11 +196,11 @@ def load_lived(dirs: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tenso
     eids: list[int] = []
     eid = 0
     for d in dirs:
-        f = Path(d) / "ep_0000.jsonl"
-        if not f.exists():
+        fh = _open_ep(d)
+        if fh is None:
             continue
         rows = []
-        for line in open(f):
+        for line in fh:
             try:
                 r = json.loads(line)
             except json.JSONDecodeError:
@@ -443,11 +465,11 @@ def main() -> None:
 def _sat_flags(dirs: list[str]):
     """Re-parcourt les buffers dans le MÊME ordre que load() → (sf, sw) par replan gardé."""
     for d in dirs:
-        f = Path(d) / "ep_0000.jsonl"
-        if not f.exists():
+        fh = _open_ep(d)
+        if fh is None:
             continue
         rows = []
-        for line in open(f):
+        for line in fh:
             try:
                 r = json.loads(line)
             except json.JSONDecodeError:
