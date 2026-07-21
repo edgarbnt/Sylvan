@@ -293,3 +293,34 @@ zone morte (négatif) ; `surv_turn_rate` (déjà correct, réfuté gratuitement)
 Un audit qui ne fait que retirer ne rendra pas l'entité intelligente. Sa valeur est **(i)** une ligne
 de base à laquelle on peut se fier et **(ii)** éventuellement de la performance gratuite, comme
 `far_align`. C'est un **prérequis**, pas le but — d'où le budget plafonné et la règle d'arrêt.
+
+---
+
+# GATE FORÊT (PRÉ-INSCRIT, 2026-07-21, avant lancement)
+
+**Question.** Le monde forestier rend-il la politique actuelle — *aller vers la ressource urgente la
+plus proche et visible* — **insuffisante**, sans pour autant la rendre **impossible** ?
+
+⚠️ **Particularité de ce gate** : contrairement à tous les précédents, ici une **dégradation est le
+signal RECHERCHÉ**. Le risque n'est donc pas de se tromper de signe, c'est de confondre *« plus
+exigeant »* avec *« cassé »*. D'où une garde explicite sur la capacité de base.
+
+**Protocole.** Témoin = corpus existants `arbgrad_graded_s{1,2}_r40_fa0` (aucun arbre). Traité = même
+harnais, mêmes seeds, `SYLVAN_FOREST_COUNT=40` (anneau 2,5-11 m), tout le reste identique.
+Instrument = `diagnostics/diag_reach_curve.py`, poolé 2 seeds, conditionné devant.
+
+**Mesures rapportées, dont une de calibration.**
+1. Courbe d'atteinte par bande.
+2. Survie et consommations — sortent-elles du **plafond** ?
+3. **Fraction de ticks où la bouffe n'est plus visible** dans la rétine = le hors-vue enfin créé.
+4. **Occupation de rétine mesurée** (% de rayons sur un arbre) : c'est la VRAIE valeur du bouton
+   densité, le `count` n'en est qu'un proxy. Le G0 borne l'utile à ~30 %.
+
+**Décision — pré-enregistrée.**
+- **SUCCÈS (le monde exige plus)** : les bandes lointaines `[4,6)` et `[6,8)` baissent de **≥ 5 pts**,
+  **ET** la bande proche `[0,2)` reste **≥ 85 %** (l'entité sait encore fermer quand c'est possible),
+  **ET** du hors-vue apparaît (> 5 % des ticks).
+- **TROP DUR** : `[0,2)` tombe **sous 85 %** → la forêt casse la capacité de base, pas la stratégie.
+  Réduire la densité et re-mesurer. *Ce n'est pas un échec du monde, c'est un mauvais réglage.*
+- **SANS EFFET** : rien ne bouge de ≥ 5 pts → augmenter la densité.
+- **NUL** : `guards.sanity()` échoue sur un corpus (entité immobile) → verdict nul, pas négatif.
