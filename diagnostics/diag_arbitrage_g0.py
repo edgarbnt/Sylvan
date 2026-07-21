@@ -27,7 +27,9 @@ import sys
 
 # MEASURED body/world constants (declared, not tuned — §2):
 DRAIN_PER_TICK = 0.05      # real energy/thirst drain per step (measured, design_critique_sprint Phase 0)
-SPEED_M_PER_TICK = 0.02    # m/step of the calibrated kinematic body (waypoint k_fwd * nominal vx)
+SPEED_M_PER_TICK = 0.01    # MESURÉ (2026-07-21) : déplacement par tick = 0.0100 m, constant
+                           # (p50=p90=p99). L ancienne valeur 0.02 était 2x TROP GRANDE et rendait la
+                           # portée métabolique 2x optimiste -> morts étiquetées "arbitrage" à tort.
 DEATH_THR = 15.0           # same convention as parse_lives (drive <= 15 at the end = cause)
 CONSUME_JUMP = 5.0         # drive rise > threshold = consumption event
 START_DRIVE = 70.0         # measured reset signature: lives start at (e=70, t=70, h=100)

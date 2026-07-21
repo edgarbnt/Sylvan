@@ -42,7 +42,9 @@ from sylvan.models.egomotion_head import load_egomotion_head
 RANGE_M = 10.0                 # perception.gd MAX_RANGE
 N_RAYS = 36
 DRAIN = 0.05                   # measured drive drain / step
-SPEED = 0.02                   # calibrated body m/step
+SPEED = 0.01                   # MEASURED 2026-07-21: per-tick displacement is exactly 0.0100 m
+                               # (p50=p90=p99). The old 0.02 was 2x TOO HIGH and made metabolic
+                               # reach 2x optimistic -> deaths wrongly labelled "arbitration".
 REACH_PER_UNIT = SPEED / DRAIN  # metres of reach per unit of drive reserve
 CRIT_DRIVE = 30.0              # "critical" = needy drive entered the danger zone
 LOST_MIN_STEPS = 30            # out of view at least this long before critical = truly lost
