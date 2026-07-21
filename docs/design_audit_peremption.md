@@ -110,17 +110,39 @@ un instrument aveugle, et raison de plus de ne pas juger là-dessus.
 règle écrite d'avance, **le modèle faux compensait quelque chose, à nommer avant tout autre
 changement**.
 
-**Ce qu'il compensait.** Le coût de survie évalue `deficit = relu(d_fin / vitesse × drain − niveau)`.
-Corriger la vitesse **double** le prix imaginé d'un trajet : à 7 m, 35 points de jauge au lieu de
-17,5. Sous le vrai chiffre, une ressource lointaine devient « fatalement inatteignable » dès que le
-niveau passe sous ce seuil → **le planner l'abandonne**. Or elle est empiriquement atteinte 40-54 %
-du temps, parce que ce terme est une approximation **atomique et sans replanification** qui ignore :
-la re-décision tous les 10 pas, les respawns qui rapprochent la ressource, la **restauration à
-l'arrivée** (jamais créditée contre le trajet), et l'autre ressource consommable en route.
+**Ce qu'il compensait — ⚠️ MA PREMIÈRE ATTRIBUTION ÉTAIT FAUSSE.** J'avais accusé
+`deficit = relu(d_fin / vitesse × drain − niveau)` (`command_planner.py:1084`). Ce terme est dans la
+branche **`else` de `surv_mode`** — donc **inerte** en config vivante (`surv_mode` retourne à L1063).
+J'ai encore nommé un mécanisme sans tracer le chemin d'exécution. Le code réellement exécuté est
+`_survival_extension`, sondé **gratuitement** par `diagnostics/diag_survival_tail.py`.
 
-⇒ **Deux erreurs se compensaient** : une vitesse optimiste d'un facteur 2 annulait le pessimisme d'un
-modèle de déficit atomique. `nominal_speed = 0.02` n'est donc **pas un modèle du corps** — c'est une
-**compensation, désormais DÉCLARÉE comme telle** (§2 : ne pas la laisser passer pour une mesure).
+**Le vrai mécanisme : une FALAISE suivie d'un PLATEAU PLAT.** Dans la queue, `lived = min(t_die,
+travel)` **sature** dès que le trajet dépasse le temps-avant-mort, et `margin` reste à **0** quand le
+candidat meurt en route. Donc au-delà de la distance jugée atteignable, le score est une
+**constante** — mesuré à énergie 0,30 : chute de −2400 puis **exactement plat** (0 gradient) à toute
+distance ultérieure. Un score plat = **aucune préférence entre candidats** = l'entité cesse de
+s'approcher. C'est la pathologie « knife-edge » déjà documentée pour `min_dist`
+(`command_planner.py:62`).
+
+Et le second terme ne sauve rien : `Δtime` est **exactement 0** dans toute la zone utile — **toute**
+la préférence de la queue passe par `margin_w × margin`.
+
+**Pourquoi la vitesse fausse le cachait.** La falaise se situe à la distance max jugée atteignable,
+qui vaut mécaniquement `niveau / drain × vitesse` :
+
+| énergie | falaise à spd=0.020 (déclaré) | falaise à spd=0.010 (vrai) |
+|---|---|---|
+| 0,20 | 7,9 m | 3,9 m |
+| 0,30 | 11,9 m | 5,9 m |
+| 0,50 | 16,0 m | 9,9 m |
+
+Les ressources apparaissent entre **2 et 8 m**. Avec la vitesse fausse la falaise est **hors du
+monde** → jamais rencontrée. Avec la vraie, elle tombe **en plein dedans** dès que l'énergie est
+moyenne-basse → les cibles à 6-8 m entrent dans la zone plate. C'est exactement l'effondrement
+observé sur `[6,8)`, bandes proches intactes.
+
+⇒ **`nominal_speed = 0.02` n'est pas un modèle du corps : c'est le réglage qui poussait une falaise
+hors du monde.** DÉCLARÉ comme tel (§2 : ne pas le laisser passer pour une mesure).
 
 **Conséquence pour l'hypothèse de la Phase 1 : RÉFUTÉE.** J'avais avancé que la constante périmée
 pouvait contribuer aux morts « ressource vue mais inatteignable ». C'est **l'inverse** : elle *aidait*
@@ -132,12 +154,59 @@ points de portée lointaine. Sans le critère KILL écrit d'avance, j'aurais ado
 « évidemment correct » et perdu cela en silence. C'est l'argument le plus net de la session pour la
 pré-inscription — et une limite réelle de la doctrine « purifier = mettre la vraie valeur ».
 
-**Le vrai fix, hors scope de l'audit** (§2 : le dire, ne pas le déguiser) : rendre le terme de
-déficit conscient de la replanification et de la restauration à l'arrivée. C'est une refonte du coût
-de survie — la queue analytique déjà déclarée échafaudage — pas un réglage de constante.
+**Décision.** Garder `nominal_speed = 0.02` pour l'instant, **reclassé « compensation déclarée »** et
+non « modèle du corps ». Ne PAS re-tester cette constante **seule** : le négatif est banké. Elle ne
+pourra être corrigée qu'**en même temps que la falaise** — c'est la version exigeante de la doctrine :
+*on ne corrige pas une constante sans corriger ce qu'elle compensait.*
 
-**Décision.** Garder `nominal_speed = 0.02`, **reclassé « compensation déclarée »** et non « modèle du
-corps ». Ne PAS re-tester cette constante seule : le négatif est banké.
+---
+
+## Phase 3 — supprimer la FALAISE (PRÉ-INSCRIT, avant lancement)
+
+**Le défaut, en une phrase.** Quand la queue juge une cible inatteignable, elle renvoie une
+**constante** au lieu d'un signal gradué — elle perd l'information « à quel point c'est loin », donc
+le planner n'a plus de raison de s'en approcher.
+
+**Le fix, minimal et sans nouvelle constante.** Aujourd'hui `margin = 0` quand le candidat meurt en
+route (plancher artificiel). On **retire le plancher** et on laisse la marge devenir **négative** :
+
+```
+margin = − (travel − t_die) × drain        # le manque, en unités de jauge
+```
+
+C'est **continu** à la frontière (quand `travel → t_die`, la marge → 0 des deux côtés) et
+**monotone décroissant** au-delà → le gradient est restauré partout. Zéro paramètre ajouté, zéro
+oracle : on **enlève** un clamp, on n'empile rien. Derrière un flag `SYLVAN_PLANNER_TAIL_GRADED`,
+défaut **OFF** = bit-identique.
+
+**Hypothèse.** La falaise est le vrai défaut ; la vitesse fausse ne faisait que la pousser hors du
+monde. Donc **falaise supprimée + vraie vitesse** doit valoir au moins la ligne de base — et rendrait
+en prime le modèle du corps honnête.
+
+**Contre-hypothèse gardée (§2).** Le gradient restauré pourrait faire **poursuivre des cibles
+réellement inatteignables** (l'entité meurt en chemin au lieu de se rabattre sur l'autre ressource).
+Ce serait un négatif informatif : la falaise serait alors une **prudence utile**, pas un bug.
+
+**Protocole.** Témoin = les mêmes corpus `arbgrad_graded_s{1,2}_r40_fa0` (falaise, spd=0.02).
+Traité = `TAIL_GRADED=1` **et** `PSPEED=0.010`, mêmes seeds. 2 runs.
+
+**Décision — pré-enregistrée.**
+- **ADOPTER** (falaise gradée + vraie vitesse) si aucune bande (n ≥ 500) ne régresse de ≥ 5 points.
+  Double gain : gradient sain **et** modèle du corps honnête.
+- **NÉGATIF INFORMATIF** si une bande régresse de ≥ 5 points → la falaise est une prudence utile ;
+  on la garde, on l'écrit, et l'audit des constantes s'arrête là.
+- **SOUS-PUISSANT** si n < 500 sur une bande.
+- Validité : `guards.sanity()` sur les 4 corpus, sinon verdict **NUL**.
+- Non-régression exigée **avant** le run : avec le flag ON et une cible **atteignable**, le score
+  doit être **bit-identique** à l'actuel (le fix ne touche que la zone morte).
+
+**Non-régression VÉRIFIÉE avant lancement** (2026-07-21) : bit-identique sur toutes les cibles
+atteignables (énergie 0,3/0,5/0,9 × distances 1-5 m), et gradient restauré dans la zone morte à
+**−10 points/m — exactement la même pente que dans la zone vivante** (score continu en pente).
+
+⚠️ **Limite assumée** : la **falaise subsiste** (−2410 à la frontière) ; seul le **plateau plat** est
+corrigé. C'est délibéré — « y aller me tue » est un signal juste ; c'était l'**absence de préférence
+entre cibles lointaines** qui était le bug. Ne pas revendiquer plus que ça.
 
 ## Honnêteté sur le gain attendu
 Un audit qui ne fait que retirer ne rendra pas l'entité intelligente. Sa valeur est **(i)** une ligne

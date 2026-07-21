@@ -118,6 +118,12 @@ class CommandPlanConfig:
                                             # pts = bruit). Le vrai fix = RISQUE sous bruit MESURÉ : mort DOUCE par
                                             # leg (p_death = f(marge d'arrivée / σ_jitter)) → Π(1−p) discrimine les
                                             # plans sûrs par leurs marges, principiel. À designer à tête reposée.
+    tail_graded: bool = False              # FALAISE de la queue survie : par defaut la marge est
+                                            # PLANCHEE a 0 des que le candidat meurt en route, donc le
+                                            # score est CONSTANT au-dela de la distance atteignable
+                                            # (gradient nul -> l'entite cesse de s'approcher). A 1, la
+                                            # marge devient le MANQUE (negatif) : gradient restaure,
+                                            # zero parametre ajoute. Env: SYLVAN_PLANNER_TAIL_GRADED.
     surv_turn_rate: float = 0.015          # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ≈ 0.015-0.03
                                             # rad/pas à 30 Hz — prendre le bas = prudent). Env: SYLVAN_PLANNER_TURN_RATE
     # === ÉCHAFAUDAGE DE DONNÉES far-target (2026-07-06, RETIRABLE — cf docs/orbite_far_target_pur.md) ===
@@ -187,6 +193,7 @@ def _survival_extension(
     turn_w: torch.Tensor | None = None,
     gamma: float = 0.0,
     drain_t: float | None = None,
+    graded_dead: bool = False,
 ) -> torch.Tensor:
     """Phase 2 du coût survie : depuis la FIN du rollout WM de chaque candidat (distances df/dw aux
     ressources, niveaux e/t, masque vivant, pas déjà vécus), simule analytiquement la suite « aller à
@@ -243,6 +250,18 @@ def _survival_extension(
             if leg == 0:
                 arrive = torch.minimum(e, t)                     # niveau à l'arrivée (pré-refill)
                 margin = torch.where((~died) & (live > 0.5), arrive, margin)
+                if graded_dead:
+                    # FALAISE SUPPRIMÉE (2026-07-21, sondé par diag_survival_tail.py). Sans ceci,
+                    # `margin` reste à 0 dès que le candidat meurt en route ET `lived` sature à
+                    # `t_die` : au-delà de la distance atteignable le score est une CONSTANTE
+                    # (mesuré : chute de −2400 puis plateau exactement plat). Un score plat = aucune
+                    # préférence entre candidats = l'entité cesse de s'approcher — la pathologie
+                    # « knife-edge » déjà connue pour min_dist (cf. heading_weight, L62).
+                    # On RETIRE le plancher : la marge devient le MANQUE, en unités de jauge.
+                    # Continu à la frontière (travel → t_die ⇒ manque → 0, et `arrive` → 0 aussi)
+                    # et monotone décroissant au-delà ⇒ gradient restauré, ZÉRO paramètre ajouté.
+                    short = -(travel - t_die).clamp(min=0.0) * drain
+                    margin = torch.where(died & (live > 0.5), short, margin)
             live = live * (~died).float()
             if target_food:
                 e = torch.where(live > 0.5, (e + restore).clamp(max=1.0), e)
@@ -312,6 +331,9 @@ class CommandPlanner:
         _tr = os.environ.get("SYLVAN_PLANNER_TURN_RATE")
         if _tr not in (None, ""):
             self.cfg.surv_turn_rate = float(_tr)
+        _tg = os.environ.get("SYLVAN_PLANNER_TAIL_GRADED")
+        if _tg not in (None, ""):
+            self.cfg.tail_graded = _tg not in ("0", "false", "False")
         _fa = os.environ.get("SYLVAN_PLANNER_FAR_ALIGN")  # échafaudage de cap far-target (RETIRABLE)
         if _fa not in (None, ""):
             self.cfg.far_align = _fa not in ("0", "false", "False")
@@ -380,7 +402,8 @@ class CommandPlanner:
                   # MODÈLE DU CORPS : audité en Phase 1 (2026-07-21). Le corps MESURÉ fait
                   # 0.0100 m/pas et tourne à 0.0150 rad/pas ; le défaut nominal_speed=0.02 est
                   # PÉRIMÉ d'un facteur 2. Affiché pour que le log PROUVE la valeur servie.
-                  f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate}")
+                  f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate} "
+                  f"| tail_graded={int(self.cfg.tail_graded)}")
         # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
@@ -855,7 +878,7 @@ class CommandPlanner:
                     cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                     cfg.surv_horizon, cfg.surv_margin_weight,
                     turn_f=bf_ / rate_, turn_w=bw_ / rate_, gamma=0.0,
-                    drain_t=cfg.resource_drain_t,
+                    drain_t=cfg.resource_drain_t, graded_dead=cfg.tail_graded,
                 )
                 vmap = torch.maximum(s_f, s_w).reshape(n_, h_) / cfg.surv_horizon   # ~[0,1] comme V
             else:
@@ -899,7 +922,7 @@ class CommandPlanner:
                     cfg.surv_horizon, cfg.surv_margin_weight,
                     turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
                     gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
-                    drain_t=cfg.resource_drain_t,
+                    drain_t=cfg.resource_drain_t, graded_dead=cfg.tail_graded,
                 )
                 fall = 1.0 - survival_pen.clamp(0.0, 1.0)
                 out_d["order_scores"] = [float((s_food_diag * fall).max()),
@@ -945,7 +968,7 @@ class CommandPlanner:
                 cfg.surv_horizon, cfg.surv_margin_weight,
                 turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
                 gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
-                drain_t=cfg.resource_drain_t,
+                drain_t=cfg.resource_drain_t, graded_dead=cfg.tail_graded,
             )
             fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             s_food = s_food * fall
