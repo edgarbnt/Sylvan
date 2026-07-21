@@ -173,3 +173,38 @@ Protocole : monde forestier (18 massifs), `SYLVAN_OCCLUDE_FOV_DEG=180` (±90°, 
 **Attendu honnête** : l'atteinte VA se dégrader — c'est normal, on retire de l'information. Ce qui
 est jugé ici n'est pas « l'entité fait-elle mieux » mais « le monde produit-il enfin la situation où
 une mémoire SERAIT utile ». Un cône qui dégrade tout SANS créer de hors-vue durable serait un échec.
+
+## RÉSULTAT DE LA RÉOUVERTURE (2026-07-21) — hypothèse RÉFUTÉE, sous-produit PRÉCIEUX
+
+Monde forestier (18 massifs) + `SYLVAN_OCCLUDE_FOV_DEG=180`, 2 seeds, cône et forêt vérifiés actifs.
+
+**Condition 1 — hors-vue durable : ÉCHEC tel qu'écrit.** Médiane des éclipses 6 → **5 ticks**
+(barre : ≥ 50). ⚠️ Mon critère était **mal spécifié** : la médiane mesure le **scintillement**, qui
+persiste *à l'intérieur* du cône, pas le hors-vue structurel. Celui-ci vit dans la **queue**, et la
+queue bouge : p90 13 → **35**, éclipses ≥ 50 ticks 73 → **121**. *Je ne déplace pas la barre — je
+consigne que je l'avais posée sur la mauvaise population.*
+
+**Condition 2 — place mémoire : ÉCHEC.** `seen-then-lost` FAISABLES = **0,0/24** vies (barre
+historique 5,0, non déplacée). Changement de structure réel néanmoins : le **bord-de-champ passe de
+12/13 à 0/4** — le cône a supprimé les pertes-par-portée, il ne reste que de vraies pertes. Mais
+elles sont trop peu nombreuses, et les morts-par-arbitrage tombent de 26 à 8.
+
+**Condition 3 — garde de capacité : PASSE**, et bien au-delà de l'attendu :
+
+| bande | forêt 360° | forêt + CÔNE ±90° | Δ |
+|---|---|---|---|
+| [0,2) | 94,4 % | 94,8 % | +0,3 |
+| [2,4) | 91,5 % | 88,9 % | −2,6 |
+| [4,6) | 78,7 % | 76,6 % | −2,1 |
+| [6,8) | 38,1 % | 38,5 % | +0,5 |
+
+**Aucune bande ne bouge de plus que le bruit.**
+
+⇒ **Verdict pré-inscrit : le chantier cône n'est PAS licencié** (conditions 1 et 2 échouées).
+
+⭐ **MAIS le sous-produit est le vrai résultat.** J'avais écrit dans la pré-inscription : *« l'atteinte
+VA se dégrader — c'est normal, on retire de l'information »*. **C'est faux, et c'est mesuré.**
+Supprimer **la moitié du champ visuel ne coûte RIEN** à l'atteinte. L'hémisphère arrière n'était
+**jamais exploité** — cohérent avec le corps forward-only et avec l'artefact-derrière déjà connu.
+Le cône est donc un gain de **réalisme et de pureté disponible à coût nul**, indépendamment de la
+mémoire. C'est une décision de promotion, pas un chantier.
