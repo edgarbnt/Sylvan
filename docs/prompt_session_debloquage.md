@@ -1,4 +1,4 @@
-# Prompt de démarrage — session « débloquer et démontrer un choix complexe »
+# Prompt de démarrage — session « audit de péremption, puis démonstration d'un choix complexe »
 
 > Copier-coller le bloc ci-dessous comme premier message de la nouvelle session.
 
@@ -7,44 +7,114 @@
 Salut. On reprend Sylvan. Lis d'abord, dans cet ordre : `ETAT_DES_LIEUX.md` (handoff courant,
 2026-07-21), `memory/sylvan-guards.md`, puis `memory/sylvan-foraging-economy.md`.
 
-**Contexte en une phrase** : la session précédente a produit **8 auto-corrections de mesure** — à
-chaque fois une constante ou une étiquette CRUE au lieu d'être MESURÉE. Résultat : le chantier
-arbitrage a été clos (sa « place » était un artefact), la mémoire a été réhabilitée (×2 en food-only),
-et un échafaudage (`far_align`) s'est révélé handicapant en arène ouverte. Des garde-fous
-automatiques existent maintenant (`diagnostics/guards.py`) — **utilise-les**.
+**Contexte en une phrase.** La session précédente a produit **8 auto-corrections de mesure** — à
+chaque fois une constante ou une étiquette CRUE au lieu d'être MESURÉE. Bilan : le chantier arbitrage
+a été clos (sa « place » était un artefact de mesure), la mémoire a été réhabilitée (**×2** en
+food-only), et surtout un échafaudage (`far_align`) s'est révélé **activement nuisible** en arène
+ouverte. Des garde-fous automatiques existent maintenant (`diagnostics/guards.py`) — **utilise-les
+systématiquement**.
 
-**But de cette session** : faire franchir à l'entité un cap visible — qu'elle **démontre un choix
-complexe** : atteindre une ressource **vue puis cachée par un mur**, via un détour, mieux qu'un agent
-sans mémoire. C'est le plus petit exemple concret de « décider », et tout est en place pour le tenter.
+## Le constat qui fixe la priorité de cette session
 
-**Ordre de marche (cheaper-first, ne pas sauter d'étape) :**
+`far_align` avait été réglé pour le corps à **pattes**, et **jamais revérifié après le pivot vers le
+corps cinématique**. Le retirer en arène ouverte fait passer l'atteinte à 4-6 m de **47 % à 70 %** :
+gain de performance ET de pureté, en supprimant du code.
 
-1. **Ligne de base propre** — FA=0 en arène ouverte, `guards.sanity()` + `check_constants()` avant
-   tout verdict. Re-mesurer budget/cycle et courbe atteinte-vs-distance. Tous les chiffres de la
-   semaine passée sont teintés par `far_align` : il faut une référence saine avant de comparer quoi
-   que ce soit.
-2. **Consolider la mémoire** (2-3 seeds, multi-drive, monde-mur, FA=1 car il y est PORTEUR) : passer
-   le +23 % de « suggestif » à solide. Juge = **courbe d'atteinte** (n en milliers), pas les
-   consommations (n en dizaines).
-3. **Dégeler le G3 obstacle** avec la mémoire branchée : c'est LA démonstration visée.
-4. Si ça passe → promouvoir la mémoire dans la config vivante, et seulement ensuite enrichir le monde.
+**Or TOUS les autres réglages de décision sont dans le même cas** — ajustés à la main sur un corps qui
+n'existe plus, jamais revalidés depuis :
 
-**Une anomalie gratuite à investiguer en chemin** : en monde-mur, l'entité est **immobile 49 % des
-ticks même avec `far_align`**. Elle percute massivement l'obstacle. Personne n'a regardé pourquoi ;
-ça peut être un gros gisement.
+**Le suspect n°1, trouvé en vérifiant ce prompt** (`command_planner.py:121`) :
 
-**Ce sur quoi je veux que tu insistes :**
+```
+surv_turn_rate: float = 0.015   # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ...)
+```
+
+**Le planner modélise encore le corps à PATTES.** C'est sa vitesse de virage *imaginée* — donc tout
+le coût de survie raisonne sur un corps qui n'existe plus. Ordre de grandeur : `kin_turn=1.5` avec
+l'échelle de temps mesurée (0,8 → 0,0100 m/tick) donnerait plutôt **≈ 0,019 rad/pas** (~25 % de
+plus). ⚠️ **Ce calcul est le mien — MESURE-le sur corpus** (`guards.measured_constants`, virage réel
+rad/tick) avant d'en faire quoi que ce soit. C'est exactement le pattern `far_align` : une constante
+calibrée sur l'ancien corps, jamais revue.
+
+**Le suspect n°2, trouvé pareil** : `CLAUDE.md` et la carte d'archi affirmaient que `heading_weight`
+(le hint « pointe vers la cible ») avait été **RETIRÉ le 2026-06-25** et que le coût était « redevenu
+un pur `-min_dist` ». **C'est faux : le retrait n'a jamais atterri.** Défaut du code toujours `2.0`,
+et sur 34 harnais **18 le codent en dur à 2.0** (dont les vivants) contre 6 à `0.0`. La carte est
+corrigée ; la décision elle-même reste **à re-trancher par la mesure**.
+
+| constante | défaut code | env | rôle |
+|---|---|---|---|
+| **`surv_turn_rate`** | **0.015** | `SYLVAN_PLANNER_TURN_RATE` | **virage imaginé — calibré HEXAPODE** ⇦ commencer ici |
+| **`heading_weight`** | **2.0** | `SYLVAN_PLANNER_HEADING_W` | **hint de cap déclaré retiré mais toujours actif** |
+| `align_gain` | 60.0 | `SYLVAN_PLANNER_ALIGN_GAIN` | poids de l'échafaudage far-align |
+| `align_mode` | `"mean"` | `SYLVAN_PLANNER_ALIGN_MODE` | `mean` (spirale) vs `end` (tourne tôt puis commit) — **jamais A/B testé** |
+| `urgency_weight` | 6.0 | `SYLVAN_PLANNER_URGENCY_W` | poids de l'inconfort futur |
+| `surv_margin_weight` | 200.0 | `SYLVAN_PLANNER_SURV_MARGIN_W` | tie-break de marge |
+| `surv_horizon` | 3000.0 | `SYLVAN_PLANNER_SURV_H` | cap de la simulation de survie |
+| `resource_drain` / `restore` | 0.0016 / 0.5 (code) ; 0.0005 / 0.4 (harnais) | `SYLVAN_PLANNER_DRAIN` / `_RESTORE` | **modèle interne du métabolisme**, posé à la main — le vrai drain mesuré est 0,05/tick |
+
+On a **prouvé** qu'au moins l'une d'elles était devenue nuisible. Rien ne dit qu'elle est la seule.
+Ne PAS auditer : `surv_discount` (négatif banké 2026-07-04, ne pas activer) et `commit_delta`
+(à 0.0 = OFF, appartient au chantier arbitrage CLOS).
+
+⚠️ **Nuance vérifiée dans le code** : `far_align` vaut **`False` par défaut** dans
+`command_planner.py` — c'est **chaque harnais qui l'allume**. L'échafaudage vit donc dans les
+*scripts de mesure*, pas dans la boucle. Inventaire fait (2026-07-21) — 4 harnais l'allument :
+`ab_obstacle_memory_multi.sh`, `collect_arb_graded.sh`, `collect_critic_corpus_kin.sh`,
+`collect_reachprobe.sh`. Ce dernier — **l'instrument de jugement** — l'avait **en dur, sans
+override** : il ne pouvait littéralement pas exprimer la condition propre. **Déjà corrigé** :
+`FA`/`AG`/`HW`/`UW`/`AMODE` sont paramétrables, défauts inchangés (campagnes passées reproductibles),
+et le tag de corpus les porte. Les 3 autres restent à vérifier avant de re-mesurer.
+
+## Ordre de marche (ne pas sauter d'étape)
+
+**1. AUDIT DE PÉREMPTION + ligne de base propre — LA priorité.**
+Balayer ces constantes une par une, chacune jugée sur la **courbe atteinte-vs-distance** (jamais sur
+la survie), exactement comme on l'a fait pour `far_align`. Les harnais existent
+(`scripts/collect_arb_graded.sh`, `scripts/collect_reachprobe.sh`), les gardes aussi.
+Objectif double : **supprimer/recaler les béquilles périmées** ET obtenir enfin une **référence saine**
+— tous les chiffres de la semaine passée sont teintés par `far_align` et par une constante de vitesse
+fausse d'un facteur 2.
+⚠️ `far_align` est **dépendant du monde** : nuisible en arène ouverte, **PORTEUR en monde-mur** (sans
+lui l'entité est immobile 79 % des ticks). Auditer chaque constante **dans les deux mondes**.
+
+**2. Consolider la mémoire** (2-3 seeds, multi-drive, monde-mur) : passer le **+23 %** de « suggestif »
+à solide. Juge = **courbe d'atteinte** (n en milliers), pas les consommations (n en dizaines).
+
+**3. Dégeler le G3 obstacle** avec la mémoire branchée : la démonstration visée — **atteindre une
+ressource vue puis cachée derrière un mur, via un détour, mieux qu'un agent sans mémoire**. C'est le
+plus petit exemple concret de « décider », et il sera bien plus convaincant sur une base assainie.
+
+**4. Si ça passe** → promouvoir la mémoire dans la config vivante, et seulement ensuite enrichir le
+monde (topologie, cône).
+
+**Anomalie gratuite à investiguer en chemin** : en monde-mur, l'entité est **immobile 49 % des ticks
+même avec `far_align`**. Elle percute massivement l'obstacle. Personne n'a regardé pourquoi — gisement
+potentiellement gros, coût nul.
+
+## Ce sur quoi je veux que tu insistes
+
 - **Mesure avant de croire.** Toute constante utilisée dans un jugement doit être vérifiée sur le
-  corpus (`check_constants`). Toute anomalie (métrique à 0, entité immobile) = on CREUSE, on ne
-  rapporte pas.
+  corpus (`guards.check_constants`). Toute anomalie (métrique à 0, entité immobile) = on **CREUSE**,
+  on ne rapporte pas.
 - **Juge sur des métriques qui voient** : courbe d'atteinte, ratio d'errance, budget/cycle. La survie
-  est un instrument aveugle ici (dérive nulle).
-- **Magnitude vs bruit** : pas de « PASS » si l'effet est dans le bruit ; pas de « réfuté » sur un
-  effectif de quelques dizaines. Dis « sous-puissant » quand c'est le cas.
-- **Pré-inscris** les critères avant de lancer, et ne les déplace pas après.
+  est un instrument **aveugle** ici (budget par cycle ≈ 0 → dérive nulle → dominée par la variance).
+- **Magnitude vs bruit** : pas de « PASS » si l'effet est dans le bruit ; pas de « réfuté » sur
+  quelques dizaines d'événements. Dis **« sous-puissant »** quand c'est le cas.
+- **Pré-inscris** les critères avant de lancer, et ne les déplace jamais après.
+- **Supprimer du code périmé est un gain double** (pureté + performance) : c'est la leçon
+  `far_align`. Chercher activement ce qui peut être RETIRÉ, pas seulement ajouté.
 
-**Ne refais pas** (négatifs bankés, détail dans `ETAT_DES_LIEUX.md` §7) : rouvrir le critique
-d'arbitrage ; espérer que la vitesse règle quelque chose ; toucher au restore ; retirer `far_align`
-en monde-mur.
+## Ce qu'il ne faut PAS faire
 
-Commence par me proposer ton plan pour l'étape 1, sans rien lancer.
+- Rouvrir le **critique d'arbitrage** (place réelle 2/24 contre une barre de 5).
+- Remplacer du **designé par de l'appris « pour la pureté »** : mauvais bilan (critique-arbitrage
+  échoué faute de matière à apprendre ; P2-bis : l'aversion est une préférence du corps). Le gisement
+  est dans la **suppression de béquilles périmées**, pas dans l'apprentissage à tout prix.
+- Espérer que **la vitesse** règle quelque chose : elle **masque** (courbe normalisée pire, qualité de
+  décision identique).
+- Toucher au **restore** : plafonné à 100 (+50 % nominal = +8 % absorbé).
+- Retirer `far_align` **en monde-mur** (il y est porteur).
+
+Commence par me proposer ton plan d'audit pour l'étape 1 — quelles constantes, dans quel ordre, avec
+quels critères pré-enregistrés — **sans rien lancer**.

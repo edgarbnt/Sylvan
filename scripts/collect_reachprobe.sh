@@ -42,16 +42,22 @@ ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 MODE=${1:-mono}; SEED=${2:-5}; NEP=${3:-16}
 PORT=${PORT:-6250}; DELTA=${DELTA:-0}; SPEED=${SPEED:-0.8}
 EDRAIN=${EDRAIN:-0.05}; TDRAIN=${TDRAIN:-0.05}
-TAG="reach_${MODE}_s${SEED}_d${DELTA}_v${SPEED}_e${EDRAIN}t${TDRAIN}"
+# AUDIT DE PÉREMPTION (2026-07-21) : les réglages de décision étaient EN DUR ici — l'instrument de
+# jugement ne pouvait donc pas exprimer la condition PROPRE (FA=0), alors qu'on a mesuré que FA
+# HANDICAPE en arène ouverte (atteinte 4-6 m : 47 -> 70 % sans lui, 2 seeds). Rendus paramétrables ;
+# défauts INCHANGÉS -> les campagnes déjà faites restent reproductibles bit-à-bit.
+FA=${FA:-1}; AG=${AG:-60}; HW=${HW:-2.0}; UW=${UW:-6.0}; AMODE=${AMODE:-mean}
+TAG="reach_${MODE}_s${SEED}_d${DELTA}_v${SPEED}_e${EDRAIN}t${TDRAIN}_fa${FA}g${AG}h${HW}u${UW}${AMODE}"
 OUT="data/replay_buffer/critic_kin_${TAG}"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$MODE" == "mono" ]]; then WC=0; TD=0; else WC=1; TD=0.05; fi
 rm -rf "$OUT"
 echo "=== REACHPROBE $MODE : ep=$NEP seed=$SEED port=$PORT (WC=$WC, drains e=$EDRAIN t=$([[ "$MODE" == "mono" ]] && echo 0 || echo $TDRAIN), speed=$SPEED, no hazard) ==="
+echo "=== réglages décision (audit de péremption) : FA=$FA gain=$AG mode=$AMODE HW=$HW UW=$UW ==="
 
-env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+env SYLVAN_PLANNER_HEADING_W=$HW SYLVAN_PLANNER_URGENCY_W=$UW \
     SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_FAR_ALIGN=1 SYLVAN_PLANNER_ALIGN_GAIN=60 \
+    SYLVAN_PLANNER_FAR_ALIGN=$FA SYLVAN_PLANNER_ALIGN_GAIN=$AG SYLVAN_PLANNER_ALIGN_MODE=$AMODE \
     SYLVAN_PLANNER_COMMIT_DELTA=$DELTA \
     SYLVAN_PLANNER_CRITIC=data/checkpoints/survival_critic_kin/critic_best.pt \
     SYLVAN_BC_LOG="$OUT" \

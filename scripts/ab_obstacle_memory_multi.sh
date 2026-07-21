@@ -14,7 +14,9 @@ set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 ARM=${1:-off}; SEED=${2:-1}; NEP=${3:-16}
 # RE-MESURE CIBLEE (2026-07-21) : FA = echafaudage far-target. Il SUPPRIME l atteinte lointaine
-# (A/B mesure : 4-6 m 38 -> 64 % sans lui) ; toutes les mesures memoire precedentes le portaient.
+# (seed 1 : 4-6 m 38 -> 64 % sans lui ; poole 2 seeds : 47,4 -> 69,9 %) ; toutes les mesures
+# memoire precedentes le portaient. ATTENTION : en MONDE-MUR il est au contraire PORTEUR
+# (sans lui l entite est immobile 79 % des ticks) -> l effet est DEPENDANT DU MONDE.
 # On re-mesure a FA=0 (condition PROPRE). JUGE PRINCIPAL = courbe d atteinte (n en milliers),
 # PAS les consommations (n en dizaines : 26 vs 32 = 1,2 sigma, sous-puissant).
 FA=${FA:-1}

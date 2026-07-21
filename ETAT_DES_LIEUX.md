@@ -90,8 +90,19 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
 
 ## 6. Ce qu'il faut creuser (priorisé, cheaper-first)
 
-1. **Ligne de base propre** (gratuit→1 run) : FA=0 en arène ouverte, gardes actives. Re-mesurer
-   budget/cycle et courbe d'atteinte. **Tout le reste en dépend.**
+1. **AUDIT DE PÉREMPTION + ligne de base propre** (gratuit→1 run). **Tout le reste en dépend.**
+   `far_align` avait été calibré pour le corps à **pattes** et jamais revu après le pivot cinématique
+   → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
+   trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté
+   « hexapode ~25-50°/s » → **le coût de survie imagine encore le virage d'un corps à pattes**.
+   Suspect n°2 : le retrait de `heading_weight` **décidé le 2026-06-25 n'a jamais atterri** — défaut
+   du code toujours `2.0`, **18 harnais sur 34** le codent en dur à 2.0 (6 seulement à 0.0), alors que
+   `CLAUDE.md` et la carte affirmaient « coût redevenu un pur `-min_dist` ». Carte corrigée.
+   Balayer chacune (cf. le tableau dans `docs/prompt_session_debloquage.md`), jugée sur la **courbe
+   d'atteinte**, **dans les deux mondes** (l'effet de FA est dépendant du monde).
+   ⚠️ L'instrument était contaminé : `collect_reachprobe.sh` avait `FAR_ALIGN=1` **en dur, sans
+   override** — corrigé (paramétrable, défauts inchangés). 3 autres harnais allument encore FA
+   par défaut (`ab_obstacle_memory_multi`, `collect_arb_graded`, `collect_critic_corpus_kin`).
 2. **Consolider la mémoire** (2-3 seeds) : c'est la SEULE brique qui *ajoute* une capacité mesurée.
    Objectif : passer le multi-drive de « suggestif » à solide → promotion.
 3. **Dégeler l'obstacle G3** avec mémoire ON : première démonstration d'un **choix complexe**
