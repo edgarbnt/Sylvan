@@ -85,7 +85,12 @@ class CommandPlanConfig:
     urgency_weight: float = 6.0             # poids du terme d'inconfort futur (doit dominer). Env: SYLVAN_PLANNER_URGENCY_W
     dist_weight: float = 1.0               # poids de l'attraction-proximité (le -min_dist validé A→B), pondérée par urgence
     urgency_exp: float = 2.0               # convexité de l'urgence (2 = le critique coûte bien plus que le modéré)
-    resource_drain: float = 0.0016         # drain normalisé/pas (≈ homeostasis passive_drain 0.15 / max 100)
+    resource_drain: float = 0.0016         # drain normalisé/pas de l'ÉNERGIE (≈ homeostasis passive_drain 0.15 / max 100)
+    # DRAIN PAR-JAUGE (2026-07-21) : le modèle interne du planner supposait UN drain pour les DEUX
+    # jauges. Faux dès que le corps est asymétrique (SYLVAN_ENERGY_DRAIN ≠ SYLVAN_THIRST_DRAIN) → il
+    # mésestime quelle jauge meurt en premier et classe mal l'urgence. None = « même que l'énergie »
+    # → résolu dans __init__ → BIT-IDENTIQUE en corps symétrique (non-régression).
+    resource_drain_t: float | None = None  # drain normalisé/pas de la SOIF (None → resource_drain)
     resource_restore: float = 0.5          # refill normalisé au contact (≈ energy_per_food 40-50 / 100)
     resource_reach: float = 1.0            # mètres : distance de capture imaginée (≈ eat/drink_radius)
     survival_weight: float = 300.0         # FORESIGHT de survie consciente du TRAJET — BANKÉ (validé multi-seed : multi-pulsions
@@ -181,6 +186,7 @@ def _survival_extension(
     turn_f: torch.Tensor | None = None,
     turn_w: torch.Tensor | None = None,
     gamma: float = 0.0,
+    drain_t: float | None = None,
 ) -> torch.Tensor:
     """Phase 2 du coût survie : depuis la FIN du rollout WM de chaque candidat (distances df/dw aux
     ressources, niveaux e/t, masque vivant, pas déjà vécus), simule analytiquement la suite « aller à
@@ -193,8 +199,14 @@ def _survival_extension(
       toute l'alternance convergeait vers le régime permanent → score PLAT à distance, std=0.000) ;
     - le premier leg paie le TEMPS DE VIRAGE (turn_f/turn_w = pas nécessaires pour se tourner vers
       la ressource depuis le cap de fin d'arc — tourner coûte du temps, le temps coûte de la survie).
+    DRAIN PAR-JAUGE (2026-07-21) : `drain` = énergie, `drain_t` = soif (None → même que l'énergie,
+    donc BIT-IDENTIQUE en corps symétrique). Chaque jauge décroît à SON rythme, et le temps-avant-mort
+    est le MINIMUM des deux temps (e/drain_e, t/drain_t) — pas le minimum des NIVEAUX, qui n'a plus de
+    sens dès que les rythmes diffèrent. ⚠️ La `margin` reste un NIVEAU (min(e,t)) et non un temps :
+    changer son unité casserait l'échelle de `margin_w` — limite DÉCLARÉE, sans effet en symétrique.
     Tout est en pas-planner (≈ pas Godot) et niveaux normalisés [0,1]."""
     drain = max(drain, 1e-9)
+    drain_t = drain if drain_t is None else max(drain_t, 1e-9)
     spd = max(spd, 1e-6)
     leg_fw = max(dist_fw, 0.0) / spd                    # pas de trajet entre les deux ressources
     max_legs = int(cap / max(leg_fw, 1.0)) + 2
@@ -218,14 +230,16 @@ def _survival_extension(
         target_food = first_is_food
         for leg in range(max_legs):
             travel = dist / spd + extra
-            t_die = torch.minimum(e, t).clamp(min=0.0) / drain   # pas avant que le pire drive meure
+            # pas avant que la PREMIÈRE jauge meure — chacune à SON rythme (identique à
+            # min(e,t)/drain quand drain_t == drain : non-régression exacte en symétrique).
+            t_die = torch.minimum(e.clamp(min=0.0) / drain, t.clamp(min=0.0) / drain_t)
             died = (t_die < travel) & (live > 0.5)
             lived = torch.minimum(t_die, travel)
             if gamma > 0.0:
                 val = val + live * (gamma ** time) * (1.0 - gamma ** lived.clamp(min=0.0)) / (1.0 - gamma)
             time = time + live * lived
             e = (e - travel * drain).clamp(min=0.0)
-            t = (t - travel * drain).clamp(min=0.0)
+            t = (t - travel * drain_t).clamp(min=0.0)
             if leg == 0:
                 arrive = torch.minimum(e, t)                     # niveau à l'arrivée (pré-refill)
                 margin = torch.where((~died) & (live > 0.5), arrive, margin)
@@ -275,6 +289,14 @@ class CommandPlanner:
         _dr = os.environ.get("SYLVAN_PLANNER_DRAIN")  # drain normalisé/pas — caler sur le régime réel
         if _dr not in (None, ""):                     # (éco de vie 0.05 → 0.0005 ; défaut historique 0.0016)
             self.cfg.resource_drain = float(_dr)
+        _drt = os.environ.get("SYLVAN_PLANNER_DRAIN_T")  # drain SOIF (défaut : même que l'énergie)
+        if _drt not in (None, ""):
+            self.cfg.resource_drain_t = float(_drt)
+        # Résolution UNE fois : après ce point `resource_drain_t` est toujours un float. Égal à
+        # `resource_drain` en corps symétrique → toutes les formules redeviennent celles d'avant,
+        # BIT pour BIT (non-régression garantie par construction, vérifiée par selfcheck_drains).
+        if self.cfg.resource_drain_t is None:
+            self.cfg.resource_drain_t = self.cfg.resource_drain
         _rs = os.environ.get("SYLVAN_PLANNER_RESTORE")  # refill normalisé (energy_per_food 40 → 0.4)
         if _rs not in (None, ""):
             self.cfg.resource_restore = float(_rs)
@@ -352,7 +374,8 @@ class CommandPlanner:
             self.cfg.pivot = _pv not in ("0", "false", "False")
         if self.cfg.cost_mode == "survival":
             print(f"[planner-cmd] COÛT SURVIE actif (multi-ressource) : score = pas-vécus simulés, "
-                  f"drain={self.cfg.resource_drain} restore={self.cfg.resource_restore} "
+                  f"drain_e={self.cfg.resource_drain} drain_t={self.cfg.resource_drain_t} "
+                  f"restore={self.cfg.resource_restore} "
                   f"cap={self.cfg.surv_horizon:.0f} margin_w={self.cfg.surv_margin_weight:.0f}")
         # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
@@ -729,7 +752,7 @@ class CommandPlanner:
             yaw = yaw + d_yaw
             # passive drain (both resources)
             e_lvl = (e_lvl - cfg.resource_drain).clamp(min=0.0)
-            t_lvl = (t_lvl - cfg.resource_drain).clamp(min=0.0)
+            t_lvl = (t_lvl - cfg.resource_drain_t).clamp(min=0.0)   # drain PAR-JAUGE
             if surv_mode:
                 drive_alive = drive_alive * ((e_lvl > 0.0) & (t_lvl > 0.0)).float()
                 steps_alive = steps_alive + drive_alive
@@ -828,6 +851,7 @@ class CommandPlanner:
                     cfg.resource_drain, cfg.resource_restore, cfg.nominal_speed,
                     cfg.surv_horizon, cfg.surv_margin_weight,
                     turn_f=bf_ / rate_, turn_w=bw_ / rate_, gamma=0.0,
+                    drain_t=cfg.resource_drain_t,
                 )
                 vmap = torch.maximum(s_f, s_w).reshape(n_, h_) / cfg.surv_horizon   # ~[0,1] comme V
             else:
@@ -871,6 +895,7 @@ class CommandPlanner:
                     cfg.surv_horizon, cfg.surv_margin_weight,
                     turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
                     gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
+                    drain_t=cfg.resource_drain_t,
                 )
                 fall = 1.0 - survival_pen.clamp(0.0, 1.0)
                 out_d["order_scores"] = [float((s_food_diag * fall).max()),
@@ -916,6 +941,7 @@ class CommandPlanner:
                 cfg.surv_horizon, cfg.surv_margin_weight,
                 turn_f=bear_f.abs() / rate, turn_w=bear_w.abs() / rate,
                 gamma=(1.0 - cfg.resource_drain) if cfg.surv_discount > 0 else 0.0,
+                drain_t=cfg.resource_drain_t,
             )
             fall = 1.0 - survival_pen.clamp(0.0, 1.0)
             s_food = s_food * fall
@@ -1052,7 +1078,7 @@ class CommandPlanner:
             deficit = torch.zeros(n, device=self.device)
             if has_water:
                 dw_end = torch.sqrt((x - wx) ** 2 + (z - wz) ** 2)
-                deficit = deficit + torch.relu(dw_end / spd * cfg.resource_drain - t_lvl)
+                deficit = deficit + torch.relu(dw_end / spd * cfg.resource_drain_t - t_lvl)  # soif : son drain
             if has_food:
                 df_end = torch.sqrt((x - fx) ** 2 + (z - fz) ** 2)
                 deficit = deficit + torch.relu(df_end / spd * cfg.resource_drain - e_lvl)

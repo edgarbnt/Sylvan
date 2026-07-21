@@ -47,7 +47,7 @@ OUT="data/replay_buffer/critic_kin_${TAG}"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$MODE" == "mono" ]]; then WC=0; TD=0; else WC=1; TD=0.05; fi
 rm -rf "$OUT"
-echo "=== REACHPROBE $MODE : ep=$NEP seed=$SEED port=$PORT (WC=$WC thirst_drain=$TD, no hazard) ==="
+echo "=== REACHPROBE $MODE : ep=$NEP seed=$SEED port=$PORT (WC=$WC, drains e=$EDRAIN t=$([[ "$MODE" == "mono" ]] && echo 0 || echo $TDRAIN), speed=$SPEED, no hazard) ==="
 
 env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
