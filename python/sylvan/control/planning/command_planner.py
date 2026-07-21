@@ -118,6 +118,18 @@ class CommandPlanConfig:
                                             # pts = bruit). Le vrai fix = RISQUE sous bruit MESURÉ : mort DOUCE par
                                             # leg (p_death = f(marge d'arrivée / σ_jitter)) → Π(1−p) discrimine les
                                             # plans sûrs par leurs marges, principiel. À designer à tête reposée.
+    slot_vis_thr: float = 1e-3             # SEUIL DE VISIBILITE du slot. En dessous, la ressource est
+                                            # jugee HORS-VUE -> le planner bascule sur le SOUVENIR, ou la
+                                            # declare absente (gate 3 etats). MESURE 2026-07-21 (G0 foret,
+                                            # diag_foret_g0.py) : vis = 0.2648 si VISIBLE, 0.0477 si
+                                            # OCCULTEE par un arbre, 0.0000 sur retine vide. Le defaut
+                                            # 1e-3 est calibre pour « retine absolument vide » : un arbre
+                                            # laisse fuir ~0.048 (sa couleur n'est pas orthogonale a la
+                                            # requete-couleur), soit 48x le seuil -> la gate NE BASCULE
+                                            # JAMAIS sous occlusion. Pour un monde avec occulteurs, poser
+                                            # ~0.15. ⚠️ marge mesuree sur un regime ETROIT (foret simulee,
+                                            # geometrie quasi constante) : re-calibrer sur un vrai corpus
+                                            # forestier avant de figer. Env: SYLVAN_SLOT_VIS_THR.
     surv_turn_rate: float = 0.015          # rad/pas de virage imaginé phase-2 (hexapode ~25-50°/s ≈ 0.015-0.03
                                             # rad/pas à 30 Hz — prendre le bas = prudent). Env: SYLVAN_PLANNER_TURN_RATE
     # === ÉCHAFAUDAGE DE DONNÉES far-target (2026-07-06, RETIRABLE — cf docs/orbite_far_target_pur.md) ===
@@ -312,6 +324,9 @@ class CommandPlanner:
         _tr = os.environ.get("SYLVAN_PLANNER_TURN_RATE")
         if _tr not in (None, ""):
             self.cfg.surv_turn_rate = float(_tr)
+        _vt = os.environ.get("SYLVAN_SLOT_VIS_THR")
+        if _vt not in (None, ""):
+            self.cfg.slot_vis_thr = float(_vt)
         _fa = os.environ.get("SYLVAN_PLANNER_FAR_ALIGN")  # échafaudage de cap far-target (RETIRABLE)
         if _fa not in (None, ""):
             self.cfg.far_align = _fa not in ("0", "false", "False")
@@ -380,7 +395,8 @@ class CommandPlanner:
                   # MODÈLE DU CORPS : audité en Phase 1 (2026-07-21). Le corps MESURÉ fait
                   # 0.0100 m/pas et tourne à 0.0150 rad/pas ; le défaut nominal_speed=0.02 est
                   # PÉRIMÉ d'un facteur 2. Affiché pour que le log PROUVE la valeur servie.
-                  f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate}")
+                  f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate} "
+                  f"| vis_thr={self.cfg.slot_vis_thr}")
         # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
@@ -645,7 +661,7 @@ class CommandPlanner:
             _slots0 = _pos0.clone()
             if slots_belief is not None:
                 for _k in range(_slots0.shape[0]):
-                    if float(_vis[_k]) <= 1e-3 and _k < len(slots_belief) and slots_belief[_k] is not None:
+                    if float(_vis[_k]) <= self.cfg.slot_vis_thr and _k < len(slots_belief) and slots_belief[_k] is not None:
                         _slots0[_k, 0] = float(slots_belief[_k][0])
                         _slots0[_k, 1] = float(slots_belief[_k][1])
         out = self.world_model.rollout_open_loop(obs0, self._cmd_seqs, slots0=_slots0)
@@ -680,11 +696,11 @@ class CommandPlanner:
                 if slots_belief is not None and k < len(slots_belief) and slots_belief[k] is not None:
                     return (float(slots_belief[k][0]), float(slots_belief[k][1]))
                 return None
-            if float(vis[fi]) > 1e-3 or _bel(fi) is not None:
+            if float(vis[fi]) > cfg.slot_vis_thr or _bel(fi) is not None:
                 food = (float(out["slots"][0, 0, fi, 0]), float(out["slots"][0, 0, fi, 1]))
             else:
                 food = None                          # jamais vue → absente (pas hallucinée)
-            if wi is not None and (float(vis[int(wi)]) > 1e-3 or _bel(int(wi)) is not None):
+            if wi is not None and (float(vis[int(wi)]) > cfg.slot_vis_thr or _bel(int(wi)) is not None):
                 water = (float(out["slots"][0, 0, int(wi), 0]), float(out["slots"][0, 0, int(wi), 1]))
             else:
                 water = None                         # jamais vue → absente (pas hallucinée), symétrique à la bouffe
@@ -807,7 +823,7 @@ class CommandPlanner:
             # JAMAIS-VUE → token « connu=0 » — le critique s'est ENTRAÎNÉ avec ce cas.
             known = torch.zeros(pos.shape[0], pos.shape[1], 2, device=pos.device)
             for j, k in enumerate((fi, wi_)):
-                if float(vis[k]) > 1e-3 or _bel(k) is not None:
+                if float(vis[k]) > cfg.slot_vis_thr or _bel(k) is not None:
                     known[:, :, j] = 1.0            # visible OU souvenir : coords déjà dans les slots
                                                     # (t0=souvenir via slots0, transporté par candidat)
             d = pos.norm(dim=-1).clamp(min=1e-6)                    # [n, h, 2]
