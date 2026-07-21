@@ -123,6 +123,19 @@ func _ensure_built() -> void:
 	if _maxr_env != "":
 		spawn_radius = maxf(min_radius, float(_maxr_env))
 	# Régime EAT-RICHE (collecte WM). Défaut 1.0 = mange toujours (comportement actuel).
+	# CALIBRAGE DE VIE (2026-07-21) : `energy_per_food` 40 est un reglage de COLLECTE
+	# ("smaller meals -> eat OFTEN -> many eat-events for the WM"), pas un reglage de VIE —
+	# meme erreur que le drain 0.15 corrige en juin, de l'autre cote du bilan.
+	# ARITHMETIQUE MESUREE : trajet vers une ressource a d metres = 100*d pas (vitesse 0.0100
+	# m/tick MESUREE) -> coute 5*d a CHAQUE jauge (drain 0.05). Sur 2 cycles alternes, le bilan
+	# net d'une jauge = restore - 10*d -> equilibre a d = restore/10. Avec restore=40 :
+	# equilibre a 4 m, or les ressources spawnent 2-8 m (mediane ~5) -> bilan NEGATIF/nul ->
+	# marche aleatoire a derive nulle -> mort certaine, survie dominee par la VARIANCE (mesure :
+	# budget/cycle -1.9..+0.2, 46-51 % de cycles gagnants). Aucune competence ne peut s'y voir.
+	# Override opt-in ; defaut 40 INCHANGE (collecte WM et resultats passes intacts).
+	var _epf_env := OS.get_environment("SYLVAN_%s_ENERGY_PER" % _prefix)
+	if _epf_env != "":
+		energy_per_food = maxf(1.0, float(_epf_env))
 	var _hm_env := OS.get_environment("SYLVAN_%s_HUNGER_MAX" % _prefix)
 	if _hm_env != "":
 		eat_hunger_max = clampf(float(_hm_env), 0.05, 1.0)
