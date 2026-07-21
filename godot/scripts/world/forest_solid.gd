@@ -44,6 +44,11 @@ var _trunk_r := 0.35                               # rayon du tronc (collision +
 var _height := 2.0                                 # > torse → les rayons rétine horizontaux le touchent
 var _clear_r := 2.0                                # rayon dégagé autour du spawn (ne pas emmurer l'agent)
 var _keepout := 1.4                                # marge MINI ajoutée au rayon effectif (voir _effective_r)
+var _min_gap := 0.0                                # ESPACEMENT MINIMAL entre deux arbres. 0 = aucun
+                                                   # contrôle (historique) → les troncs pouvaient se
+                                                   # COLLER, voire se superposer : on ne testait que la
+                                                   # distance au spawn et aux ressources, jamais entre
+                                                   # arbres. Env: SYLVAN_FOREST_MIN_GAP.
 var _clump := 1                                    # troncs par MASSIF. 1 = arbre isolé (historique,
                                                    # bit-identique). >1 = bosquet : plusieurs troncs
                                                    # groupés sous un MÊME corps → occulteur LARGE.
@@ -68,6 +73,7 @@ func _init() -> void:
 	# 12 pertes sur 13 sont des sorties de PORTÉE, pas des occlusions, parce qu'un tronc de 0,35 m
 	# défile en quelques pas. Il faut des occulteurs PLUS GROS, pas plus NOMBREUX : une ressource
 	# cachée DURABLEMENT. D'où le massif = amas de troncs sous un seul corps.
+	_min_gap = _envf("SYLVAN_FOREST_MIN_GAP", _min_gap)
 	_clump = int(_env("SYLVAN_FOREST_CLUMP", "1"))
 	_clump_r = _envf("SYLVAN_FOREST_CLUMP_R", _clump_r)
 	# Override d'apparence = TEST DE PURETÉ : la réaction survit-elle à un changement de couleur ?
@@ -132,6 +138,19 @@ func _ensure_built() -> void:
 			mesh.material_override = _material
 			mesh.position = off
 			body.add_child(mesh)
+			# HOUPPIER (cosmétique). ⚠️ Il ne change RIEN à la perception : la rétine lit le meta
+			# `retina_color` du corps, pas le maillage. On garde donc le MÊME vert mesuré (fuite 0.0000)
+			# pour que ce que voit l'OWNER corresponde à ce que voit l'ENTITÉ — un houppier brun ferait
+			# joli et mentirait sur la perception.
+			var can := MeshInstance3D.new()
+			var cone := CylinderMesh.new()
+			cone.top_radius = 0.0
+			cone.bottom_radius = _trunk_r * 1.25   # discret : un houppier large masque la SCENE a
+			cone.height = _height * 0.45           # l'observateur, or ce visuel sert a JUGER
+			can.mesh = cone
+			can.material_override = _material
+			can.position = off + Vector3(0.0, _height * 0.55, 0.0)
+			body.add_child(can)
 		body.visible = false
 		add_child(body)
 		_bodies.append(body)
@@ -162,6 +181,11 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 				if center.distance_to(p) < _keepout + _effective_r():
 					clash = true
 					break
+			if not clash and _min_gap > 0.0:
+				for c in _centers:                    # espacement ARBRE-ARBRE (sinon ils se collent)
+					if center.distance_to(c) < _min_gap:
+						clash = true
+						break
 			if not clash:
 				ok = true
 				break
@@ -176,6 +200,8 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		_centers.append(center)
 	print("[forest] episode : %d/%d arbres places (keep-out %.1f m autour de %d ressources)"
 		% [_centers.size(), _bodies.size(), _keepout, resource_positions.size()])
+	if _min_gap > 0.0:
+		print("[forest] espacement mini entre arbres : %.2f m" % _min_gap)
 
 
 func get_positions() -> Array[Vector3]:
