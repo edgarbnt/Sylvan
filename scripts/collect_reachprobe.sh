@@ -18,12 +18,31 @@
 # monter à 1.2 AUGMENTE le décalage de régime → un résultat NUL serait AMBIGU (vitesse vs décalage
 # WM) et la version propre exigerait une re-collecte WM. Bump modéré (1.5×) pour limiter ce biais.
 #
-# Usage : PORT=62xx [SPEED=1.2] bash scripts/collect_reachprobe.sh <mono|multi> [seed=5] [ep=16]
+#
+# ⭐ TEST DRAINS ASYMÉTRIQUES (PRÉ-INSCRIT 2026-07-21) — env EDRAIN/TDRAIN. MESURÉ : avec des drains
+# IDENTIQUES, l'écart |énergie−soif| ne change QU'aux consommations (+40) et reste FIGÉ entre deux →
+# il ne prend que 2 valeurs (0 ou ~40) : 49,9 % du temps égalité EXACTE, 49,8 % écrasement, 0,3 %
+# entre les deux. La tâche d'arbitrage n'a donc AUCUNE ZONE GRISE (elle est triviale des 2 côtés) —
+# explication candidate de l'échec du chantier critique-arbitrage (rien à apprendre).
+# QUESTION DE CE TEST : des drains asymétriques créent-ils un CONTINUUM d'urgences (les jauges
+# dérivent l'une par rapport à l'autre entre les repas) ?
+#   MESURES : (1) distribution de |e−t| — la bande intermédiaire (5-30) se peuple-t-elle ?
+#             (2) GARDE anti-dégénérescence : une jauge devient-elle systématiquement l'urgente
+#                 (→ on aurait troqué une dégénérescence pour une autre = quasi-mono-drive) ;
+#             (3) CAS NON TRIVIAUX : fréquence des situations où la ressource la PLUS URGENTE est la
+#                 PLUS LOINTAINE (c'est là, et seulement là, qu'un bon arbitrage paie).
+#   ⚠️ CAVEAT PRÉ-INSCRIT : le planner suppose un drain SYMÉTRIQUE en interne (cfg.resource_drain,
+#   une seule valeur) → son modèle d'urgence sera légèrement faux en asymétrique. Ce test mesure la
+#   STRUCTURE DU MONDE, pas la qualité de réponse de l'entité ; toute suite exigerait un drain
+#   interne PAR-JAUGE. Asymétrie DÉCLARÉE une fois (0.05/0.035 = −30 %), non ajustée après coup (§2).
+#
+# Usage : PORT=62xx [SPEED=1.2] [EDRAIN=0.05 TDRAIN=0.035] bash scripts/collect_reachprobe.sh <mono|multi> [seed] [ep]
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 MODE=${1:-mono}; SEED=${2:-5}; NEP=${3:-16}
 PORT=${PORT:-6250}; DELTA=${DELTA:-0}; SPEED=${SPEED:-0.8}
-TAG="reach_${MODE}_s${SEED}_d${DELTA}_v${SPEED}"
+EDRAIN=${EDRAIN:-0.05}; TDRAIN=${TDRAIN:-0.05}
+TAG="reach_${MODE}_s${SEED}_d${DELTA}_v${SPEED}_e${EDRAIN}t${TDRAIN}"
 OUT="data/replay_buffer/critic_kin_${TAG}"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$MODE" == "mono" ]]; then WC=0; TD=0; else WC=1; TD=0.05; fi
@@ -45,7 +64,7 @@ for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 
 env SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
 SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=$SPEED SYLVAN_KIN_TURN=1.5 \
 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \
-SYLVAN_FOOD_COUNT=1 SYLVAN_WATER_COUNT=$WC SYLVAN_ENERGY_DRAIN=0.05 SYLVAN_THIRST_DRAIN=$TD \
+SYLVAN_FOOD_COUNT=1 SYLVAN_WATER_COUNT=$WC SYLVAN_ENERGY_DRAIN=$EDRAIN SYLVAN_THIRST_DRAIN=$([[ "$MODE" == "mono" ]] && echo 0 || echo $TDRAIN) \
 SYLVAN_INIT_ENERGY=70 SYLVAN_INIT_THIRST=70 \
 SYLVAN_FOOD_MIN_RADIUS=2.0 SYLVAN_FOOD_SPAWN_RADIUS=8.0 SYLVAN_FOOD_RESPAWN_MIN=2.0 SYLVAN_FOOD_RESPAWN_MAX=8.0 \
 SYLVAN_WATER_MIN_RADIUS=2.0 SYLVAN_WATER_SPAWN_RADIUS=8.0 SYLVAN_WATER_RESPAWN_MIN=2.0 SYLVAN_WATER_RESPAWN_MAX=8.0 \
