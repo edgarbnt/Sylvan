@@ -111,10 +111,21 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
      la mesurer — c'est ce qui a évité de « corriger » une constante juste.
    - ✅ drain (0.0005 / 0.00035 par jauge) et restore absorbé (0.3995) : corrects.
 
-1. **AUDIT DE PÉREMPTION — Phase 2** (runs, gatée). **Tout le reste en dépend.**
-   Item n°1 : **`nominal_speed` 0.02 → 0.010**, jugé sur la courbe d'atteinte. ⚠️ Le coût est
-   **comparatif** entre candidats : un biais partagé peut laisser l'argmax inchangé → l'A/B tranche,
-   pas le raisonnement.
+1. **AUDIT DE PÉREMPTION — Phase 2, item n°1 : FAIT → KILL, hypothèse RÉFUTÉE.**
+   Corriger `nominal_speed` à sa valeur mesurée (0.02 → 0.010) **DÉGRADE** la portée lointaine :
+   [6,8) m **47,2 → 32,5 %** (−14,7 pts, n=864/1012, direction cohérente 2 seeds) ; bandes proches
+   dans le bruit ; survie inchangée. Critères pré-inscrits **avant** lancement (commit `8dd0216`).
+   **Mécanisme nommé** : `deficit = relu(d/vitesse × drain − niveau)` ; la vraie vitesse **double**
+   le prix imaginé d'un trajet (7 m : 35 points au lieu de 17,5) → la ressource lointaine devient
+   « fatalement inatteignable » et le planner l'**abandonne**, alors qu'elle est atteinte 40-54 % du
+   temps en vrai. Ce terme est une approximation **atomique sans replanification** (ignore la
+   re-décision, les respawns, la restauration à l'arrivée, l'autre ressource en route).
+   ⇒ **Deux erreurs se compensaient.** `nominal_speed=0.02` n'est pas un modèle du corps mais une
+   **compensation, désormais déclarée** — conservée, négatif banké, ne pas re-tester seule.
+   **Vrai fix, hors scope** : rendre le déficit conscient de la replanification et de la restauration
+   = refonte de la queue analytique du coût survie (déjà déclarée échafaudage).
+   **Leçon de méthode** : insérer la vérité mesurée aurait coûté 15 points de portée en silence.
+   Limite réelle de « purifier = mettre la vraie valeur ».
    `far_align` avait été calibré pour le corps à **pattes** et jamais revu après le pivot cinématique
    → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
    trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté

@@ -90,6 +90,55 @@ vérité, donc le test est une **non-régression**, pas un concours.
 premiers facteurs sortent sans effet, on arrête le balayage (les poids de score ne sont pas le
 levier) et on passe à la mémoire.
 
+### RÉSULTAT (2026-07-21) — **KILL**, et l'hypothèse de la Phase 1 est **RÉFUTÉE**
+
+Poolé 2 seeds, conditionné devant, `guards.sanity()` OK sur les 4 corpus. Durée : ~15 min/run.
+
+| bande | v0.02 (témoin) | v0.010 (mesuré) | Δ | n |
+|---|---|---|---|---|
+| [0,2) | 94,4 % | 93,2 % | −1,2 | 2011/1996 |
+| [2,4) | 89,7 % | 89,5 % | −0,2 | 3431/3473 |
+| [4,6) | 78,0 % | 75,0 % | −2,9 | 1698/1790 |
+| **[6,8)** | **47,2 %** | **32,5 %** | **−14,7** | 864/1012 |
+
+Direction **cohérente sur les 2 seeds** en [6,8) (−4,7 et −23,7), mais chaque seed prise seule y est
+**sous-puissante** (n = 421 et 443 < 500) : l'effet n'existe qu'en poolé, et il est porté surtout par
+la seed 2. Survie **inchangée** (195 vs 188 consommations ; 2153 vs 2167 ticks/vie) — cohérent avec
+un instrument aveugle, et raison de plus de ne pas juger là-dessus.
+
+**Verdict pré-inscrit appliqué : KILL** — une bande (n ≥ 500) régresse de ≥ 5 points. Donc, selon la
+règle écrite d'avance, **le modèle faux compensait quelque chose, à nommer avant tout autre
+changement**.
+
+**Ce qu'il compensait.** Le coût de survie évalue `deficit = relu(d_fin / vitesse × drain − niveau)`.
+Corriger la vitesse **double** le prix imaginé d'un trajet : à 7 m, 35 points de jauge au lieu de
+17,5. Sous le vrai chiffre, une ressource lointaine devient « fatalement inatteignable » dès que le
+niveau passe sous ce seuil → **le planner l'abandonne**. Or elle est empiriquement atteinte 40-54 %
+du temps, parce que ce terme est une approximation **atomique et sans replanification** qui ignore :
+la re-décision tous les 10 pas, les respawns qui rapprochent la ressource, la **restauration à
+l'arrivée** (jamais créditée contre le trajet), et l'autre ressource consommable en route.
+
+⇒ **Deux erreurs se compensaient** : une vitesse optimiste d'un facteur 2 annulait le pessimisme d'un
+modèle de déficit atomique. `nominal_speed = 0.02` n'est donc **pas un modèle du corps** — c'est une
+**compensation, désormais DÉCLARÉE comme telle** (§2 : ne pas la laisser passer pour une mesure).
+
+**Conséquence pour l'hypothèse de la Phase 1 : RÉFUTÉE.** J'avais avancé que la constante périmée
+pouvait contribuer aux morts « ressource vue mais inatteignable ». C'est **l'inverse** : elle *aidait*
+la portée lointaine. La contre-hypothèse pré-inscrite (« un biais partagé peut laisser l'argmax
+inchangé ») était trop douce — l'effet n'est ni nul ni dans le sens prévu.
+
+**Ce que ça vaut méthodologiquement.** Insérer la vérité mesurée aurait **dégradé** l'entité de 15
+points de portée lointaine. Sans le critère KILL écrit d'avance, j'aurais adopté 0.010 comme
+« évidemment correct » et perdu cela en silence. C'est l'argument le plus net de la session pour la
+pré-inscription — et une limite réelle de la doctrine « purifier = mettre la vraie valeur ».
+
+**Le vrai fix, hors scope de l'audit** (§2 : le dire, ne pas le déguiser) : rendre le terme de
+déficit conscient de la replanification et de la restauration à l'arrivée. C'est une refonte du coût
+de survie — la queue analytique déjà déclarée échafaudage — pas un réglage de constante.
+
+**Décision.** Garder `nominal_speed = 0.02`, **reclassé « compensation déclarée »** et non « modèle du
+corps ». Ne PAS re-tester cette constante seule : le négatif est banké.
+
 ## Honnêteté sur le gain attendu
 Un audit qui ne fait que retirer ne rendra pas l'entité intelligente. Sa valeur est **(i)** une ligne
 de base à laquelle on peut se fier et **(ii)** éventuellement de la performance gratuite, comme
