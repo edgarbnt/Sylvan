@@ -39,6 +39,15 @@ from torch import nn
 GAMMA = 0.99            # par replan (10 pas Godot) — même échelle que G2/B0
 H_SURV = 10             # « vivant dans 10 replans » (= 100 pas Godot, G2)
 LOW, HIGH = 0.30, 0.50
+DANGER_TOKEN = os.environ.get("SYLVAN_CRITIC_DANGER_TOKEN", "0") not in ("0", "", "false", "False")
+# TOKEN DE DANGER (2026-07-21, contrat docs/recette_nouvelle_pulsion.md : « pulsion nouvelle =
+# token nouveau, encodeur PARTAGE, zero retrain »). Le gate residual echoue en monde varie parce
+# que le token ne porte NI SANTE NI DANGER alors que c'est le danger qui tue (inne optimiste
+# x3,96). On ajoute un 3e token [sante, connu=0] : le niveau est disponible par tick, la POSITION
+# du danger ne l'est pas (elle ne vit que dans decisions.jsonl) -> `connu=0`, ce que le contrat de
+# token prevoit deja. Defaut OFF = bit-identique. ⚠️ SI CE GATE PASSE, le deploiement exige
+# d'ajouter le MEME token dans command_planner.py (branche critic_mode) : le token est construit a
+# DEUX endroits qui doivent rester identiques, sinon train != deploiement.
 TOK_DIM = 5             # [niveau, dist/10, cos, sin, connu]
 STEPS_PER_REPLAN = 10   # 1 replan planner = 10 pas Godot (cf H_SURV)
 
@@ -120,7 +129,10 @@ def load(dirs: list[str]) -> tuple[torch.Tensor, ...]:
             # NON-REGRESSION : en monde plat la sante reste a 1.0, donc min(...) est inchange.
             death = min(seg[-1][0], seg[-1][1], seg[-1][6]) < 0.03
             for t, (e, th, fp, wp, sf, sw, _hp) in enumerate(seg):
-                X.append([token(e, fp), token(th, wp)])
+                _toks = [token(e, fp), token(th, wp)]
+                if DANGER_TOKEN:
+                    _toks.append(token(_hp, None))   # sante, position inconnue (connu=0)
+                X.append(_toks)
                 G.append(1.0 - GAMMA ** (L - t))
                 S.append(0.0 if (death and (L - 1 - t) <= H_SURV) else 1.0)
                 EID.append(eid)
@@ -209,7 +221,8 @@ def load_lived(dirs: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tenso
             if p is None:
                 continue
             rows.append((float(r["obs"]["energy"]) / 100.0, float(r["obs"]["thirst"]) / 100.0,
-                         p.get("food"), p.get("water")))
+                         p.get("food"), p.get("water"),
+                         float(r["obs"].get("health", 100.0)) / 100.0))
         segs: list[list] = []
         cur: list = []
         for row in rows:
@@ -221,10 +234,16 @@ def load_lived(dirs: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tenso
             segs.append(cur)
         for seg in segs:
             L = len(seg)
-            if L < 15 or min(seg[-1][0], seg[-1][1]) >= 0.03:     # trop court, ou CENSURÉ (pas mort)
+            # MORT PAR DANGER (2026-07-21) : ce filtre-ci excluait AUSSI les morts par sante -- mon
+            # premier fix ne portait que sur l'autre chargeur, donc le gate n'apprenait QUE des
+            # morts par pulsion, meme en monde varie. Non-regression : sante=1.0 en monde plat.
+            if L < 15 or min(seg[-1][0], seg[-1][1], seg[-1][4]) >= 0.03:   # court, ou CENSURE
                 continue
-            for t, (e, th, fp, wp) in enumerate(seg):
-                X.append([token(e, fp), token(th, wp)])
+            for t, (e, th, fp, wp, _hp) in enumerate(seg):
+                _toks = [token(e, fp), token(th, wp)]
+                if DANGER_TOKEN:
+                    _toks.append(token(_hp, None))   # sante, position inconnue (connu=0)
+                X.append(_toks)
                 actual.append((L - t) * STEPS_PER_REPLAN)
                 eids.append(eid)
             eid += 1
