@@ -65,6 +65,38 @@ var _bush_material: StandardMaterial3D
 var eat_hunger_max := 1.0
 var respawn_min := 2.0
 var respawn_max := 4.5
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# MODE BOSQUETS (docs/design_monde_bosquets.md §9) — opt-in SYLVAN_<PREFIX>_PATCHES, défaut 0 = OFF
+# bit-identique. Il remplace le PERPETUAL FIELD (respawn autour de l'AGENT, qui rend la mémoire
+# structurellement inutile : la ressource suit l'entité, mesurée à 3,2-4,1 m médian, jamais > 10,17 m)
+# par des bosquets à position FIXE qui s'ÉPUISENT et REPOUSSENT sur une horloge.
+#
+# Ce qui crée l'ignorance ici n'est PAS de l'occlusion (réfutée : il faudrait couvrir ~100 % du sol)
+# mais de l'ALIASING PERCEPTUEL, et il ÉMERGE de la géométrie au lieu d'être codé :
+#   • le buisson-marqueur fait 1,5 m → sous-tend 21° à 8 m → 2 rayons le touchent de façon fiable
+#   • une baie fait 0,35 m → sous-tend 5° = une demi-inter-rayon (36 rayons à 10°) → touchée ou non
+#     selon l'angle exact
+# ⇒ de loin, l'entité perçoit « il y a un bosquet là » et PAS « il lui reste des baies ». Un bosquet
+# vidé et un bosquet plein renvoient le même vecteur. Seule la mémoire de ce qu'on a mangé, et quand,
+# les sépare — c'est la condition formelle du POMDP, pas un réglage.
+# ⚠️ Rien ici ne ment sur l'état : on ne masque aucune donnée, on place l'information décisive à une
+# échelle que le capteur ne résout pas. Coder « si distance > X alors cacher le stock » serait un
+# échafaudage ; ceci n'en est pas un.
+var _patch_count := 0             # 0 = OFF (perpetual field inchangé)
+var _patch_radius := 1.2          # dispersion des baies autour du centre du bosquet
+var _patch_spacing := 9.0         # distance mini entre deux centres (traversée = 818 ticks = 41 pts d'énergie)
+var _regrow_ticks := 2000         # une baie repousse SUR PLACE après ce délai
+var _patch_centres: Array[Vector3] = []
+var _alive: Array[bool] = []      # une baie consommée devient invisible et non-consommable
+var _regrow_at: Array[int] = []   # tick de vie auquel elle réapparaît (-1 = vivante)
+var _patch_meshes: Array[MeshInstance3D] = []
+var _patch_areas: Array = []
+# Vert feuillage DÉSATURÉ. Au seuil global 0.55 aucune couleur neutre n'est libre (le gris parfait
+# vaut 1/√3 = 0.5774 > 0.55 sur les trois requêtes) : le vert est le seul canal disponible. À
+# cos_vert = 0.728 le buisson reste SOUS les arbres (0.885) → quand les seuils par-type arriveront,
+# il sortira du slot danger et les arbres y resteront. Choisi par MESURE, pas à l'œil.
+const PATCH_BUSH_COLOR := Color(0.20, 0.30, 0.20)
+const PATCH_BUSH_R := 0.75        # rayon → 1,5 m de large = 21° à 8 m = échantillonné de façon fiable
 
 # 2ᵉ PULSION (2026-06-18): cette classe sert MAINTENANT n'importe quelle ressource (bouffe OU eau).
 # Par défaut = FOOD (comportement identique à avant). `configure()` la repointe sur l'eau : préfixe
@@ -174,6 +206,7 @@ func _ensure_built() -> void:
 		_material.albedo_color = _albedo
 		_material.emission_enabled = true
 		_material.emission = _emission
+	_read_patch_env()
 	if _meshes.is_empty():
 		for i in range(food_count):
 			var m := MeshInstance3D.new()
@@ -210,20 +243,122 @@ func _ensure_built() -> void:
 			_areas.append(area)
 
 
+func _read_patch_env() -> void:
+	var pc := OS.get_environment("SYLVAN_%s_PATCHES" % _prefix)
+	if pc != "":
+		_patch_count = maxi(0, int(pc))
+	var pr := OS.get_environment("SYLVAN_%s_PATCH_RADIUS" % _prefix)
+	if pr != "":
+		_patch_radius = maxf(0.1, float(pr))
+	var ps := OS.get_environment("SYLVAN_%s_PATCH_SPACING" % _prefix)
+	if ps != "":
+		_patch_spacing = maxf(0.0, float(ps))
+	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
+	if rg != "":
+		_regrow_ticks = maxi(1, int(rg))
+
+
+func _sample_patch_centres() -> void:
+	# Centres tirés UNIFORMÉMENT EN AIRE (r = √u), pas linéairement en r : le code historique
+	# échantillonne `randf_range(min, max)`, ce qui concentre la densité en 1/r vers le centre.
+	# Espacement mini imposé par rejet — sinon deux bosquets fusionnent et le choix disparaît.
+	_patch_centres.clear()
+	for _i in range(_patch_count):
+		for _try in range(80):
+			var ang := _rng.randf_range(0.0, TAU)
+			var u := _rng.randf()
+			var r := sqrt(min_radius * min_radius + u * (spawn_radius * spawn_radius - min_radius * min_radius))
+			var c := Vector3(cos(ang) * r, food_y, sin(ang) * r)
+			var ok := true
+			for other in _patch_centres:
+				if c.distance_to(other) < _patch_spacing:
+					ok = false
+					break
+			if ok:
+				_patch_centres.append(c)
+				break
+	if _patch_centres.is_empty():                    # espacement infaisable : ne pas mentir, le dire
+		push_warning("[patch] aucun centre placé (spacing=%.1f trop grand pour l'anneau)" % _patch_spacing)
+
+
+func _patch_berry_pos(i: int) -> Vector3:
+	var c: Vector3 = _patch_centres[i % _patch_centres.size()]
+	var ang := _rng.randf_range(0.0, TAU)
+	var r := _patch_radius * sqrt(_rng.randf())      # uniforme en aire DANS le bosquet aussi
+	return Vector3(c.x + cos(ang) * r, food_y, c.z + sin(ang) * r)
+
+
 func reset(_episode_index: int = 0) -> void:
 	_ensure_built()
 	consumed_this_episode = 0
 	_life_tick = 0
 	_swapped = false
 	_positions.clear()
+	_alive.clear()
+	_regrow_at.clear()
+	if _patch_count > 0:
+		_sample_patch_centres()
 	for i in range(food_count):
-		var p := _random_pos()
+		var p := _random_pos() if _patch_centres.is_empty() else _patch_berry_pos(i)
 		_positions.append(p)
+		_alive.append(true)
+		_regrow_at.append(-1)
 		_meshes[i].global_position = p
 		_meshes[i].visible = true
 		_apply_appearance(i)
+	if _patch_count > 0:
+		_place_patch_bushes()
+		_log_patches()
 	if _bush_enabled:
 		_place_bushes()
+
+
+func _log_patches() -> void:
+	# PROUVER ce qui est servi (règle de méthode : trois fois un réglage a semblé appliqué sans
+	# l'être). On rapporte le nombre de centres RÉELLEMENT placés — pas celui demandé — et
+	# l'espacement minimal MESURÉ, pas déclaré.
+	var gap := INF
+	for i in range(_patch_centres.size()):
+		for j in range(i + 1, _patch_centres.size()):
+			gap = minf(gap, _patch_centres[i].distance_to(_patch_centres[j]))
+	var gap_s := "n/a" if _patch_centres.size() < 2 else "%.2f m" % gap
+	print("[patch] %s : %d/%d bosquets placés | %d baies | espacement mini MESURÉ %s (demandé %.1f) | repousse %d ticks | buisson r=%.2f couleur=(%.2f,%.2f,%.2f)" % [
+		_prefix, _patch_centres.size(), _patch_count, food_count, gap_s, _patch_spacing,
+		_regrow_ticks, PATCH_BUSH_R, PATCH_BUSH_COLOR.r, PATCH_BUSH_COLOR.g, PATCH_BUSH_COLOR.b])
+
+
+func _place_patch_bushes() -> void:
+	# Un buisson-marqueur LARGE par bosquet, toujours visible même quand le bosquet est vidé.
+	# C'est lui qui porte l'aliasing : il dit « il y a un bosquet ici » et rien sur le stock.
+	if _patch_meshes.is_empty():
+		for _i in range(_patch_count):
+			var bm := MeshInstance3D.new()
+			var bs := SphereMesh.new()
+			bs.radius = PATCH_BUSH_R
+			bs.height = PATCH_BUSH_R * 2.0
+			bm.mesh = bs
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = PATCH_BUSH_COLOR
+			bm.material_override = mat
+			add_child(bm)
+			var ba := Area3D.new()
+			ba.collision_layer = 1 << 7            # couche 8 = perceptible-rétine (comme les baies)
+			ba.collision_mask = 0                  # jamais bloquant : le corps traverse le bosquet
+			ba.set_meta("retina_color", PATCH_BUSH_COLOR)
+			var bcs := CollisionShape3D.new()
+			var bsh := SphereShape3D.new()
+			bsh.radius = PATCH_BUSH_R
+			bcs.shape = bsh
+			ba.add_child(bcs)
+			bm.add_child(ba)
+			_patch_meshes.append(bm)
+			_patch_areas.append(ba)
+	for i in range(_patch_meshes.size()):
+		if i < _patch_centres.size():
+			_patch_meshes[i].global_position = Vector3(_patch_centres[i].x, PATCH_BUSH_R, _patch_centres[i].z)
+			_patch_meshes[i].visible = true
+		else:
+			_patch_meshes[i].visible = false
 
 
 func _build_bushes() -> void:
@@ -305,6 +440,7 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 	# tick (main.gd) donc le même rythme que le monde. No-op tant que _swap_tick est OFF (0).
 	_life_tick += 1
 	_maybe_swap_appearance()
+	_tick_regrowth()
 	# Régime eat-riche : ne pas consommer tant qu'on n'est pas assez affamé (seuil eat_hunger_max).
 	# energy_frac = énergie/max. Défaut 1.0 + seuil 1.0 → mange toujours (inchangé).
 	if energy_frac > eat_hunger_max:
@@ -312,16 +448,24 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 	var restored := 0.0
 	var ground := Vector3(agent_pos.x, food_y, agent_pos.z)
 	for i in range(_positions.size()):
+		if _patch_count > 0 and not _alive[i]:
+			continue                     # baie déjà cueillie : elle repoussera SUR PLACE
 		if ground.distance_to(_positions[i]) <= eat_radius:
 			restored += energy_per_food
 			consumed_this_episode += 1
-			# PERPETUAL FIELD: respawn the eaten pellet in an annulus around the AGENT (not the
-			# origin) so food density stays high wherever it roams → survival is limited by
-			# falling, not by walking out of a fixed patch. (A later curriculum can make food
-			# sparse/clustered to force real directed foraging.)
-			_positions[i] = _respawn_near(agent_pos)
-			_meshes[i].global_position = _positions[i]
-			_apply_appearance(i)
+			if _patch_count > 0:
+				# MODE BOSQUETS : la baie disparaît LÀ OÙ ELLE ÉTAIT et repousse sur une horloge.
+				# Le bosquet s'épuise donc réellement, et son buisson-marqueur reste visible —
+				# c'est ce couple qui rend « je l'ai vidé » impossible à lire et nécessaire à retenir.
+				_alive[i] = false
+				_regrow_at[i] = _life_tick + _regrow_ticks
+				_meshes[i].visible = false
+			else:
+				# PERPETUAL FIELD (historique) : respawn autour de l'AGENT → la ressource le suit,
+				# donc elle est toujours à 2-4,5 m et aucune mémoire ne sert. Conservé par défaut.
+				_positions[i] = _respawn_near(agent_pos)
+				_meshes[i].global_position = _positions[i]
+				_apply_appearance(i)
 	if _bush_enabled and restored > 0.0:
 		_place_bushes()          # ré-échantillonne la co-localisation baie/buisson après un respawn
 	return restored
@@ -353,8 +497,45 @@ func _respawn_near(center: Vector3) -> Vector3:
 	return Vector3(center.x + cos(angle) * radius, food_y, center.z + sin(angle) * radius)  # far enough to be a DISTINCT steering target
 
 
+func _tick_regrowth() -> void:
+	# Une baie cueillie réapparaît SUR SON BOSQUET après _regrow_ticks. Position ré-échantillonnée
+	# dans le bosquet (une baie ne repousse pas exactement au même millimètre) — jamais autour de
+	# l'agent. OFF (_patch_count == 0) : boucle jamais exécutée, bit-identique.
+	if _patch_count <= 0:
+		return
+	for i in range(_positions.size()):
+		if _alive[i] or _regrow_at[i] < 0 or _life_tick < _regrow_at[i]:
+			continue
+		_alive[i] = true
+		_regrow_at[i] = -1
+		if not _patch_centres.is_empty():
+			_positions[i] = _patch_berry_pos(i)
+			_meshes[i].global_position = _positions[i]
+		_meshes[i].visible = true
+		_apply_appearance(i)
+
+
+func alive_count() -> int:
+	if _patch_count <= 0:
+		return _positions.size()
+	var n := 0
+	for a in _alive:
+		if a:
+			n += 1
+	return n
+
+
 func get_positions() -> Array:
-	return _positions
+	# En mode bosquets, seules les baies VIVANTES sont des ressources : une baie cueillie ne doit
+	# ni compter dans le radar, ni dans le keep-out. Hors mode bosquets, _alive est tout-vrai →
+	# retourne exactement _positions, bit-identique.
+	if _patch_count <= 0:
+		return _positions
+	var out: Array[Vector3] = []
+	for i in range(_positions.size()):
+		if _alive[i]:
+			out.append(_positions[i])
+	return out
 
 
 # Normalised HORIZONTAL direction from the agent to the NEAREST pellet (for the survival reward's

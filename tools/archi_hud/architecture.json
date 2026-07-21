@@ -403,6 +403,27 @@
         "world_model",
         "perception_slot"
       ]
+    },
+    {
+      "id": "monde_bosquets",
+      "etat": "partiel",
+      "titre": "Monde — bosquets épuisables (aliasing perceptuel)",
+      "couche": "monde",
+      "quoi": "Ressources à position FIXE, groupées en bosquets, qui s'épuisent quand on les mange et repoussent sur une horloge. Un buisson-marqueur large reste visible même vidé.",
+      "role": "Créer l'ignorance que seule la MÉMOIRE peut combler. Remplace le PERPETUAL FIELD (respawn autour de l'AGENT) qui rendait la mémoire structurellement inutile.",
+      "comment": "Opt-in SYLVAN_<PREFIX>_PATCHES (défaut 0 = OFF bit-identique). Centres tirés uniformément EN AIRE (r=sqrt(u)) avec espacement mini par rejet ; baies réparties dans un rayon de bosquet ; une baie cueillie devient invisible et repousse SUR PLACE après SYLVAN_<PREFIX>_REGROW ticks. get_positions() ne rend que les baies vivantes.",
+      "apporte": "ALIASING PERCEPTUEL, ÉMERGENT et non codé : le buisson (1,5 m) sous-tend 21° à 8 m et est échantillonné de façon fiable ; une baie (0,35 m) sous-tend 5° = une demi-inter-rayon des 36 rayons à 10°, et ne l'est pas. De loin, bosquet plein et bosquet vidé renvoient le MÊME vecteur rétine. Condition formelle du POMDP : toute politique réactive y est strictement sous-optimale.",
+      "etat_detail": "PARTIEL — bâti et vérifié en Godot headless (dépletion + repousse sur place, arithmétique exacte : cueille à t=0, repousse à t=150, énergie 97,5 à t=200 contre 90,0 en drain pur ; 4/4 bosquets, espacement MESURÉ 9,6-10,5 m pour 9,0 demandé ; OFF = zéro log, bit-identique). PAS ENCORE JUGÉ EN VIES : aucun A/B closed-loop, la mémoire n'est pas branchée dessus.",
+      "limites": "Buisson-marqueur en vert feuillage désaturé (0.20,0.30,0.20) car au seuil GLOBAL 0.55 aucune couleur neutre n'est libre (le gris parfait vaut 1/sqrt(3)=0.5774 sur les 3 requêtes) : le vert est le seul canal disponible, donc le buisson partage le canal danger avec les arbres. À cos_vert 0.728 il reste SOUS les arbres (0.885) → compatible avec des seuils par-type ultérieurs. La RARETÉ est requise : simulé, avec 57 % de marge alimentaire l'écart mémoire retombe à ZÉRO. En simulation la politique mémoire connaît le taux de repousse ; l'entité devrait l'apprendre.",
+      "preuves": [
+        "G0 simulé (diagnostics/diag_monde_bosquets_g0.py, 20 graines) : engagement-sans-carte 15/20 -> 8/20 épisodes pleins sous aliasing, mémoire reste 20/20 ; repas 11=11 -> 8 contre 14. Robuste sur 6 configurations de rareté.",
+        "NÉGATIF banké : sans aliasing le monde à bosquets exige l'ENGAGEMENT et pas la mémoire (écart nul contre un baseline qui retient UN point).",
+        "NÉGATIF banké : l'occlusion est réfutée comme levier (atteindre p_vis<=0.20 exige ~100 % du sol couvert ; diagnostics/diag_occlusion_geom_g0.py).",
+        "Objection 'il suffit d'aller voir' levée par l'arithmétique : vérifier un bosquet à 8 m coûte 591 ticks = 126 % du budget inter-repas (seuil littérature 40 %)."
+      ],
+      "code": "godot/scripts/world/food_manager.gd",
+      "live_field": null,
+      "depends_on": []
     }
   ]
 }
