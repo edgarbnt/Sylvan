@@ -13,7 +13,12 @@
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 ARM=${1:-off}; SEED=${2:-1}; NEP=${3:-16}
-PORT=${PORT:-6250}; TAG="obmemM_${ARM}_s${SEED}"
+# RE-MESURE CIBLEE (2026-07-21) : FA = echafaudage far-target. Il SUPPRIME l atteinte lointaine
+# (A/B mesure : 4-6 m 38 -> 64 % sans lui) ; toutes les mesures memoire precedentes le portaient.
+# On re-mesure a FA=0 (condition PROPRE). JUGE PRINCIPAL = courbe d atteinte (n en milliers),
+# PAS les consommations (n en dizaines : 26 vs 32 = 1,2 sigma, sous-puissant).
+FA=${FA:-1}
+PORT=${PORT:-6250}; TAG="obmemM_${ARM}_s${SEED}_fa${FA}"
 OUT="data/replay_buffer/${TAG}"; RUNDIR="data/replay_buffer/${TAG}_run"
 WM=data/checkpoints/wm_objcentric_kin/wm_best.pt     # slot_resources=2 (bouffe+eau)
 export GODOT_BIN="$(pwd)/tools/godot/godot"
@@ -23,7 +28,7 @@ echo "=== A/B OBSTACLE-MÉMOIRE MULTI $ARM : seed=$SEED port=$PORT (bouffe+eau+m
 
 env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_FAR_ALIGN=1 SYLVAN_PLANNER_ALIGN_GAIN=60 \
+    SYLVAN_PLANNER_FAR_ALIGN=$FA SYLVAN_PLANNER_ALIGN_GAIN=60 \
     SYLVAN_SLOT_MEMORY2=$MEM2 \
     SYLVAN_CMD_EXPLORE_STD=0 SYLVAN_BC_LOG="$OUT" \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
