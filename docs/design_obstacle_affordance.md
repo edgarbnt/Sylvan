@@ -287,3 +287,29 @@ gratuit d'abord = négatif à coût nul).
   apprise et composable.
 </content>
 </invoke>
+
+---
+
+# G3 DÉGELÉ (2026-07-21) — la situation manquante existe enfin
+
+Le chantier avait été **gelé** parce que le G3 n'avait pas de monde où se juger : en arène ouverte,
+l'obstacle unique était rencontré trop rarement. La forêt navigable le fournit — **45 arbres**,
+réglage mesuré : immobile 5,4 %, vitesse pleine, ≥201 blocages en 3 épisodes. **L'entité se cogne
+régulièrement tout en restant fonctionnelle** : c'est exactement la fenêtre où une perception
+d'obstacle peut se voir.
+
+Le prédicteur transfère sans ré-entraînement : `s(vert foncé) = 0,985` → **bloquant** (mesuré,
+`diag_foret_g0.py`).
+
+## Critères PRÉ-INSCRITS (avant lancement)
+
+Témoin = `arbgrad_graded_s7` (45 arbres, prédicteur OFF) déjà collecté. Traité = même monde, même
+seed, `SYLVAN_WAYPOINT=1` + `SYLVAN_WP_OBSTACLE`. Run court, 3 épisodes.
+
+- **PASS** : les **blocages baissent d'au moins 30 %** ET l'immobilité ne monte pas (≤ 8 %).
+  *Percevoir les arbres doit faire CONTOURNER, pas figer.*
+- **ÉCHEC INFORMATIF** : blocages inchangés → le coût d'intrusion ne pèse pas assez dans le score.
+- **KILL** : immobilité > 15 % ou consommations effondrées → le prédicteur **paralyse** (il voit des
+  murs partout). ⚠️ Attendu comme plausible : `s(bleu) = 1,00`, donc **il prend l'eau pour un mur**.
+  En multi-drive, il pourrait fuir ce qu'il doit boire — c'est le défaut connu, non corrigé.
+- **NUL** : `guards.sanity()` échoue → verdict nul, pas négatif.
