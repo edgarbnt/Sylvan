@@ -846,6 +846,17 @@ def main() -> None:
                              egomotion_head_ckpt=Path(args.egomotion_head) if args.egomotion_head else None,
                              use_slot_memory=args.slot_memory)
     server = _Server((args.host, args.port), service)
+    # BANNIÈRE DES ÉCHAFAUDAGES (2026-07-21) : far_align est resté allumé par défaut dans TOUS les
+    # harnais pendant des semaines après avoir été déclaré RETIRABLE, et personne ne l'a revu après
+    # le pivot du corps — il handicapait l'entité dans chaque mesure. Un échafaudage SILENCIEUX est
+    # un piège ; on l'affiche donc à chaque démarrage. Défensif : un garde ne doit jamais tuer un run.
+    try:
+        import sys as _sys
+        _sys.path.insert(0, "diagnostics")
+        from guards import scaffold_banner
+        print(scaffold_banner())
+    except Exception as _e:                                  # noqa: BLE001 — informatif seulement
+        print(f"[guards] bannière indisponible ({_e})")
     print(f"[planner-cmd] serving on {args.host}:{args.port} — Ctrl-C to stop")
     try:
         server.serve_forever()
