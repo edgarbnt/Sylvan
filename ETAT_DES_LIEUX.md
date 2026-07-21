@@ -111,6 +111,39 @@ restante, à traiter avant de citer un de leurs chiffres.
 **Correctif d'hygiène au passage** : `baseline_multidrive_slot.sh` faisait un `pkill -9` **global** qui
 tuait les serveurs des autres runs. Retiré (il ne tue plus que le sien) ; port paramétrable.
 
+## 4-ter. CRITIQUE APPRIS À CIBLE CENTRÉE — RE-TESTÉ, RÉFUTÉ (2026-07-21)
+
+Le test de divergence avait montré que le signal de valeur est **99,6 % constant** (médiane 3085,
+étendue 12,5) → une tête entraînée en MSE doit résoudre 0,40 % de sa cible pour classer. D'où
+l'hypothèse : « le critique n'a jamais eu sa chance, il faut centrer la cible ».
+
+**C'était déjà fait.** `train_survival_critic.py --labels residual` apprend `(vécu − inné)`, avec un
+argument plus fin que le mien : l'inné est **exact** pour classer (écart d'action 1e-5 ≪ erreur d'un
+réseau) ; ce que le critique peut seul apporter, c'est ce que l'inné **ignore**. Checkpoint
+`survival_critic_resid_kin`, non promu, gate historique faible (R² moyen +0,13, un pli à +0,01).
+
+**Rejoué sur données fraîches du corps promu** (34 vies, 9864 instants, CV 4 plis, critère écrit
+avant) :
+
+| | R² sur vies jamais vues |
+|---|---|
+| inné seul | **+0,437** |
+| inné + correction apprise | **−0,129** |
+| **gain** | **−0,567** (barre ≥ +0,10) — plis −0,219 / −0,406 / −1,111 / −0,531 |
+
+**La correction apprise DÉGRADE l'inné, sur les 4 plis.** ⇒ voie « critique appris » **CLOSE pour ce
+monde**, sur critère pré-enregistré.
+
+**Mesure utile au passage** : l'inné est **optimiste ×2,07** (survie réelle méd 1470 pas contre 3036
+prédits) — à rapprocher du `nominal_speed` 2× trop grand, dont l'A/B a montré qu'il est **porteur**.
+L'optimisme est load-bearing, pas un simple bug.
+
+**Et la raison était déjà écrite par le projet** (`docs/etat_critique.md`), désormais confirmée sur
+données fraîches : *« en monde plat sans danger, la survie ≈ géométrie, que l'inné capture déjà → un
+critique appris n'a presque rien à ajouter, par construction »*. La pré-inscription n'autorise le
+rejeu que sur un corpus **réellement varié** ; il n'en existe aucun sur disque (nettoyés), et
+`collect_sprint_corpus_v2.sh` ne sert **pas** le corps promu → dette.
+
 ## 5. Ce qui bloque VRAIMENT
 
 1. **L'instrument.** Le budget par cycle est ≈ 0 → la survie est dominée par la variance. Tous les
