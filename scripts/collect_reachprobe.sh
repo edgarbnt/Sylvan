@@ -5,11 +5,25 @@
 # bouffe+eau, soif qui draine → arbitrage réel. Écart à 2 m = coût du FLOTTEMENT d'arbitrage.
 # Monde SANS hazard (isoler l'arbitrage). Parallèle-safe : port + run-dir uniques, tue SEULEMENT son
 # serveur (jamais de pkill global — deux instances coexistent).
-# Usage : PORT=62xx bash scripts/collect_reachprobe.sh <mono|multi> [seed=5] [ep=16]
+#
+# ⭐ TEST kin_speed (PRÉ-INSCRIT 2026-07-21) — env SPEED : le corps plus rapide REPOUSSE-T-IL le mur
+# de portée ? CRITÈRE HONNÊTE (§2) = la COURBE atteinte-vs-distance, JAMAIS la survie totale (qui
+# confond gain-de-portée légitime et masquage du déficit de près) :
+#   PASS  = l'atteinte aux bandes LOINTAINES (5-6 m, 6-8 m) monte MATÉRIELLEMENT (> bruit ~5 pts)
+#           => le mur de portée est bien une enveloppe physique, la vitesse est le vrai levier ;
+#   NUL   = les bandes lointaines ne bougent pas => la vitesse n'est PAS le levier (ou le WM décalé
+#           annule le gain — voir caveat) ;
+#   GARDE anti-masquage = le près (0-2 m) est RAPPORTÉ mais ne sert JAMAIS de preuve de succès.
+# CAVEAT PRÉ-INSCRIT : le WM (wm_objcentric_kin) a été collecté à kin_speed=0.5 et tourne à 0.8 ;
+# monter à 1.2 AUGMENTE le décalage de régime → un résultat NUL serait AMBIGU (vitesse vs décalage
+# WM) et la version propre exigerait une re-collecte WM. Bump modéré (1.5×) pour limiter ce biais.
+#
+# Usage : PORT=62xx [SPEED=1.2] bash scripts/collect_reachprobe.sh <mono|multi> [seed=5] [ep=16]
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 MODE=${1:-mono}; SEED=${2:-5}; NEP=${3:-16}
-PORT=${PORT:-6250}; DELTA=${DELTA:-0}; TAG="reach_${MODE}_s${SEED}_d${DELTA}"
+PORT=${PORT:-6250}; DELTA=${DELTA:-0}; SPEED=${SPEED:-0.8}
+TAG="reach_${MODE}_s${SEED}_d${DELTA}_v${SPEED}"
 OUT="data/replay_buffer/critic_kin_${TAG}"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$MODE" == "mono" ]]; then WC=0; TD=0; else WC=1; TD=0.05; fi
@@ -29,7 +43,7 @@ SRV=$!
 for i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
 
 env SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 SYLVAN_CPG_SPEEDCAD=0.6 \
-SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=1.5 \
+SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=$SPEED SYLVAN_KIN_TURN=1.5 \
 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \
 SYLVAN_FOOD_COUNT=1 SYLVAN_WATER_COUNT=$WC SYLVAN_ENERGY_DRAIN=0.05 SYLVAN_THIRST_DRAIN=$TD \
 SYLVAN_INIT_ENERGY=70 SYLVAN_INIT_THIRST=70 \
