@@ -678,6 +678,7 @@ func _com_metrics() -> Vector2:
 const _KIN_OBSTACLE_LAYER := 1 << 2       # doit égaler ObstacleManager.OBSTACLE_LAYER
 const _KIN_PROBE_HEIGHT := 0.4            # hauteur du rayon horizontal (dans [0, hauteur obstacle])
 const _KIN_SKIN := 0.35                   # marge d'arrêt avant la surface (~demi-corps) → pas de pénétration
+var _kin_block_count := 0          # nb de blocages effectifs (instrumentation)
 var _obstacle_mask := -1                  # -1 = pas encore lu ; 0 = pas d'obstacle dans ce run ; sinon la couche
 
 func _kin_collide(from_pos: Vector3, to_pos: Vector3) -> Vector3:
@@ -697,6 +698,11 @@ func _kin_collide(from_pos: Vector3, to_pos: Vector3) -> Vector3:
 	var hit := space.intersect_ray(q)
 	if hit.is_empty():
 		return to_pos
+	# COMPTEUR DE BLOCAGES (instrumentation 2026-07-21) : sans mesure, impossible de distinguer
+	# « la foret n'a pas d'effet » de « la foret n'agit pas ». Imprime toutes les 200 collisions.
+	_kin_block_count += 1
+	if _kin_block_count % 200 == 1:
+		print("[kin] blocage #%d contre la couche obstacle" % _kin_block_count)
 	var hit_pos: Vector3 = hit["position"]
 	var hit_dist := Vector2(hit_pos.x - from_pos.x, hit_pos.z - from_pos.z).length()   # distance horizontale
 	var allowed := maxf(0.0, hit_dist - _KIN_SKIN)                                       # s'arrête _KIN_SKIN avant
@@ -720,7 +726,13 @@ func _kinematic_step(delta: float) -> void:
 	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
 	if moving:
 		if _obstacle_mask < 0:
-			_obstacle_mask = _KIN_OBSTACLE_LAYER if OS.get_environment("SYLVAN_OBSTACLE_COUNT").to_int() > 0 else 0
+			# La couche de blocage (bit 2) est partagee par obstacle_manager (mur) ET forest_solid
+			# (arbres). Gater sur le seul SYLVAN_OBSTACLE_COUNT laissait les arbres TRAVERSABLES :
+			# ils etaient construits, places et visibles, mais aucun raycast n'etait effectue --
+			# 60 arbres ne changeaient RIEN au comportement (mesure 2026-07-21). Bit-identique quand
+			# les deux compteurs sont a 0 (masque 0 -> aucun raycast).
+			var _n_blockers := OS.get_environment("SYLVAN_OBSTACLE_COUNT").to_int() + OS.get_environment("SYLVAN_FOREST_COUNT").to_int()
+			_obstacle_mask = _KIN_OBSTACLE_LAYER if _n_blockers > 0 else 0
 		global_position = _kin_collide(global_position, global_position + vel * delta)
 	for b_name in bodies:
 		var body: RigidBody3D = bodies[b_name]

@@ -13,6 +13,7 @@ const POLICY_PLAYER_SCRIPT = preload("res://scripts/control/policy_player.gd")
 const FOOD_MANAGER_SCRIPT = preload("res://scripts/world/food_manager.gd")
 const HAZARD_MANAGER_SCRIPT = preload("res://scripts/world/hazard_manager.gd")
 const OBSTACLE_MANAGER_SCRIPT = preload("res://scripts/world/obstacle_manager.gd")  # hook local non stagé (chantier obstacle)
+const FOREST_SOLID_SCRIPT = preload("res://scripts/world/forest_solid.gd")  # forêt SOLIDE + OCCULTANTE (opt-in)
 const PERCEPTION_SCRIPT = preload("res://scripts/agent/perception.gd")
 const FOREST_MANAGER_SCRIPT = preload("res://scripts/world/forest_manager.gd")
 const HUD_SCRIPT = preload("res://scripts/ui/hud.gd")
@@ -35,6 +36,7 @@ var policy_player = POLICY_PLAYER_SCRIPT.new()
 var food_manager = FOOD_MANAGER_SCRIPT.new()
 var hazard_manager = HAZARD_MANAGER_SCRIPT.new()  # zone nocive OPT-IN (SYLVAN_HAZARD_COUNT>0), sinon inerte
 var obstacle_manager = OBSTACLE_MANAGER_SCRIPT.new()  # mur solide OPT-IN (SYLVAN_OBSTACLE_COUNT>0), sinon inerte — hook local non stagé
+var forest_solid = FOREST_SOLID_SCRIPT.new()  # arbres solides+occultants OPT-IN (SYLVAN_FOREST_COUNT>0), sinon inertes
 var water_manager = FOOD_MANAGER_SCRIPT.new()  # 2ᵉ pulsion: eau (même classe, préfixe WATER)
 var _water_enabled := false
 var _hud = null  # HUD in-game (signes vitaux), visual-only — reste null en headless
@@ -76,6 +78,7 @@ func _ready() -> void:
 	food_manager.reset(0)  # initial layout (so pellets show even before the episode loop)
 	add_child(hazard_manager)  # zone nocive perceptible (opt-in) — doit être dans l'arbre avant begin_episode
 	add_child(obstacle_manager)  # mur solide perceptible (opt-in) — dans l'arbre avant begin_episode
+	add_child(forest_solid)  # arbres solides perceptibles (opt-in) — dans l'arbre avant begin_episode
 	# 2ᵉ PULSION (2026-06-18): l'EAU = un 2ᵉ FoodManager (même machinerie), préfixe d'env WATER,
 	# pastilles bleues. Planner-only (le WM ne la voit pas en étage 1). Activé seulement si demandé
 	# (SYLVAN_WATER_COUNT défini) → les runs mono-ressource existants restent identiques.
@@ -119,6 +122,7 @@ func _ready() -> void:
 	food_manager.set_seed(seed_value)
 	hazard_manager.set_seed(seed_value + 555)
 	obstacle_manager.set_seed(seed_value + 999)
+	forest_solid.set_seed(seed_value + 4242)
 	if _water_enabled:
 		water_manager.set_seed(seed_value + 777)  # décalage → l'eau ne spawn pas SUR la bouffe
 	add_child(rollout_writer)
@@ -669,6 +673,13 @@ func _start_episode() -> void:
 		_obst_targets = [_sp + Vector3(sin(_sy), 0.0, cos(_sy)) * OS.get_environment("SYLVAN_OBSTACLE_AHEAD").to_float()]
 	obstacle_manager.begin_episode(episode_index, spawn_manager.get_agent_spawn_position(),
 		_obst_targets)  # mur solide (opt-in) — hook local non stagé
+	# FORÊT SOLIDE (opt-in) : les ressources sont passées en KEEP-OUT — un arbre ne doit jamais
+	# emmurer une ressource, sinon on mesurerait un échec du MONDE et non de l'entité (§2).
+	var _forest_keepout = food_manager.get_positions().duplicate()
+	if _water_enabled:
+		for _wp in water_manager.get_positions():
+			_forest_keepout.append(_wp)
+	forest_solid.begin_episode(episode_index, spawn_manager.get_agent_spawn_position(), _forest_keepout)
 	agent_instance.reset_agent(
 		spawn_manager.get_agent_spawn_position(),
 		spawn_manager.get_agent_spawn_yaw(),
