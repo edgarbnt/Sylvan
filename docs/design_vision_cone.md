@@ -130,3 +130,46 @@ le cône crée vraiment la structure.
   la motivation empirique directe.
 - `memory/sylvan-keystone-3b-geometric-wall.md` (véhicule forward-only) — sous cône, l'engagement de
   cible devient une compétence à apprendre, plus un artefact.
+
+---
+
+# RÉOUVERTURE (2026-07-21) — la prémisse du G0 a changé
+
+**Pourquoi rouvrir un chantier non licencié.** Le G0 cône avait rendu un verdict partagé et le
+retrain WM n'avait **pas** été licencié : (A) la perception active passait modestement, (B) la place
+mémoire échouait la barre offline. Deux faits NOUVEAUX changent la prémisse :
+
+1. **Le monde a une forêt** (`forest_solid.gd`, gate passé : atteinte lointaine −16,5 pts, capacité
+   de base préservée). Le G0 cône avait été joué en arène **vide**.
+2. **Le « hors-vue » mesuré était du SCINTILLEMENT, pas de l'occlusion** — sans aucun arbre, 3309
+   éclipses de durée médiane **5 ticks**, parce que 36 rayons à 10° ne touchent une ressource
+   lointaine que par intermittence. Les massifs n'y changent presque rien (5 → 6 ticks).
+   ⇒ *Aucune mémoire ne peut exploiter une ressource qui clignote toutes les 5 ticks.*
+
+**L'idée (owner) : faire d'une pierre deux coups.** Un cône frontal crée un hors-vue **structurel et
+durable** — ce qui est derrière reste invisible tant qu'on ne se retourne pas — au lieu du
+scintillement. Il rend aussi la perception réaliste. C'est le seul changement qui attaque la *cause*
+mesurée plutôt que d'empiler des occulteurs.
+
+**Coût : nul en première approche.** Le masquage existe déjà (`SYLVAN_OCCLUDE_FOV_DEG`,
+`serve_planner_command.py:49`) et met les rayons hors-cône à « rien en vue » (depth 1.0, RGB 0) —
+état **in-distribution** pour le WM, qui voit déjà des rayons vides. Donc **aucun ré-entraînement**
+pour ce premier test ; la question du retrain ne se posera que si le cône est retenu.
+
+## Critères PRÉ-INSCRITS (avant lancement)
+
+Protocole : monde forestier (18 massifs), `SYLVAN_OCCLUDE_FOV_DEG=180` (±90°, la valeur du G0),
+2 seeds, témoin = les corpus forestiers 360° déjà collectés.
+
+1. **Le cône remplace-t-il le scintillement par du vrai hors-vue ?**
+   → durée **médiane** des éclipses ≥ **50 ticks** (contre 5-6 aujourd'hui).
+   *C'est la condition PRIMAIRE : sans elle, le reste n'a pas de sens.*
+2. **La mémoire a-t-elle enfin une place ?**
+   → `seen-then-lost` FAISABLES > **5/24 vies** — **la barre historique, non déplacée** (§2).
+3. **Garde de capacité** : atteinte `[0,2)` ≥ **85 %**. En dessous, le cône casse la capacité de base
+   (l'entité ne retrouve plus ce qu'elle a devant) → réduire l'angle avant toute conclusion.
+4. **Validité** : `guards.sanity()` sur les 4 corpus, sinon verdict **NUL**.
+
+**Attendu honnête** : l'atteinte VA se dégrader — c'est normal, on retire de l'information. Ce qui
+est jugé ici n'est pas « l'entité fait-elle mieux » mais « le monde produit-il enfin la situation où
+une mémoire SERAIT utile ». Un cône qui dégrade tout SANS créer de hors-vue durable serait un échec.
