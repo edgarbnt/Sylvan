@@ -141,8 +141,11 @@ L'optimisme est load-bearing, pas un simple bug.
 **Et la raison était déjà écrite par le projet** (`docs/etat_critique.md`), désormais confirmée sur
 données fraîches : *« en monde plat sans danger, la survie ≈ géométrie, que l'inné capture déjà → un
 critique appris n'a presque rien à ajouter, par construction »*. La pré-inscription n'autorise le
-rejeu que sur un corpus **réellement varié** ; il n'en existe aucun sur disque (nettoyés), et
-`collect_sprint_corpus_v2.sh` ne sert **pas** le corps promu → dette.
+rejeu que sur un corpus **réellement varié** ; il n'en existait aucun sur disque (nettoyés).
+⚠️ **Correction le jour même** : j'avais écrit que `collect_sprint_corpus_v2.sh` « ne sert pas le corps
+promu ». **Faux** — j'avais grepé le *wrapper* au lieu du fichier *délégué* (`collect_critic_corpus_kin.sh`,
+qui utilise déjà `SYLVAN_KINEMATIC=1`). Aucune dette : le corpus varié est collectable immédiatement,
+et il est en cours de collecte. **Règle : ne rien affirmer sur un harnais sans suivre ses délégations.**
 
 ## 5. Ce qui bloque VRAIMENT
 
