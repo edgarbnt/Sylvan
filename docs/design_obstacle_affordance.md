@@ -340,3 +340,23 @@ d'arbres**. C'est toujours une petite tête (minutes), mais elle a besoin d'un c
 existe désormais (`arbgrad_graded_s7`, 45 arbres, ≥201 blocages étiquetés commandé-vs-réel).
 
 **Négatif banké** : ne pas rebrancher ce checkpoint tel quel dans un monde dense.
+
+## RÉ-ENTRAÎNEMENT FORESTIER (PRÉ-INSCRIT, 2026-07-21, avant lancement)
+
+**Corpus** : `arbgrad_graded_s7_r40_fa0_v0.02` **seul** (45 arbres, prédicteur OFF). `s8` est écarté
+volontairement : son comportement était piloté par le prédicteur qu'on ré-entraîne → contamination
+(leçon `sprint_critic_decont`).
+
+Ce corpus porte les trois apparences nécessaires : **arbres verts bloquants**, **eau bleue passable**,
+**bouffe rouge passable**. Il peut donc corriger les deux défauts d'un coup.
+
+**Critères — pré-enregistrés.**
+1. `s(vert foncé)` > 0,5 → **bloquant** *(à conserver ; valait 0,985)*
+2. `s(bleu)` < 0,5 → **passable** *(LE FIX ; valait 1,00 = l'eau prise pour un mur)*
+3. `s(rouge)` < 0,5 → **passable** *(à conserver ; valait 0,00)*
+4. **`ρ̂` ≥ 1,2 m** *(LE FIX ; valait 0,63 m — réagir au contact dans une forêt espacée de 1,3 m
+   arrive trop tard, et le détour part alors dans les voisins)*
+5. AUC CV ≥ 0,90 *(valait 1,00)*
+
+**Si les 5 passent** → rejouer l'A/B court, mêmes critères que le G3 (blocages −30 %, immobilité
+≤ 8 %). **Sinon** → ne pas brancher, et dire lequel a échoué.
