@@ -83,8 +83,13 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
    verdicts rendus sur la survie/les consommations sont **sous-puissants**. Les métriques qui VOIENT :
    courbe atteinte-vs-distance (n en milliers), ratio d'errance, budget par cycle, efficacité de cycle.
 2. **Un biais dans toutes les mesures de la semaine** : `far_align` était allumé partout. En arène
-   ouverte il **handicapait** (atteinte 4-6 m : 47 % → 70 % sans lui). Les chiffres antérieurs sont
-   donc **pessimistes**.
+   ouverte il **handicapait à TOUTES les distances**, et l'effet **croît avec la distance** — mesuré
+   avec l'instrument persisté `diagnostics/diag_reach_curve.py`, poolé 2 seeds, n ≥ 823/bande :
+   [0,2) 88,1→94,4 (**+6,4**) · [2,4) 80,7→89,7 (**+9,0**) · [4,6) 64,7→78,0 (**+13,3**) ·
+   [6,8) 27,2→47,2 (**+20,0**). Les chiffres antérieurs sont donc **pessimistes**.
+   ⚠️ Ces valeurs **remplacent** le « 47 → 70 » banké le même jour (calcul inline non persisté, donc
+   non reproductible) : direction et classement confirmés, niveaux absolus différents car la
+   définition diffère. **Ne plus citer le 47 → 70.**
 3. **Le monde ne réclame pas d'intelligence.** Arène ouverte + 360° + 2 ressources : aller au plus
    proche suffit. C'est la raison de fond pour laquelle chaque brique ajoutée paraît « modeste ».
 

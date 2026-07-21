@@ -17,8 +17,22 @@ systématiquement**.
 ## Le constat qui fixe la priorité de cette session
 
 `far_align` avait été réglé pour le corps à **pattes**, et **jamais revérifié après le pivot vers le
-corps cinématique**. Le retirer en arène ouverte fait passer l'atteinte à 4-6 m de **47 % à 70 %** :
+corps cinématique**. Le retirer en arène ouverte améliore l'atteinte à **toutes** les distances :
 gain de performance ET de pureté, en supprimant du code.
+
+**Chiffres canoniques** (instrument persisté `diagnostics/diag_reach_curve.py`, poolé 2 seeds,
+n ≥ 823 par bande) — l'effet **croît avec la distance**, cohérent pour un échafaudage « far-target » :
+
+| bande | FA=1 | FA=0 | Δ |
+|---|---|---|---|
+| [0,2) m | 88,1 % | 94,4 % | **+6,4** |
+| [2,4) m | 80,7 % | 89,7 % | **+9,0** |
+| [4,6) m | 64,7 % | 78,0 % | **+13,3** |
+| [6,8) m | 27,2 % | 47,2 % | **+20,0** |
+
+⚠️ Ces chiffres **remplacent** le « 47 → 70 » banké le 2026-07-21 : celui-ci venait d'un calcul
+python **inline non persisté**, donc non reproductible. Direction et classement des bandes sont
+confirmés ; les niveaux absolus diffèrent car la définition diffère. **Ne plus citer le 47 → 70.**
 
 **Or TOUS les autres réglages de décision sont dans le même cas** — ajustés à la main sur un corps qui
 n'existe plus, jamais revalidés depuis :
@@ -81,6 +95,12 @@ override** : il ne pouvait littéralement pas exprimer la condition propre. **D�
 et le tag de corpus les porte. Les 3 autres restent à vérifier avant de re-mesurer.
 
 ## Ordre de marche (ne pas sauter d'étape)
+
+**0. FAIT (2026-07-21) — l'instrument existe.** `diagnostics/diag_reach_curve.py` : courbe
+atteinte-vs-distance, conditionnée **devant**, échéance **proportionnelle à la distance**
+(`slack × d / vitesse`), vitesse **mesurée** par corpus, poolage multi-seed (`--a`/`--b`), gardes
+`guards.sanity()` par corpus, `--selfcheck`. Validé en reproduisant le verdict `far_align` sur les
+2 seeds, et la garde se déclenche bien sur le corpus dégénéré connu (monde-mur FA=0, immobile 79 %).
 
 **1. AUDIT DE PÉREMPTION + ligne de base propre — LA priorité.**
 Balayer ces constantes une par une, chacune jugée sur la **courbe atteinte-vs-distance** (jamais sur
