@@ -95,9 +95,14 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
    → il handicape. **Toutes les autres constantes de décision sont dans le même cas.** Suspect n°1
    trouvé le 2026-07-21 : `surv_turn_rate = 0.015` (`command_planner.py:121`), commenté
    « hexapode ~25-50°/s » → **le coût de survie imagine encore le virage d'un corps à pattes**.
-   Suspect n°2 : le retrait de `heading_weight` **décidé le 2026-06-25 n'a jamais atterri** — défaut
-   du code toujours `2.0`, **18 harnais sur 34** le codent en dur à 2.0 (6 seulement à 0.0), alors que
-   `CLAUDE.md` et la carte affirmaient « coût redevenu un pur `-min_dist` ». Carte corrigée.
+   **Auto-correction n°9 (même jour)** : j'avais annoncé un « suspect n°2 » — le retrait de
+   `heading_weight` qui n'aurait jamais atterri (18 harnais/34 à 2.0). **FAUX, corrigé après avoir
+   tracé le chemin d'exécution** : le retrait a bien atterri dans les harnais single-drive vivants
+   (tous à `0.0`), et surtout `heading_weight` est **INERTE en multi-drive `COST=survival`** (la
+   config vivante : `surv_mode` retourne à L1063 avant la ligne 1091). J'avais compté des grep au
+   lieu de lire les branches — exactement l'erreur que l'audit combat.
+   ⇒ **`heading_weight` et `far_align` sont dans des branches COMPLÉMENTAIRES** : mono-drive → `hw`
+   actif, `far_align` inerte ; multi-drive survival → l'inverse. Auditer chacun **dans sa branche**.
    Balayer chacune (cf. le tableau dans `docs/prompt_session_debloquage.md`), jugée sur la **courbe
    d'atteinte**, **dans les deux mondes** (l'effet de FA est dépendant du monde).
    ⚠️ L'instrument était contaminé : `collect_reachprobe.sh` avait `FAR_ALIGN=1` **en dur, sans

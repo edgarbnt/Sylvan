@@ -36,22 +36,36 @@ plus). ⚠️ **Ce calcul est le mien — MESURE-le sur corpus** (`guards.measur
 rad/tick) avant d'en faire quoi que ce soit. C'est exactement le pattern `far_align` : une constante
 calibrée sur l'ancien corps, jamais revue.
 
-**Le suspect n°2, trouvé pareil** : `CLAUDE.md` et la carte d'archi affirmaient que `heading_weight`
-(le hint « pointe vers la cible ») avait été **RETIRÉ le 2026-06-25** et que le coût était « redevenu
-un pur `-min_dist` ». **C'est faux : le retrait n'a jamais atterri.** Défaut du code toujours `2.0`,
-et sur 34 harnais **18 le codent en dur à 2.0** (dont les vivants) contre 6 à `0.0`. La carte est
-corrigée ; la décision elle-même reste **à re-trancher par la mesure**.
+## ⚠️ Carte d'exécution — à connaître AVANT d'auditer quoi que ce soit
 
-| constante | défaut code | env | rôle |
+J'ai d'abord annoncé un « suspect n°2 » (le retrait de `heading_weight` qui n'aurait jamais atterri,
+18 harnais/34 à 2.0). **C'était FAUX** — j'avais compté des `grep` au lieu de lire les branches.
+Après avoir tracé `plan()` : le retrait **a bien atterri** dans les harnais single-drive vivants
+(tous à `0.0`), et surtout les deux réglages vivent dans des **branches COMPLÉMENTAIRES, jamais
+actives ensemble** :
+
+| config | `heading_weight` | `far_align` / `align_gain` / `align_mode` |
+|---|---|---|
+| mono-drive (`water is None`) | **ACTIF** (L560 slot, L609 coords) | inerte |
+| multi-drive `COST=survival` (**vivant**) | **INERTE** (`surv_mode` retourne à L1063) | **ACTIF** (L977) |
+| multi-drive `COST=designed` | ACTIF (L1091) | inerte |
+
+⇒ **Poser `SYLVAN_PLANNER_HEADING_W` dans un harnais multi-drive survival est sans effet ; auditer
+`far_align` en mono-drive est sans objet.** Auditer chaque réglage **dans sa branche**, sinon on
+mesure du bruit sur du code mort. `heading_weight` n'est donc **pas** prioritaire.
+
+## Le tableau à balayer
+
+| constante | défaut code | env | rôle / branche |
 |---|---|---|---|
 | **`surv_turn_rate`** | **0.015** | `SYLVAN_PLANNER_TURN_RATE` | **virage imaginé — calibré HEXAPODE** ⇦ commencer ici |
-| **`heading_weight`** | **2.0** | `SYLVAN_PLANNER_HEADING_W` | **hint de cap déclaré retiré mais toujours actif** |
-| `align_gain` | 60.0 | `SYLVAN_PLANNER_ALIGN_GAIN` | poids de l'échafaudage far-align |
+| `align_gain` | 60.0 | `SYLVAN_PLANNER_ALIGN_GAIN` | poids de far-align — **multi-drive survival seulement** |
 | `align_mode` | `"mean"` | `SYLVAN_PLANNER_ALIGN_MODE` | `mean` (spirale) vs `end` (tourne tôt puis commit) — **jamais A/B testé** |
 | `urgency_weight` | 6.0 | `SYLVAN_PLANNER_URGENCY_W` | poids de l'inconfort futur |
 | `surv_margin_weight` | 200.0 | `SYLVAN_PLANNER_SURV_MARGIN_W` | tie-break de marge |
 | `surv_horizon` | 3000.0 | `SYLVAN_PLANNER_SURV_H` | cap de la simulation de survie |
 | `resource_drain` / `restore` | 0.0016 / 0.5 (code) ; 0.0005 / 0.4 (harnais) | `SYLVAN_PLANNER_DRAIN` / `_RESTORE` | **modèle interne du métabolisme**, posé à la main — le vrai drain mesuré est 0,05/tick |
+| `heading_weight` | 2.0 | `SYLVAN_PLANNER_HEADING_W` | mono-drive seulement ; retrait déjà atterri → **basse priorité** |
 
 On a **prouvé** qu'au moins l'une d'elles était devenue nuisible. Rien ne dit qu'elle est la seule.
 Ne PAS auditer : `surv_discount` (négatif banké 2026-07-04, ne pas activer) et `commit_delta`
