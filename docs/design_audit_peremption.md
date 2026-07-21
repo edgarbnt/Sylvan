@@ -324,3 +324,31 @@ Instrument = `diagnostics/diag_reach_curve.py`, poolé 2 seeds, conditionné dev
   Réduire la densité et re-mesurer. *Ce n'est pas un échec du monde, c'est un mauvais réglage.*
 - **SANS EFFET** : rien ne bouge de ≥ 5 pts → augmenter la densité.
 - **NUL** : `guards.sanity()` échoue sur un corpus (entité immobile) → verdict nul, pas négatif.
+
+## RÉSULTAT DU GATE FORÊT (2026-07-21) — **SUCCÈS**, sur les 3 conditions pré-inscrites
+
+Poolé 2 seeds, `guards.sanity()` OK, forêt vérifiée active (40 arbres placés, ~3200 blocages).
+
+| bande | sans forêt | FORÊT | Δ |
+|---|---|---|---|
+| **[0,2)** | 94,4 % | **92,9 %** | −1,5 *(dans le bruit)* |
+| [2,4) | 89,7 % | 81,5 % | **−8,2** |
+| [4,6) | 78,0 % | 68,5 % | **−9,4** |
+| [6,8) | 47,2 % | 30,7 % | **−16,5** |
+
+1. **Bandes lointaines ≥ 5 pts** ✅ (−9,4 et −16,5)
+2. **Capacité de base préservée** ✅ ([0,2) = 92,9 % ≥ 85 %)
+3. **Hors-vue créé** ✅ : 27,7 % → **41,8 %** des ticks (**+14,1 pts**)
+
+**Le déficit CROÎT avec la distance** (−1,5 / −8,2 / −9,4 / −16,5) : c'est la signature attendue de
+l'occlusion + détour — le proche reste atteignable, le lointain devient un problème de *stratégie*,
+pas de *motricité*. Consommations 195 → 156 (−20 %).
+
+⚠️ **Calibration à corriger** : l'occupation de rétine mesurée est **43,7 %**, au-dessus des ~30 %
+que le G0 recommandait (à 60 % l'erreur du slot atteint 1,43 m). La densité est donc au **bord haut**
+de l'utile. Baisser à ~28 arbres devrait préserver davantage la bande [2,4) tout en gardant l'effet
+lointain — à mesurer, pas à supposer.
+
+⚠️ **Ce que ce gate ne dit PAS.** Il établit que le monde **exige** davantage, pas que l'entité
+**saura** y répondre. Il crée seulement la place pour que mémoire et détour comptent — la place qui
+manquait depuis le début (G0 mémoire : `never_seen = 0`, tout était visible).
