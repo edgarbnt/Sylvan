@@ -313,3 +313,30 @@ seed, `SYLVAN_WAYPOINT=1` + `SYLVAN_WP_OBSTACLE`. Run court, 3 épisodes.
   murs partout). ⚠️ Attendu comme plausible : `s(bleu) = 1,00`, donc **il prend l'eau pour un mur**.
   En multi-drive, il pourrait fuir ce qu'il doit boire — c'est le défaut connu, non corrigé.
 - **NUL** : `guards.sanity()` échoue → verdict nul, pas négatif.
+
+## RÉSULTAT DU G3 DÉGELÉ (2026-07-21) — **ÉCHEC**, et la cause est la PORTÉE apprise
+
+| | blocages | immobile | conso | ticks |
+|---|---|---|---|---|
+| prédicteur OFF | ~200-400 | 5,4 % | 4 | 6221 |
+| prédicteur **ON** | **~1400-1600** | 3,6 % | 3 | 5003 |
+
+**6× plus de collisions** par tick (le critère demandait −30 %). L'entité n'est pas paralysée
+(immobilité en baisse, 3,6 %), elle se cogne simplement bien davantage.
+
+**Cause mesurée, lue dans le log** : `ρ̂ = 0,63 m`. La portée apprise du prédicteur est de **63 cm** —
+il ne signale un obstacle qu'au contact. Elle a été apprise sur un monde à **un seul mur**, où réagir
+tard suffisait. Dans une forêt espacée de 1,3 m, réagir à 63 cm arrive trop tard pour éviter, et le
+détour de l'étage waypoint (couronne 8×2,5 m) part alors **dans les arbres voisins** : chaque
+évitement engendre de nouvelles collisions.
+
+⇒ **Le transfert est PARTIEL et ASYMÉTRIQUE** : la reconnaissance de **couleur** transfère
+parfaitement (`s(vert) = 0,985`), la **portée** ne transfère pas. Je n'avais vérifié que la couleur —
+vérification incomplète, et c'est ce qui a rendu le résultat surprenant.
+
+**Ce que ça implique.** Le ré-entraînement du prédicteur n'est plus optionnel, et il ne concerne plus
+seulement le faux positif sur l'eau (`s(bleu) = 1,00`) : il doit **réapprendre ρ̂ dans un monde
+d'arbres**. C'est toujours une petite tête (minutes), mais elle a besoin d'un corpus forestier — qui
+existe désormais (`arbgrad_graded_s7`, 45 arbres, ≥201 blocages étiquetés commandé-vs-réel).
+
+**Négatif banké** : ne pas rebrancher ce checkpoint tel quel dans un monde dense.
