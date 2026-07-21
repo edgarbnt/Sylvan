@@ -110,11 +110,17 @@ def split_lives(run: str) -> list[dict]:
     return lives
 
 
-def classify_life(life: dict, reach_factor: float) -> dict:
+def classify_life(life: dict, reach_factor: float,
+                  drains: tuple[float, float] = (DRAIN_PER_TICK, DRAIN_PER_TICK)) -> dict:
     """Classify one life's outcome; for a drive death, find the last lived chance.
 
     The class is judged on the plan target AT the last useful replan (the latest replan where
     the needed resource was visible AND metabolically reachable given the reserve at that tick).
+
+    `drains` = (energy, thirst) per-tick drain. Metabolic reach depends on the drain of the DYING
+    gauge, so an asymmetric body needs its own value per gauge (a graded world drains thirst more
+    slowly => water is reachable further than the old single-drain formula assumed). Default keeps
+    both at DRAIN_PER_TICK => bit-identical to the previous behaviour on a symmetric body.
     """
     e, t, h = life["drives"][-1]
     n = len(life["drives"])
@@ -155,7 +161,7 @@ def classify_life(life: dict, reach_factor: float) -> dict:
         if needed in p:
             ever_seen = True
             reserve = life["drives"][p["i"]][drive_idx]
-            reach_m = reserve * (SPEED_M_PER_TICK / DRAIN_PER_TICK) * reach_factor
+            reach_m = reserve * (SPEED_M_PER_TICK / drains[drive_idx]) * reach_factor
             if p[needed] <= reach_m:
                 last_chance = p
     if not ever_seen:
