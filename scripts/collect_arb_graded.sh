@@ -23,7 +23,12 @@ ARM=${1:-sym}; SEED=${2:-1}; NEP=${3:-24}
 # CALIBRAGE DE VIE (2026-07-21) : restore par repas. 40 = reglage de COLLECTE (defaut historique) ;
 # 60 = "vie" (equilibre a 6 m > mediane de spawn 5 m => derive positive, mais 6-8 m punit encore).
 EPF=${EPF:-40}
-PORT=${PORT:-6270}; TAG="arbgrad_${ARM}_s${SEED}_r${EPF}"
+# A/B ÉCHAFAUDAGE far-target (2026-07-21) : FA=1 = bequille codee-main ACTIVE (statu quo de TOUTES
+# nos mesures) ; FA=0 = boucle PURE. Juge = courbe atteinte-vs-distance (bandes LOINTAINES, la ou
+# l echafaudage agit) + ratio d errance ; JAMAIS la survie. Enjeu : la competence mesuree
+# aujourd hui (trajets 1.08, choix 98%) est-elle celle de l ENTITE ou celle de la bequille ?
+FA=${FA:-1}
+PORT=${PORT:-6270}; TAG="arbgrad_${ARM}_s${SEED}_r${EPF}_fa${FA}"
 OUT="data/replay_buffer/${TAG}"; RUNDIR="data/replay_buffer/${TAG}_run"
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 if [[ "$ARM" == "graded" ]]; then
@@ -36,7 +41,7 @@ echo "=== ARB-GRADED $ARM : seed=$SEED port=$PORT | monde e=$EDRAIN t=$TDRAIN | 
 
 env SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
     SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_DRAIN_T=$PDRAIN_T \
-    SYLVAN_PLANNER_RESTORE=$(env_pytorch_3.12/bin/python -c "print($EPF/100)") SYLVAN_PLANNER_FAR_ALIGN=1 SYLVAN_PLANNER_ALIGN_GAIN=60 \
+    SYLVAN_PLANNER_RESTORE=$(env_pytorch_3.12/bin/python -c "print($EPF/100)") SYLVAN_PLANNER_FAR_ALIGN=$FA SYLVAN_PLANNER_ALIGN_GAIN=60 \
     SYLVAN_CMD_EXPLORE_STD=0 SYLVAN_BC_LOG="$OUT" \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm data/checkpoints/wm_objcentric_kin/wm_best.pt --residual data/checkpoints/hexapod_v2/policy_best.pt \
