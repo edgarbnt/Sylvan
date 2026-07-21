@@ -77,6 +77,40 @@ vs absorbé · respawns comptés comme repas · échafaudage jamais re-testé ·
 | **Mode-1 (RL)** | parqué | plafond BC. |
 | **Curiosité / configurator** | manquants | demandent un monde plus riche. |
 
+## 4-bis. ASSAINISSEMENT DE L'INVENTAIRE (2026-07-21) — le code était en MEILLEUR état que les registres
+
+Déclenché par un constat simple : à chaque fois qu'on regardait de près, quelque chose n'était pas ce
+qu'il prétendait. Ce n'était pas le code qui s'écroulait — c'était la **comptabilité** qui était
+optimiste. Trois corrections, toutes mesurées :
+
+**1. La « baseline vivante » multi-drive ne tournait pas la config vivante.** Le corps cinématique est
+promu depuis le 2026-07-07, mais `baseline_multidrive_slot.sh` servait le corps ET le WM **hexapodes**.
+Le record cité (méd 2735-2820) venait donc d'une config **supersédée**. Re-mesuré, seed 1, 10 ép :
+
+| | documentée (hexapode) | **réellement promue (cinématique)** |
+|---|---|---|
+| survie médiane | 2295-2525 | **3000 = PLAFOND** |
+| épisodes pleins | 4/10 | **9/10** |
+| repas médians | 2-3 | **6,5-8** |
+| atteinte [0,2) | 87,7 % | **97,2 %** (+9,5) |
+| atteinte [2,4) | 63,0 % | **93,8 %** (+30,8) |
+
+⇒ **L'entité est nettement meilleure que ne le disait sa propre documentation.** Et la survie est
+désormais **saturée** (9/10 au plafond) : **ne plus juger là-dessus**, utiliser la courbe d'atteinte.
+
+**2. Deux modules comptés « purs » sont du code mort.** `residu_ppo` et `corps_cpg` : depuis la
+promotion, `sylvan_agent.gd:831` fait `if kinematic_mode: … return` — le code dit lui-même
+« ne sont jamais atteints ». Requalifiés `partiel` dans la carte. L'inventaire réel passe de
+**7 purs / 7 partiels** à **5 purs / 9 partiels**.
+
+**3. Le corps promu n'a atterri que dans 10 harnais sur 77**, dont **10 cités dans `CLAUDE.md` comme
+vivants** tournent encore l'hexapode (`run_forage_wmslot`, `diag_nav_ab_wmslot`, `run_forage_purslot`,
+`diag_nav_ab_purslot`, `run_hesitation_probe`, `run_forage_hex`, `run_forage_retina`, …). Dette
+restante, à traiter avant de citer un de leurs chiffres.
+
+**Correctif d'hygiène au passage** : `baseline_multidrive_slot.sh` faisait un `pkill -9` **global** qui
+tuait les serveurs des autres runs. Retiré (il ne tue plus que le sien) ; port paramétrable.
+
 ## 5. Ce qui bloque VRAIMENT
 
 1. **L'instrument.** Le budget par cycle est ≈ 0 → la survie est dominée par la variance. Tous les
