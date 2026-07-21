@@ -138,7 +138,37 @@ monde**, sur critère pré-enregistré.
 prédits) — à rapprocher du `nominal_speed` 2× trop grand, dont l'A/B a montré qu'il est **porteur**.
 L'optimisme est load-bearing, pas un simple bug.
 
-**Et la raison était déjà écrite par le projet** (`docs/etat_critique.md`), désormais confirmée sur
+### Rejeu en MONDE VARIÉ, correctement dimensionné (2026-07-21)
+
+Deux pannes structurelles empêchaient ce rejeu — le gate **ne pouvait pas tourner dans le monde que
+sa propre pré-inscription exige** : (1) la mort n'était détectée que sur les drives, donc la mort par
+**danger** était invisible ; (2) le loader n'ouvrait pas le `.gz`, alors que le collecteur gzippe —
+les corpus variés n'ont **jamais** été lisibles ici. Corrigées, non-régression vérifiée en monde plat.
+
+4 corpus collectés (seeds 3-6, monde danger, corps promu, sanity OK) → **79 vies / 12 144 instants**,
+*plus* que les 57 du gate historique :
+
+| | R² sur vies jamais vues |
+|---|---|
+| inné seul | +0,358 |
+| inné + correction | +0,217 |
+| **gain** | **−0,141** (barre +0,10) — plis −0,170 / −0,166 / −0,311 / **+0,082** |
+
+**Gate échoué, mais proprement** : la correction ne *détruit* plus (le −1,683 précédent était un
+artefact du n=15), elle dégrade légèrement. **Négatif désormais correctement puissant.**
+
+⭐ **Cause précise — et ce n'est PAS « l'appris ne marche pas ».** Le token du critique est
+`[niveau, dist/10, |sin(bearing)|, cos(bearing), connu]` **par pulsion** (faim, soif) : il ne contient
+**ni santé ni danger** (`train_survival_critic.py:42`). Or dans le monde varié c'est le **danger** qui
+tue — l'inné y est optimiste **×3,96** (survie réelle 770 pas contre 3052 prédits), correction médiane
+**−1766 pas**. On demande donc au critique de prédire un résidu **dominé par une cause qu'il ne perçoit
+pas**. Le résidu est énorme *et* invisible pour lui.
+
+⇒ **Prochaine étape principielle et cheap**, exactement le contrat `docs/recette_nouvelle_pulsion.md` :
+**ajouter un token de danger/santé** (un token + une tête de lecture, **WM intact**). Tant qu'il
+manque, tout rejeu de ce gate en monde varié est joué d'avance.
+
+**Et la raison était déjà écrite par le projet** (`docs/etat_critique.md`), confirmée sur
 données fraîches : *« en monde plat sans danger, la survie ≈ géométrie, que l'inné capture déjà → un
 critique appris n'a presque rien à ajouter, par construction »*. La pré-inscription n'autorise le
 rejeu que sur un corpus **réellement varié** ; il n'en existait aucun sur disque (nettoyés).
