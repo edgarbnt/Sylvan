@@ -252,6 +252,40 @@ l'imagination est trop courte.** Le vrai choix structurel est l'horizon : rollou
 coût, fidélité open-loop dégradée) ou **abstraction temporelle** (WM qui saute dans le temps —
 direction H-JEPA, déjà amorcée par l'étage waypoint).
 
+### ⚠️ CETTE CONCLUSION EST RÉVISÉE — test gratuit de divergence (2026-07-21)
+
+J'ai testé ma propre conclusion avant de la faire payer (§2 : « une conclusion qui arrange est
+suspecte »). `diagnostics/diag_candidate_divergence.py` déroule les 117 candidats **analytiquement**
+(le corps cinématique obéit exactement à (vx, ω) ; constantes mesurées en Phase 1) sur **300 états
+réels** — borne supérieure, aucun WM, aucun run.
+
+| horizon | trajet | divergence géométrique | ρ(score, −distance), ordre fixé |
+|---|---|---|---|
+| **80 (actuel)** | 0,80 m | **12,8 %** | **0,734** |
+| 120 | 1,20 m | 25,8 % | 0,838 |
+| **240** | 2,40 m | 73,1 % | **0,931** |
+| 480 | 4,80 m | 135,8 % | 0,779 |
+
+**Ce que ça réfute.** « Les candidats sont quasi ex-æquo, l'horizon est le mur » est **trop fort**.
+À l'horizon actuel les candidats divergent déjà de **12,8 %** de la distance à la cible, et le coût
+transmet cette géométrie à **ρ = 0,73** (1 % d'ex-æquo seulement). Ce n'est pas détruit.
+
+**Ce que ça confirme, modestement.** Allonger l'horizon **améliore** la fidélité du classement
+(0,73 → 0,93 à 240 pas ≈ 2,4 m), puis la **dégrade** au-delà (0,78 à 480) — les arcs longs courbent
+et les hypothèses de la queue lâchent. Il y a donc un gain réel mais **borné**, autour de 2-3 m.
+
+**Ce que ça révèle, et qui est neuf.** Le signal de valeur est **99,6 % constant** :
+valeur médiane **3085**, étendue entre candidats **12,5** → part informative **0,40 %**. La cause est
+`time.clamp(max=cap)` : tout candidat qui survit sature à 3000, et seul `margin_w × margin` varie
+(cohérent avec `Δtime = 0` mesuré plus tôt).
+- Pour un **argmax**, cet offset est sans importance — d'où un planner qui fonctionne.
+- Pour une **tête entraînée en MSE** sur cette valeur, il est **fatal** : il faut résoudre 0,40 % de
+  la cible pour classer, ce qui est sous le bruit d'apprentissage.
+
+⇒ **L'échec du critique appris s'explique par le CADRAGE DE LA CIBLE, pas par l'horizon.** Il n'a
+jamais été testé équitablement : on lui a demandé de prédire un nombre dont 99,6 % est un offset
+constant. C'est corrigeable en centrant/normalisant la cible — **sans toucher au WM ni à l'horizon**.
+
 **Négatifs bankés — ne pas répéter** : `nominal_speed` seule (KILL) ; `nominal_speed` + gradient de
 zone morte (négatif) ; `surv_turn_rate` (déjà correct, réfuté gratuitement).
 
