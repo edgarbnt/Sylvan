@@ -43,7 +43,11 @@ var _radius_max := 11.0
 var _trunk_r := 0.35                               # rayon du tronc (collision + rétine)
 var _height := 2.0                                 # > torse → les rayons rétine horizontaux le touchent
 var _clear_r := 2.0                                # rayon dégagé autour du spawn (ne pas emmurer l'agent)
-var _keepout := 1.4                                # distance mini à une ressource (ne pas la rendre inatteignable)
+var _keepout := 1.4                                # marge MINI ajoutée au rayon effectif (voir _effective_r)
+var _clump := 1                                    # troncs par MASSIF. 1 = arbre isolé (historique,
+                                                   # bit-identique). >1 = bosquet : plusieurs troncs
+                                                   # groupés sous un MÊME corps → occulteur LARGE.
+var _clump_r := 1.0                                # rayon de dispersion des troncs dans le massif
 var _color := TREE_COLOR
 var _rng := RandomNumberGenerator.new()
 
@@ -60,6 +64,12 @@ func _init() -> void:
 	_height = _envf("SYLVAN_FOREST_HEIGHT", _height)
 	_clear_r = _envf("SYLVAN_FOREST_CLEAR_R", _clear_r)
 	_keepout = _envf("SYLVAN_FOREST_KEEPOUT", _keepout)
+	# MASSIFS (2026-07-21) : MESURÉ que 40 troncs fins ne créent AUCUNE situation de mémoire --
+	# 12 pertes sur 13 sont des sorties de PORTÉE, pas des occlusions, parce qu'un tronc de 0,35 m
+	# défile en quelques pas. Il faut des occulteurs PLUS GROS, pas plus NOMBREUX : une ressource
+	# cachée DURABLEMENT. D'où le massif = amas de troncs sous un seul corps.
+	_clump = int(_env("SYLVAN_FOREST_CLUMP", "1"))
+	_clump_r = _envf("SYLVAN_FOREST_CLUMP_R", _clump_r)
 	# Override d'apparence = TEST DE PURETÉ : la réaction survit-elle à un changement de couleur ?
 	# (même contrat que SYLVAN_OBSTACLE_HUE). ⚠️ toute couleur ≠ verte RÉINTRODUIT de la fuite — c'est
 	# justement ce qu'on veut pouvoir mesurer.
@@ -68,6 +78,12 @@ func _init() -> void:
 		var p := hue.split(",")
 		if p.size() == 3:
 			_color = Color(float(p[0]), float(p[1]), float(p[2]))
+
+
+# Rayon EFFECTIF de l'occulteur. ⚠️ Le keep-out doit en dépendre : avec des massifs, un centre à
+# 1,4 m d'une ressource l'ENGLOUTIRAIT. Sans ça on mesurerait un échec du MONDE, pas de l'entité (§2).
+func _effective_r() -> float:
+	return _trunk_r + (_clump_r if _clump > 1 else 0.0)
 
 
 func active() -> bool:
@@ -92,26 +108,36 @@ func _ensure_built() -> void:
 		body.collision_layer = OBSTACLE_LAYER | RETINA_LAYER
 		body.collision_mask = 0                              # statique : ne détecte rien lui-même
 		body.set_meta("retina_color", _color)                # RGB lu par le raycast couleur de la rétine
-		var cs := CollisionShape3D.new()
-		var cyl := CylinderShape3D.new()
-		cyl.radius = _trunk_r
-		cyl.height = _height
-		cs.shape = cyl
-		body.add_child(cs)
-		var mesh := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = _trunk_r * 0.75                      # léger fuselage : lit mieux en low-poly
-		cm.bottom_radius = _trunk_r
-		cm.height = _height
-		mesh.mesh = cm
-		mesh.material_override = _material
-		body.add_child(mesh)
+		# MASSIF : `_clump` troncs sous un MÊME corps. clump=1 → un arbre isolé (historique).
+		# Les troncs sont disposés en couronne + un au centre : occulteur LARGE et sans trou,
+		# tout en restant du low-poly (des cylindres, pas un mesh importé).
+		for j in range(max(_clump, 1)):
+			var off := Vector3.ZERO
+			if _clump > 1 and j > 0:
+				var ang := TAU * float(j - 1) / float(_clump - 1)
+				off = Vector3(cos(ang), 0.0, sin(ang)) * _clump_r
+			var cs := CollisionShape3D.new()
+			var cyl := CylinderShape3D.new()
+			cyl.radius = _trunk_r
+			cyl.height = _height
+			cs.shape = cyl
+			cs.position = off
+			body.add_child(cs)
+			var mesh := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = _trunk_r * 0.75                  # léger fuselage : lit mieux en low-poly
+			cm.bottom_radius = _trunk_r
+			cm.height = _height
+			mesh.mesh = cm
+			mesh.material_override = _material
+			mesh.position = off
+			body.add_child(mesh)
 		body.visible = false
 		add_child(body)
 		_bodies.append(body)
 	# BANNIERE (anti-log-qui-ment) : le log doit PROUVER ce qui est reellement construit et servi.
-	print("[forest] %d arbres SOLIDES construits | couleur=%s | tronc r=%.2f h=%.2f | anneau %.1f-%.1f m"
-		% [_count, str(_color), _trunk_r, _height, _radius_min, _radius_max])
+	print("[forest] %d massifs SOLIDES (%d troncs chacun) | couleur=%s | tronc r=%.2f | rayon EFFECTIF %.2f m | anneau %.1f-%.1f m"
+		% [_count, max(_clump, 1), str(_color), _trunk_r, _effective_r(), _radius_min, _radius_max])
 
 
 # Disperse les arbres pour le nouvel épisode. GARDES : jamais dans le rayon dégagé autour du spawn
@@ -129,11 +155,11 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 			var a := _rng.randf_range(0.0, TAU)
 			var r := _rng.randf_range(_radius_min, _radius_max)
 			center = Vector3(cos(a) * r, 0.0, sin(a) * r)
-			if center.distance_to(spawn_pos) < _clear_r:
+			if center.distance_to(spawn_pos) < _clear_r + _effective_r():
 				continue
 			var clash := false
 			for p in resource_positions:
-				if center.distance_to(p) < _keepout:
+				if center.distance_to(p) < _keepout + _effective_r():
 					clash = true
 					break
 			if not clash:
