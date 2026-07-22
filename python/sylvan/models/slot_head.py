@@ -13,6 +13,7 @@ convention que food_rel0 / food_xz_from_radar. n_resources=1 (un slot par TYPE ;
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 from torch import nn
@@ -38,7 +39,13 @@ class SelfSupervisedSlotHead(nn.Module):
             nn.Sequential(nn.Linear(4, 32), nn.SiLU(), nn.Linear(32, 32), nn.SiLU(), nn.Linear(32, 1))
             for _ in range(n_resources)
         )
-        th = torch.tensor([k * 2.0 * math.pi / NRAY for k in range(NRAY)])
+        # ANGLES DES RAYONS — géométrie pure, doit refléter EXACTEMENT perception.gd. Avec un vrai
+        # cône (SYLVAN_RETINA_FOV_DEG), les 36 rayons sont redistribués sur le champ ; le décodage
+        # de position reste correct par construction puisqu'il n'utilise que ces angles CONNUS.
+        # ⚠️ Ces buffers sont PERSISTANTS (présents dans le state_dict) : charger un checkpoint
+        # restaure les angles 360°. serve_planner_command les recalcule APRÈS chargement.
+        _fov = math.radians(float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360")))
+        th = torch.tensor([(k if k <= NRAY // 2 else k - NRAY) * _fov / NRAY for k in range(NRAY)])
         self.register_buffer("sin", torch.sin(th))
         self.register_buffer("cos", torch.cos(th))
         # REQUÊTES-COULEUR par slot (chantier multi-ressource 2026-07-04, design cible de la recette

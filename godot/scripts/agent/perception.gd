@@ -37,9 +37,20 @@ static func retina(space_state: PhysicsDirectSpaceState3D, origin: Vector3, forw
 		return out
 	fwd = fwd.normalized()
 	var right := Vector3(fwd.z, 0.0, -fwd.x)  # forward tourné -90° autour de +y → bearing signé
-	var ray_step := TAU / float(num_rays)
+	# VRAI CÔNE (opt-in SYLVAN_RETINA_FOV_DEG, défaut 360 = bit-identique). On ne MET PAS à zéro
+	# les rayons hors-champ comme le fait occlude_retina côté planner — ça perdait 75 % de la
+	# couverture sans rien gagner (à ±45° il ne restait que 9 rayons utiles sur 36). Ici les 36
+	# rayons sont REDISTRIBUÉS sur le cône : à 90° l'écart passe de 10° à 2,5°, soit 4× plus fin.
+	# C'est un TROC (moins de couverture, plus d'acuité), pas une perte sèche.
+	# Convention préservée : rayon 0 = devant, index croissant vers la droite, repli en négatif.
+	# À 360° la formule redonne exactement les angles historiques (k*TAU/N mod TAU).
+	var _fov_env := OS.get_environment("SYLVAN_RETINA_FOV_DEG")
+	var fov_rad := TAU if _fov_env == "" else deg_to_rad(clampf(float(_fov_env), 10.0, 360.0))
+	var ray_step := fov_rad / float(num_rays)
+	var half := num_rays / 2
 	for k in range(num_rays):
-		var b := ray_step * float(k)  # rayon 0 = forward
+		var kk := k if k <= half else k - num_rays   # index signé : droite positive, gauche négative
+		var b := ray_step * float(kk)  # rayon 0 = forward
 		var dir := (fwd * cos(b) + right * sin(b)).normalized()
 		var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * max_range)
 		q.collision_mask = RETINA_LAYER_MASK

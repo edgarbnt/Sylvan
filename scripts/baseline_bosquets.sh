@@ -20,6 +20,9 @@ SEED=${SEED:-1}
 PORT=${PORT:-6081}
 PATCHES=${PATCHES:-2}          # par ressource : 2 bouffe + 2 eau = 4 bosquets
 SPACING=${SPACING:-9.0}
+FOV=${FOV:-360}                # VRAI cone : 36 rayons REDISTRIBUES (pas mis a zero). 360 = inchange.
+KINTURN=${KINTURN:-1.5}        # x4-x6 rend le balayage payable : a 1.5 un tour complet coute 89 %
+                               # du budget inter-repas, donc l entite ne peut pas se payer de regarder.
 MEM=${MEM:-off}                # on = memoire spatiale (--egomotion-head + --slot-memory)
 DRIVES=${DRIVES:-2}            # 1 = soif COUPEE (mono-pulsion). Voir l ecart mesure ci-dessous.
 # POURQUOI L OPTION 1 EXISTE : en bi-pulsion, bouffe et eau sont dans des bosquets SEPARES a ~10 m.
@@ -31,7 +34,7 @@ PRADIUS=${PRADIUS:-0.95}       # rayon EXTERNE de la couronne de baies ; < eat_r
 SPACING_MAX=${SPACING_MAX:-11.0}   # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
-TAG="bosq_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
+TAG="bosq_f${FOV}_t${KINTURN}_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
 
 echo "=== BOSQUETS : regrow=$REGROW berries=$BERRIES/ressource patches=$PATCHES espacement=$SPACING-$SPACING_MAX ==="
 echo "=== WM=$WM  ep=$NEP  max_steps=$MS  seed=$SEED  port=$PORT ==="
@@ -48,9 +51,9 @@ if [ "$MEM" = "on" ]; then
 else
   MEM_FLAGS=""
 fi
-echo "=== MEMOIRE : $MEM ==="
+echo "=== MEMOIRE : $MEM | FOV : ${FOV}deg | KIN_TURN : $KINTURN ==="
 
-SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+SYLVAN_RETINA_FOV_DEG=$FOV SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
 SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
@@ -62,7 +65,8 @@ for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep
 # $WATER_ENV passe par `env` a la FIN, jamais dans la chaine de prefixes ci-dessous : le shell
 # analyse les prefixes AVANT l expansion, donc une variable vide y devient le NOM DE LA COMMANDE.
 # Et aucun commentaire ne doit tomber DANS la chaine : il commenterait la commande.
-SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=1.5 \
+SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=$KINTURN \
+SYLVAN_RETINA_FOV_DEG=$FOV \
 SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 \
 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 \
 SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \

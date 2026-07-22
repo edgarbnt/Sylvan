@@ -170,6 +170,23 @@ class _PlannerService:
                 wm.slot_encoder.query_thr.copy_(torch.tensor(_qthr, dtype=torch.float32))
             print(f"[planner-cmd] MARGES PAR-REQUÊTE (mesurées) : "
                   f"{[round(float(v), 3) for v in wm.slot_encoder.query_thr]}")
+        # VRAI CÔNE (SYLVAN_RETINA_FOV_DEG) : les angles des rayons du slot_encoder sont des buffers
+        # PERSISTANTS, donc load_state_dict vient de restaurer les angles 360° du checkpoint. Il faut
+        # les recalculer ICI pour qu'ils reflètent la géométrie RÉELLEMENT servie par perception.gd —
+        # sinon le décodage de position lit la rétine du cône avec la table d'angles de la 360° et
+        # rend des coordonnées fausses SANS RIEN SIGNALER. Défaut 360 → recopie à l'identique.
+        _fov = float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360"))
+        if abs(_fov - 360.0) > 1e-6 and getattr(wm.slot_encoder, "sin", None) is not None:
+            import math as _m
+            _n = wm.slot_encoder.sin.shape[0]
+            _th = torch.tensor([(k if k <= _n // 2 else k - _n) * _m.radians(_fov) / _n
+                                for k in range(_n)], dtype=torch.float32)
+            with torch.no_grad():
+                wm.slot_encoder.sin.copy_(torch.sin(_th))
+                wm.slot_encoder.cos.copy_(torch.cos(_th))
+            print(f"[planner-cmd] VRAI CÔNE {_fov:.0f}° : {_n} rayons redistribués "
+                  f"(écart {_fov/_n:.2f}° au lieu de {360.0/_n:.2f}°, soit {360.0/_fov:.1f}× plus fin) "
+                  f"— angles du slot RECALCULÉS après chargement")
         if meta.get("slot_resources", 1) > 1:
             print(f"[planner-cmd] SLOT-2 actif : {meta['slot_resources']} slots requêtés-couleur "
                   f"(food_idx={wm.food_idx}, water_idx={wm.water_idx}) → l'eau quitte l'oracle EMA")

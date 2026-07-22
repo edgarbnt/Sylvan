@@ -15,3 +15,10 @@ METRIQUE SECONDAIRE = fraction d episodes pleins.
 
 CE QUE CE TEST NE DIT PAS : il juge la memoire dans CE monde mono-pulsion. Il ne dit rien du
 multi-drive (mur arithmetique banke) ni de la generalisation a un autre agencement de bosquets.
+
+--- AVENANT (2026-07-22) : meme pre-inscription appliquee au CONE ---
+Condition : FOV=120 (vrai cone, 36 rayons redistribues a 3,33 deg) + KIN_TURN=6.0 (x4).
+Justification mesuree AVANT lancement : hors-vue 6,2 % -> 73,2 % ; l entite survit (3/3
+au-dessus du plancher) car un tour complet coute 13 % du budget au lieu de 52 %.
+METRIQUES ET BARRES INCHANGEES (repas moyens, direction par graine, plancher). Aucune barre
+n est deplacee : seule la condition change, et elle est declaree ici avant le run.
