@@ -305,3 +305,41 @@ touché. Changer portée/rayons/canaux changerait `obs_dim` → ré-entraînemen
 ## Critère de succès = le BUT
 Un écart **mémoire − engagement** ≥ 800 ticks dans un monde dont la **navigabilité reste celle
 des 45 arbres**. Tant que cet écart est nul, construire ne sert à rien.
+
+
+---
+
+# 11. CALIBRATION (étape 1) — le monde est RÉGLÉ, en mono-pulsion
+
+Harnais `scripts/baseline_bosquets.sh`, corps promu + `wm_objcentric_kin`, 5 vies, seed 1.
+
+| config | pleins | repas méd | au plancher de famine | verdict |
+|---|---|---|---|---|
+| bi-pulsion, 2 bosquets | 0-1/5 | 0-1 | **3-5/5** | MUR |
+| mono, 2 bosquets, buisson englobant | 1/5 | 0 | 3/5 | MUR |
+| mono, 2 bosquets, baies en couronne | 4/5 | 4 | 1/5 | TROP FACILE |
+| **mono, 4 bosquets × 2 baies, repousse 2500** | **3/5** | **2** | **0/5** | **CALIBRÉ** |
+
+Le régime retenu : personne ne meurt aveugle (0/5 au plancher), et 2 vies sur 5 échouent
+quand même. C'est la fenêtre où une meilleure décision peut se voir.
+
+**Pourquoi 4 bosquets et pas 2** : avec deux bosquets, se souvenir lequel est vide est trivial
+(« pas celui-là »). Avec quatre, il faut retenir **lesquels** on a vidés et **quand** — c'est la
+forme what-where-when, et c'est là que la mémoire paie.
+
+## Trois murs traversés, dans l'ordre
+
+1. **Bi-pulsion = impossible par arithmétique.** Bouffe et eau en bosquets séparés à ~10 m : chaque
+   bascule de pulsion coûte 909 ticks pour un budget inter-consommation de 471, soit **1,9×**.
+   Mesuré : 5/5 vies mortes au plancher avec `repas=0 boissons=1`. **Négatif banké** — ne pas
+   ré-essayer le multi-drive en bosquets ségrégués. Il faudrait des bosquets MIXTES (une clairière
+   qui porte les deux), au prix de faire disparaître le choix bouffe-vs-eau.
+2. **Le marqueur englobait les baies** (§9-bis) — cécité totale, 0 % de localisation.
+3. **Trop facile** une fois la vue rendue — corrigé en fractionnant en 4 bosquets plus pauvres.
+
+## Ce qui reste à faire avant de croire quoi que ce soit
+- **n = 5, une seule graine.** Le verdict est directionnel, pas solide. L'A/B se fera poolé 2 graines.
+- **La mémoire n'est pas branchée.** Rien n'a encore été mesuré sur ce que ce monde EXIGE ; on a
+  seulement montré qu'il est vivable et non saturé.
+- **Mono-pulsion assumé** : ce monde ne teste PAS l'arbitrage. C'est délibéré (isoler la mémoire),
+  pas un oubli.
