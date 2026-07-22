@@ -27,3 +27,21 @@ CRITERES -- pre-enregistres :
 
 CE QUE CE TEST NE DIT PAS : une graine, 12 vies. Directionnel. Le reglage retenu sera reconfirme
 sur 2 graines avant d etre ecrit comme defaut.
+
+--- AMENDEMENT (2026-07-22) : LEVIER 1 REFUTE, et le calcul le disait ---
+RESULTAT du balayage repousse {2500,4000,6000,8000} : 83-100 % d episodes pleins, ecart-type des
+durees de vie 0-171 ticks, ~4 repas partout. AUCUNE cellule calibree. Meme a 8000 (au plus une
+repousse par vie), l entite survit a 83 %.
+
+CAUSE, calculable AVANT le run et que je n avais pas faite : besoin d une vie = 3,75 repas, stock
+INITIAL = 4 bosquets x 2 baies = 8 baies, soit 2,1x le besoin. L entite n a donc JAMAIS besoin qu un
+bosquet repousse : elle visite des bosquets neufs et la vie s arrete avant epuisement. La repousse
+etait DECORATIVE. Negatif banke : ne pas re-tenter la repousse comme levier tant que le stock
+initial depasse le besoin.
+
+LEVIER CORRIGE = LE STOCK INITIAL. Condition pour que revisiter (donc le timing, donc la memoire)
+soit obligatoire : stock initial < 3,75 baies.
+BALAYAGE 2 : berries dans {4, 3, 2} a repousse 2500, 4 bosquets, reste identique.
+Effet secondaire recherche : avec moins de baies que de bosquets, certains bosquets sont VIDES des
+le depart tout en gardant leur buisson-marqueur visible -- c est exactement l aliasing qu on veut.
+CRITERES INCHANGES (30-70 % pleins, plancher < 20 %, ecart-type > 400).
