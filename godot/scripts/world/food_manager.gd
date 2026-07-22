@@ -83,7 +83,18 @@ var respawn_max := 4.5
 # échelle que le capteur ne résout pas. Coder « si distance > X alors cacher le stock » serait un
 # échafaudage ; ceci n'en est pas un.
 var _patch_count := 0             # 0 = OFF (perpetual field inchangé)
-var _patch_radius := 1.2          # dispersion des baies autour du centre du bosquet
+# DEUX CONTRAINTES, dans cet ordre d'importance :
+#  1. les baies doivent tomber HORS du buisson-marqueur (couronne, cf _patch_berry_pos), sinon il les
+#     ENGLOBE et la rétine ne voit jamais que du vert. C'est la cause RÉELLE, mesurée : à 0,6 m de
+#     rayon, 87 % des baies étaient dedans -> 0 % de localisation, l'entité mourait aveugle à côté
+#     de sa nourriture, 3/5 vies au plancher de famine.
+#  2. le rayon externe doit rester < eat_radius (1.0 m) : le slot est un soft-argmax sur les rayons
+#     (slot_head.py:138), il rend le BARYCENTRE de la couronne — arriver là doit capturer les baies.
+# ⚠️ HYPOTHÈSE RÉFUTÉE, gardée pour mémoire : j'ai d'abord attribué l'échec au seul barycentre et
+# resserré 1,2 -> 0,6 m. Ça n'a rien corrigé et a CAUSÉ la cécité totale. Le barycentre était un
+# facteur secondaire ; l'occlusion par le marqueur était la cause.
+var _patch_radius := 0.95         # rayon EXTERNE de la couronne de baies (< eat_radius 1.0)
+var _patch_spacing_max := 0.0     # 0 = pas de borne haute (comportement d'origine)
 var _patch_spacing := 9.0         # distance mini entre deux centres (traversée = 818 ticks = 41 pts d'énergie)
 var _regrow_ticks := 2000         # une baie repousse SUR PLACE après ce délai
 var _patch_centres: Array[Vector3] = []
@@ -106,7 +117,8 @@ var _patch_areas: Array = []
 # ⚠️ Marges du WM typé mesurées sur l'ANCIENNE palette : ajouter un type d'objet au monde impose
 # de les re-mesurer (build_typed_slots.py — une mesure, pas un ré-entraînement).
 const PATCH_BUSH_COLOR := Color(0.47, 0.93, 0.53)
-const PATCH_BUSH_R := 0.75        # rayon → 1,5 m de large = 21° à 8 m = échantillonné de façon fiable
+const PATCH_BUSH_R := 0.55        # 1,1 m de large = 16° à 4 m : repere fiable, et assez petit
+                                  # pour que la couronne de baies [0.60, 0.95] reste DEHORS (visible)
 
 # 2ᵉ PULSION (2026-06-18): cette classe sert MAINTENANT n'importe quelle ressource (bouffe OU eau).
 # Par défaut = FOOD (comportement identique à avant). `configure()` la repointe sur l'eau : préfixe
@@ -263,6 +275,9 @@ func _read_patch_env() -> void:
 	var ps := OS.get_environment("SYLVAN_%s_PATCH_SPACING" % _prefix)
 	if ps != "":
 		_patch_spacing = maxf(0.0, float(ps))
+	var pm := OS.get_environment("SYLVAN_%s_PATCH_SPACING_MAX" % _prefix)
+	if pm != "":
+		_patch_spacing_max = maxf(0.0, float(pm))
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
@@ -280,10 +295,19 @@ func _sample_patch_centres() -> void:
 			var r := sqrt(min_radius * min_radius + u * (spawn_radius * spawn_radius - min_radius * min_radius))
 			var c := Vector3(cos(ang) * r, food_y, sin(ang) * r)
 			var ok := true
+			var nearest := INF
 			for other in _patch_centres:
-				if c.distance_to(other) < _patch_spacing:
+				var d := c.distance_to(other)
+				nearest = minf(nearest, d)
+				if d < _patch_spacing:
 					ok = false
 					break
+			# BORNE HAUTE : le voisin le plus proche doit rester à portée de traversée. Sans elle, le
+			# rejet écarte les bosquets au maximum de l'anneau — mesuré 12,53 m pour 9,0 demandés, ce
+			# qui fait passer le prix d'une traversée de 41 à 57 points d'énergie et change la nature
+			# du problème. On borne la STRUCTURE du monde ; on ne vise pas l'agent.
+			if ok and _patch_spacing_max > 0.0 and not _patch_centres.is_empty() and nearest > _patch_spacing_max:
+				ok = false
 			if ok:
 				_patch_centres.append(c)
 				break
@@ -292,9 +316,18 @@ func _sample_patch_centres() -> void:
 
 
 func _patch_berry_pos(i: int) -> Vector3:
+	# COURONNE, pas disque : les baies doivent tomber HORS du buisson-marqueur, sinon celui-ci les
+	# ENGLOBE et le raycast de la rétine frappe le buisson en premier — la baie devient invisible.
+	# Mesuré : à rayon 1,2 m, 22 % des baies étaient englobées -> 73 % localisées ; à 0,6 m, 87 %
+	# englobées -> 0 % localisées, l'entité mourait aveugle à côté de sa nourriture. La géométrie
+	# prédit la mesure au point près, c'est bien le buisson qui masquait.
+	# Borne haute : rayon < eat_radius (1.0 m) pour qu'arriver au centre capture toute la couronne.
 	var c: Vector3 = _patch_centres[i % _patch_centres.size()]
 	var ang := _rng.randf_range(0.0, TAU)
-	var r := _patch_radius * sqrt(_rng.randf())      # uniforme en aire DANS le bosquet aussi
+	var inner := PATCH_BUSH_R + 0.05
+	var outer := maxf(inner + 0.05, _patch_radius)
+	var u := _rng.randf()
+	var r := sqrt(inner * inner + u * (outer * outer - inner * inner))   # uniforme en aire
 	return Vector3(c.x + cos(ang) * r, food_y, c.z + sin(ang) * r)
 
 
@@ -332,8 +365,8 @@ func _log_patches() -> void:
 		for j in range(i + 1, _patch_centres.size()):
 			gap = minf(gap, _patch_centres[i].distance_to(_patch_centres[j]))
 	var gap_s := "n/a" if _patch_centres.size() < 2 else "%.2f m" % gap
-	print("[patch] %s : %d/%d bosquets placés | %d baies | espacement mini MESURÉ %s (demandé %.1f) | repousse %d ticks | buisson r=%.2f couleur=(%.2f,%.2f,%.2f)" % [
-		_prefix, _patch_centres.size(), _patch_count, food_count, gap_s, _patch_spacing,
+	print("[patch] %s : %d/%d bosquets placés | %d baies | espacement voisin MESURÉ %s (demandé %.1f-%.1f) | repousse %d ticks | buisson r=%.2f couleur=(%.2f,%.2f,%.2f)" % [
+		_prefix, _patch_centres.size(), _patch_count, food_count, gap_s, _patch_spacing, _patch_spacing_max,
 		_regrow_ticks, PATCH_BUSH_R, PATCH_BUSH_COLOR.r, PATCH_BUSH_COLOR.g, PATCH_BUSH_COLOR.b])
 
 
