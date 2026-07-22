@@ -22,3 +22,20 @@ Justification mesuree AVANT lancement : hors-vue 6,2 % -> 73,2 % ; l entite surv
 au-dessus du plancher) car un tour complet coute 13 % du budget au lieu de 52 %.
 METRIQUES ET BARRES INCHANGEES (repas moyens, direction par graine, plancher). Aucune barre
 n est deplacee : seule la condition change, et elle est declaree ici avant le run.
+
+--- CAVEAT D INTERPRETATION, ecrit AVANT que le resultat du cone soit connu (2026-07-22) ---
+VERIFIE DANS LE CODE : le cout du planner ne contient AUCUN terme d information / incertitude /
+epistemique (0 occurrence dans command_planner.py et serve_planner_command.py). Il note chaque
+candidat par la survie attendue ETANT DONNE la croyance courante. Tourner pour regarder n ameliore
+donc jamais le score, puisque le score ignore que regarder changerait la croyance.
+(`explore_target` l.1040-1072 n est PAS un comportement : c est la machinerie epsilon du chantier
+arbitrage, etiquetee dans le code "decision FORCEE, pas la politique".)
+
+CONSEQUENCE SUR LA LECTURE DU RESULTAT :
+- Le balayage n est PAS code -- rien n a ete ecrit pour ca. Mais il ne peut pas EMERGER non plus.
+- L entite tourne pour se DEPLACER ; son cone balaie le monde par effet de bord, pas par intention.
+- Donc si la memoire ne paie pas sous le cone, DEUX explications restent ouvertes et ce test ne
+  les separe PAS : (a) la memoire est inutile ici, (b) l entite ne REGARDE jamais, donc elle
+  n encode presque rien a memoriser. Ne pas conclure (a) sans avoir teste le regard.
+- Symetriquement, si la memoire paie, c est un gain PASSIF (retenir ce qu on a vu en allant
+  ailleurs), pas une perception active. Ne pas le revendiquer comme de la perception active.
