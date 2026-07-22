@@ -432,3 +432,35 @@ j'avais oublie le reservoir initial de 100 points. La coincidence n'en etait qu'
    distribution inédite. Dette à payer avant de construire dessus.
 5. **Le corps a changé** (rotation ×4) : toutes les constantes de décision calibrées sur l'ancien
    corps sont désormais suspectes, `surv_turn_rate = 0,015` en premier.
+
+---
+
+# 14. DETTE DU CÔNE PAYÉE (partiellement) — le slot TRANSFÈRE
+
+`diagnostics/diag_wm_cone_fidelity.py`, gratuit (0 run / 0 Godot / 0 entraînement), selfcheck passé.
+
+Mesure : le slot doit reproduire le barycentre géométrique des rayons rouges de la rétine — la
+rétine EST la vérité-terrain de la perception, donc aucune donnée supplémentaire n'est requise.
+
+| régime | bouffe vue | occupation rétine | err. méd. slot | err. p90 | dist. méd. |
+|---|---|---|---|---|---|
+| 360° *(régime d'entraînement du WM)* | 82 % | 5 % | **0,000 m** | 0,044 m | 3,89 m |
+| **cône 120°** | 91 % | 29 % | **0,038 m** | 0,664 m | 3,75 m |
+
+**Le slot transfère** : 3,8 cm d'erreur médiane sur une cible à 3,75 m (1 %), pour un rayon de
+capture de 1,0 m. L'argument de `slot_head` tient en pratique — le score d'attention lit
+`[depth, R, G, B]` **sans l'angle**, et les angles sont une table qu'on a recalculée après
+chargement. Le 360° sert de CONTRÔLE et valide la mesure elle-même (erreur 0,000 m : le slot est
+exactement le barycentre pondéré).
+
+⚠️ **CE QUI RESTE NON PAYÉ.** L'occupation de la rétine passe de 5 % à 29 % : l'encodeur voit six
+fois plus de rayons occupés qu'à l'entraînement. C'est un décalage de distribution réel et son effet
+sur le LATENT n'est pas mesuré. Ce qui est établi = le chemin de perception que le planner utilise
+réellement (le slot) est sain ; PAS que le WM entier l'est. À relativiser toutefois : le projet a
+déjà mesuré que le WM n'est pas porteur comme PRÉDICTEUR (trajectoires analytiques,
+`diag_candidate_divergence`), donc la santé du latent pèse moins que celle du slot.
+⚠️ Queue : p90 = 0,66 m, dix-sept fois la médiane — dans les scènes chargées, slot et barycentre
+divergent. Reste sous le rayon de capture.
+
+**Dette restante** : la cellule « cône + rotation lente + mémoire » jamais mesurée en vrai, et le
+re-calage de `diag_reach_curve` (bandes et `SLACK` calibrés pour l'ancien monde et un trajet droit).
