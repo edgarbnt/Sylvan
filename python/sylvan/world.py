@@ -165,6 +165,19 @@ BOSQUETS_V1 = WorldPreset(
 #: 1.5) and from a SIMULATION (0/20 full lives), never from lives. This preset tests it.
 BOSQUETS_V1_SLOWTURN = dataclasses.replace(BOSQUETS_V1, name="bosquets_v1_slowturn", kin_turn=1.5)
 
+#: ⭐ RESULTAT 2026-07-22 : l ablation ci-dessus est INDISCERNABLE de BOSQUETS_V1. A monde egal
+#: (B=2, 20 vies, graine 1) : 1,40 repas / 50 % pleins / 10 % plancher DES DEUX COTES, ecart +0,00,
+#: IC95 [-0,40, +0,40]. Les runs sont bien distincts (8/20 vies de duree differente) et la rotation
+#: a bien change (p99 mesure 0,0151 contre 0,0602 rad/tick) : ce sont les AGREGATS qui coincident.
+#: ⇒ LA VITESSE DE ROTATION NE PORTE RIEN. Le cone seul produit l effet.
+#: POURQUOI mon arithmetique ("un tour complet coute 89 % du budget") ne s appliquait pas : elle
+#: chiffrait le prix d un BALAYAGE, or l entite ne balaie JAMAIS — il n existe aucun terme
+#: d information dans le cout du planner (verifie : 0 occurrence). J ai calcule le prix d un
+#: comportement que l agent n a pas.
+#: ⇒ V2 = le monde adopte SANS le changement de corps. La dette des constantes calibrees sur
+#: l ancien corps (surv_turn_rate=0.015 en tete) est ANNULEE : elles redeviennent valides.
+BOSQUETS_V2 = dataclasses.replace(BOSQUETS_V1, name="bosquets_v2", kin_turn=1.5)
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -206,6 +219,9 @@ def selfcheck() -> int:
     assert diff == ["kin_turn"], f"ablation differs on more than the turn rate: {diff}"
     print(f"  [ok] slowturn ablation differs from bosquets_v1 on exactly {diff}")
 
+    assert BOSQUETS_V2.kin_turn == 1.5 and BOSQUETS_V2.retina_fov_deg == 120.0
+    print("  [ok] bosquets_v2 = le cone SANS le changement de corps (ablation mesuree equivalente)")
+
     assert PERPETUAL_V0.retina_fov_deg == 360.0 and PERPETUAL_V0.patches_per_resource == 0
     print("  [ok] perpetual_v0 still describes the pre-patch world")
     print("SELFCHECK PASSED")
@@ -220,7 +236,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():
