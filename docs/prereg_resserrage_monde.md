@@ -94,3 +94,23 @@ DECISION LAISSEE A L OWNER : adopter B=2 (55 % pleins, 15 % plancher, 30 % de tr
 intermediaire, seul regime non sature du balayage) est un JUGEMENT apres une pre-inscription
 ECHOUEE -- a ne jamais relire comme « B=2 a passe son gate ». Ne PAS relancer avec le critere
 corrige : le choisir en connaissant deja la reponse serait de la ceremonie, pas de la rigueur.
+
+--- DECISION OWNER (2026-07-22) : ADOPTER B=2, sans run supplementaire ---
+Le gate a ECHOUE (ecart-type 354 < 400) et il n est PAS reecrit. L owner tranche d adopter quand
+meme, sur la base des deux criteres bien poses (55 % pleins, 15 % plancher) et des 30 % de vies
+intermediaires. A LIRE COMME UN JUGEMENT, jamais comme un passage de gate.
+Justification de ne pas re-mesurer : le critere manquant est demontrablement mal pose, et le refaire
+avec un critere choisi apres coup serait de la ceremonie.
+
+MONDE RESSERRE ADOPTE : 4 bosquets x 2 baies (B=2 au total), repousse 2500, espacement 9-11 m,
+rayon de couronne 0,60-0,95 m, cone 120 deg, kin_turn 6.0, mono-pulsion, memoire ON.
+Mesure : 55 % pleins, 15 % plancher, 30 % de traine intermediaire, 1,40 repas.
+
+LEVIERS NON EXPLORES, meilleurs que la penurie si on veut affiner plus tard (declares ici) :
+ - SYLVAN_INIT_ENERGY (100 -> 70) : le deficit d une vie passe de 1,25 a 2 repas, donc plus de
+   decisions par vie, SANS rendre la nourriture introuvable.
+ - SYLVAN_FOOD_HUNGER_MAX (1.0 -> ~0.6) : aujourd hui l entite mange a 95 d energie et le repas de
+   40 est ECRETE a 5 -> la moitie de la nourriture est gaspillee, et c est ce qui rend l economie
+   binaire. Interdire de manger au-dessus du seuil rend chaque repas plein et adoucit la falaise.
+ - NE PAS toucher drain / restore / vitesse : proprietes du CORPS, les bouger rendrait
+   incomparables tous les chiffres du jour, y compris le +2,17 de la memoire.
