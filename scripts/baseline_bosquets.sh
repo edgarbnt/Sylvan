@@ -13,54 +13,52 @@
 #    Un A/B à 4 bras = ~600 Mo. Le disque est déjà tendu — SUPPRIMER data/replay_buffer/<TAG>/
 #    une fois l'analyse faite (les verdicts vivent dans docs/, pas dans le corpus).
 #
-# Usage: bash scripts/baseline_bosquets.sh [episodes=6] [regrow=2000] [berries=6]
+# Usage: PRESET=bosquets_v1 MEM=on bash scripts/baseline_bosquets.sh [episodes]
+#   LE MONDE VIENT DU PRESET (python/sylvan/world.py). Aucun parametre de monde ici.
 #   SEED=1 PORT=6081 bash scripts/baseline_bosquets.sh 6 2000 6
 set +e
 NEP=${1:-6}
-REGROW=${2:-2000}
-BERRIES=${3:-6}
-MS=${MS:-3000}
 SEED=${SEED:-1}
 PORT=${PORT:-6081}
-PATCHES=${PATCHES:-2}          # par ressource : 2 bouffe + 2 eau = 4 bosquets
-SPACING=${SPACING:-9.0}
+          # par ressource : 2 bouffe + 2 eau = 4 bosquets
 HW=${HW:-2.0}                  # heading_weight : ACTIF en mono-pulsion (branche plan_wm_slot, l.580).
                                # Le projet l a retire (hw=0 >= hw=2) ; 2.0 = echafaudage rallume par erreur.
 TURNRATE=${TURNRATE:-0.015}    # modele de virage du planner. MESURE sur le nouveau corps : 0.060.
-FOV=${FOV:-360}                # VRAI cone : 36 rayons REDISTRIBUES (pas mis a zero). 360 = inchange.
-KINTURN=${KINTURN:-1.5}        # x4-x6 rend le balayage payable : a 1.5 un tour complet coute 89 %
+                # VRAI cone : 36 rayons REDISTRIBUES (pas mis a zero). 360 = inchange.
+        # x4-x6 rend le balayage payable : a 1.5 un tour complet coute 89 %
                                # du budget inter-repas, donc l entite ne peut pas se payer de regarder.
 MEM=${MEM:-off}                # on = memoire spatiale (--egomotion-head + --slot-memory)
-DRIVES=${DRIVES:-2}            # 1 = soif COUPEE (mono-pulsion). Voir l ecart mesure ci-dessous.
 # POURQUOI L OPTION 1 EXISTE : en bi-pulsion, bouffe et eau sont dans des bosquets SEPARES a ~10 m.
 # Chaque bascule de pulsion impose alors une traversee de 909 ticks pour un budget inter-conso de
 # 471 -> 1,9x. Alterner faim/soif est ARITHMETIQUEMENT IMPOSSIBLE : mesure, 5/5 episodes morts au
 # plancher de famine (2000 pas) avec repas=0 boissons=1. En mono-pulsion le budget passe a 800 ticks
 # et la traversee coute 45 pts sur un reservoir de 100 -> payable. Le mur tombe.
-PRADIUS=${PRADIUS:-0.95}       # rayon EXTERNE de la couronne de baies ; < eat_radius (1.0)
-SPACING_MAX=${SPACING_MAX:-11.0}   # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
+       # rayon EXTERNE de la couronne de baies ; < eat_radius (1.0)
+   # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
-TAG="bosq_hw${HW}_tr${TURNRATE}_f${FOV}_t${KINTURN}_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
+TAG="bosq_${PRESET:-bosquets_v1}_hw${HW}_tr${TURNRATE}_m${MEM}_s${SEED}"
 
-echo "=== BOSQUETS : regrow=$REGROW berries=$BERRIES/ressource patches=$PATCHES espacement=$SPACING-$SPACING_MAX ==="
-echo "=== WM=$WM  ep=$NEP  max_steps=$MS  seed=$SEED  port=$PORT ==="
+echo "=== BOSQUETS (preset ${PRESET:-bosquets_v1}) ==="
+echo "=== WM=$WM  ep=$NEP  seed=$SEED  port=$PORT ==="
 
-if [ "$DRIVES" = "1" ]; then
-  WATER_ENV=""                 # SYLVAN_WATER_COUNT absent => main.gd n active PAS la soif
-  echo "=== MONO-PULSION : soif coupee (isole la memoire de l arbitrage) ==="
-else
-  WATER_ENV="SYLVAN_WATER_COUNT=$BERRIES SYLVAN_WATER_PATCHES=$PATCHES SYLVAN_WATER_PATCH_SPACING=$SPACING SYLVAN_WATER_PATCH_SPACING_MAX=$SPACING_MAX SYLVAN_WATER_PATCH_RADIUS=$PRADIUS SYLVAN_WATER_REGROW=$REGROW SYLVAN_WATER_MIN_RADIUS=3.0 SYLVAN_WATER_SPAWN_RADIUS=11.0 SYLVAN_THIRST_DRAIN=0.05"
-fi
+
+# ── LE MONDE VIENT DU PRESET, jamais de valeurs recopiees ici ────────────────────────────────
+# Un preset est une source unique : Godot lance les rayons, le serveur planner decode leurs angles,
+# et les deux DOIVENT lire le meme FOV. C est precisement ce qu on a rate deux fois aujourd hui.
+WORLD_ENV=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset "${PRESET:-bosquets_v1}" --env 2>/dev/null | sed 's/^export //' | tr '\n' ' ')
+if [ -z "$WORLD_ENV" ]; then echo "!! preset ${PRESET:-bosquets_v1} illisible" >&2; exit 1; fi
+FOV_FROM_PRESET=$(echo "$WORLD_ENV" | tr ' ' '\n' | grep '^SYLVAN_RETINA_FOV_DEG=' | cut -d= -f2)
+echo "=== MONDE (preset ${PRESET:-bosquets_v1}) : $WORLD_ENV ==="
 
 if [ "$MEM" = "on" ]; then
   MEM_FLAGS="--egomotion-head data/checkpoints/egomotion_head/best.pt --slot-memory"
 else
   MEM_FLAGS=""
 fi
-echo "=== MEMOIRE : $MEM | FOV : ${FOV}deg | KIN_TURN : $KINTURN ==="
+echo "=== MEMOIRE : $MEM ==="
 
-SYLVAN_RETINA_FOV_DEG=$FOV SYLVAN_PLANNER_HEADING_W=$HW SYLVAN_PLANNER_TURN_RATE=$TURNRATE \
+SYLVAN_RETINA_FOV_DEG=$FOV_FROM_PRESET SYLVAN_PLANNER_HEADING_W=$HW SYLVAN_PLANNER_TURN_RATE=$TURNRATE \
 SYLVAN_PLANNER_URGENCY_W=6.0 \
 SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
@@ -70,24 +68,16 @@ PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command
 SRV=$!
 for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
 
-# $WATER_ENV passe par `env` a la FIN, jamais dans la chaine de prefixes ci-dessous : le shell
+# $WATER_ENV_UNUSED passe par `env` a la FIN, jamais dans la chaine de prefixes ci-dessous : le shell
 # analyse les prefixes AVANT l expansion, donc une variable vide y devient le NOM DE LA COMMANDE.
 # Et aucun commentaire ne doit tomber DANS la chaine : il commenterait la commande.
-SYLVAN_KINEMATIC=1 SYLVAN_KIN_SPEED=0.8 SYLVAN_KIN_TURN=$KINTURN \
-SYLVAN_RETINA_FOV_DEG=$FOV \
 SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 \
 SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 \
-SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \
-SYLVAN_FOOD_COUNT=$BERRIES SYLVAN_FOOD_PATCHES=$PATCHES \
-SYLVAN_FOOD_PATCH_SPACING=$SPACING SYLVAN_FOOD_PATCH_SPACING_MAX=$SPACING_MAX \
-SYLVAN_FOOD_PATCH_RADIUS=$PRADIUS SYLVAN_FOOD_REGROW=$REGROW \
-SYLVAN_FOOD_MIN_RADIUS=3.0 SYLVAN_FOOD_SPAWN_RADIUS=11.0 \
-SYLVAN_ENERGY_DRAIN=0.05 \
-SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=$NEP SYLVAN_MAX_EPISODE_STEPS=$MS SYLVAN_SEED=$SEED \
+SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=$NEP SYLVAN_SEED=$SEED \
 SYLVAN_COLLECTOR_MODE=policy_server SYLVAN_POLICY_HOST=127.0.0.1 SYLVAN_POLICY_PORT=$PORT \
 SYLVAN_POLICY_EXPLORATION_STD_INITIAL=0 SYLVAN_POLICY_EXPLORATION_STD_FINAL=0 \
 SYLVAN_REFLEX_STRENGTH=0 SYLVAN_ASSIST_RATIO=0 SYLVAN_RUN_DIR=data/replay_buffer/${TAG}_run \
-env $WATER_ENV ./tools/godot/godot --path godot --headless > /tmp/${TAG}_free.log 2>&1
+env $WORLD_ENV ./tools/godot/godot --path godot --headless > /tmp/${TAG}_free.log 2>&1
 kill -9 $SRV 2>/dev/null
 
 echo "=== ce qui a VRAIMENT ete servi (le log le prouve) ==="
