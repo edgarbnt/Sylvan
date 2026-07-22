@@ -20,6 +20,9 @@ SEED=${SEED:-1}
 PORT=${PORT:-6081}
 PATCHES=${PATCHES:-2}          # par ressource : 2 bouffe + 2 eau = 4 bosquets
 SPACING=${SPACING:-9.0}
+HW=${HW:-2.0}                  # heading_weight : ACTIF en mono-pulsion (branche plan_wm_slot, l.580).
+                               # Le projet l a retire (hw=0 >= hw=2) ; 2.0 = echafaudage rallume par erreur.
+TURNRATE=${TURNRATE:-0.015}    # modele de virage du planner. MESURE sur le nouveau corps : 0.060.
 FOV=${FOV:-360}                # VRAI cone : 36 rayons REDISTRIBUES (pas mis a zero). 360 = inchange.
 KINTURN=${KINTURN:-1.5}        # x4-x6 rend le balayage payable : a 1.5 un tour complet coute 89 %
                                # du budget inter-repas, donc l entite ne peut pas se payer de regarder.
@@ -34,7 +37,7 @@ PRADIUS=${PRADIUS:-0.95}       # rayon EXTERNE de la couronne de baies ; < eat_r
 SPACING_MAX=${SPACING_MAX:-11.0}   # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
-TAG="bosq_f${FOV}_t${KINTURN}_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
+TAG="bosq_hw${HW}_tr${TURNRATE}_f${FOV}_t${KINTURN}_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
 
 echo "=== BOSQUETS : regrow=$REGROW berries=$BERRIES/ressource patches=$PATCHES espacement=$SPACING-$SPACING_MAX ==="
 echo "=== WM=$WM  ep=$NEP  max_steps=$MS  seed=$SEED  port=$PORT ==="
@@ -53,7 +56,8 @@ else
 fi
 echo "=== MEMOIRE : $MEM | FOV : ${FOV}deg | KIN_TURN : $KINTURN ==="
 
-SYLVAN_RETINA_FOV_DEG=$FOV SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
+SYLVAN_RETINA_FOV_DEG=$FOV SYLVAN_PLANNER_HEADING_W=$HW SYLVAN_PLANNER_TURN_RATE=$TURNRATE \
+SYLVAN_PLANNER_URGENCY_W=6.0 \
 SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
