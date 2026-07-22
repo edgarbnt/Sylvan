@@ -20,6 +20,7 @@ SEED=${SEED:-1}
 PORT=${PORT:-6081}
 PATCHES=${PATCHES:-2}          # par ressource : 2 bouffe + 2 eau = 4 bosquets
 SPACING=${SPACING:-9.0}
+MEM=${MEM:-off}                # on = memoire spatiale (--egomotion-head + --slot-memory)
 DRIVES=${DRIVES:-2}            # 1 = soif COUPEE (mono-pulsion). Voir l ecart mesure ci-dessous.
 # POURQUOI L OPTION 1 EXISTE : en bi-pulsion, bouffe et eau sont dans des bosquets SEPARES a ~10 m.
 # Chaque bascule de pulsion impose alors une traversee de 909 ticks pour un budget inter-conso de
@@ -30,7 +31,7 @@ PRADIUS=${PRADIUS:-0.95}       # rayon EXTERNE de la couronne de baies ; < eat_r
 SPACING_MAX=${SPACING_MAX:-11.0}   # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
-TAG="bosq_d${DRIVES}_r${REGROW}_b${BERRIES}_s${SEED}"
+TAG="bosq_m${MEM}_d${DRIVES}_p${PATCHES}_r${REGROW}_b${BERRIES}_s${SEED}"
 
 echo "=== BOSQUETS : regrow=$REGROW berries=$BERRIES/ressource patches=$PATCHES espacement=$SPACING-$SPACING_MAX ==="
 echo "=== WM=$WM  ep=$NEP  max_steps=$MS  seed=$SEED  port=$PORT ==="
@@ -42,12 +43,19 @@ else
   WATER_ENV="SYLVAN_WATER_COUNT=$BERRIES SYLVAN_WATER_PATCHES=$PATCHES SYLVAN_WATER_PATCH_SPACING=$SPACING SYLVAN_WATER_PATCH_SPACING_MAX=$SPACING_MAX SYLVAN_WATER_PATCH_RADIUS=$PRADIUS SYLVAN_WATER_REGROW=$REGROW SYLVAN_WATER_MIN_RADIUS=3.0 SYLVAN_WATER_SPAWN_RADIUS=11.0 SYLVAN_THIRST_DRAIN=0.05"
 fi
 
+if [ "$MEM" = "on" ]; then
+  MEM_FLAGS="--egomotion-head data/checkpoints/egomotion_head/best.pt --slot-memory"
+else
+  MEM_FLAGS=""
+fi
+echo "=== MEMOIRE : $MEM ==="
+
 SYLVAN_PLANNER_HEADING_W=2.0 SYLVAN_PLANNER_URGENCY_W=6.0 \
 SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
-  --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 > /tmp/${TAG}_srv.log 2>&1 &
+  --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 $MEM_FLAGS > /tmp/${TAG}_srv.log 2>&1 &
 SRV=$!
 for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
 

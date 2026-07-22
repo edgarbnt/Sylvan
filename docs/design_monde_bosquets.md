@@ -343,3 +343,49 @@ forme what-where-when, et c'est là que la mémoire paie.
   seulement montré qu'il est vivable et non saturé.
 - **Mono-pulsion assumé** : ce monde ne teste PAS l'arbitrage. C'est délibéré (isoler la mémoire),
   pas un oubli.
+
+---
+
+# 12. A/B MÉMOIRE (le juge) — **PARTIEL / effet non distinguable de zéro**
+
+Pré-inscription : `docs/prereg_ab_memoire_bosquets.md`, écrite et commitée AVANT lancement.
+Monde calibré (4 bosquets × 2 baies, repousse 2500, mono-pulsion), 2 graines × 20 vies par bras.
+Activation vérifiée dans le log serveur : `MÉMOIRE SPATIALE active` côté ON, absente côté OFF.
+
+| | OFF (n=40) | ON (n=40) | écart |
+|---|---|---|---|
+| repas **moyens** | 1,45 | 1,68 | **+0,23** |
+| IC 95 % bootstrap (20k) | | | **[−0,05 ; +0,52]** — contient zéro |
+| repas médians | 1,0 | 2,0 | +1,0 *(artefact, voir ci-dessous)* |
+| épisodes pleins | 25 % | 20 % | **−5 pts** (confirmation ÉCHOUE) |
+| vies au plancher de famine | 8 % | **0 %** | −8 pts |
+| direction par graine | | | +0,50 / **−0,05** |
+
+**Verdict pré-inscrit : PARTIEL** (gain poolé atteint, mais la direction s'inverse sur la graine 2).
+
+⚠️ **Ma métrique primaire était mal spécifiée, et je le dis plutôt que d'en changer.** La médiane
+d'un petit compte entier saute d'une unité entière : les deux distributions sont quasi identiques
+et la médiane passe pourtant de 1 à 2. La moyenne est la statistique honnête ici, et elle donne
++0,23 avec un intervalle qui contient zéro. La barre n'est pas déplacée — elle est déclarée
+mauvaise.
+
+**Puissance** : taille d'effet 0,34 σ → il faudrait **~139 vies par bras** pour trancher à 80 %.
+Contre 40 mesurées. Payer 3,5× plus pour confirmer un effet aussi mince n'est pas recommandé.
+
+## Le seul effet propre : la mémoire supprime les catastrophes, pas la médiocrité
+
+`off` contient **trois vies à zéro repas** ; `on` n'en contient **aucune** (minimum 1). Le plancher
+de famine tombe de 8 % à 0 %. La mémoire ne relève pas la performance typique — elle rattrape les
+vies où l'entité errait sans jamais rien trouver. Mécaniquement cohérent : elle sert quand on ne
+voit rien, pas quand on voit.
+
+## Cohérence avec le G0 simulé — ce n'est PAS une surprise
+
+La simulation (§9) prédisait un écart mémoire ≈ 0 tant que la visibilité reste à p_vis ≈ 0,58, et
+un écart réel seulement vers 0,12. Le monde à bosquets crée bien de l'aliasing, mais l'entité voit
+encore assez pour s'en passer la plupart du temps. **Le réel confirme la simulation.** Et le gate
+géométrique (§6-bis) a déjà montré que descendre à 0,12 exigerait ~200 % de couverture du sol.
+
+⇒ **Conclusion de l'arc** : l'aliasing par épuisement est un vrai levier mais MODESTE dans ce
+corps ; le facteur qui domine reste l'omniscience de la rétine 360° à 10 m. Cf §6-ter : mémoire et
+recherche ne sont pas fixables par le monde seul ici.
