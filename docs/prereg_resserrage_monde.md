@@ -1,0 +1,29 @@
+RESSERRAGE DU MONDE — PRE-INSCRIT (2026-07-22, avant lancement)
+
+POURQUOI. Dans la config validee, 95-100 % des episodes sont PLEINS et l entite fait ~4 repas pour
+un besoin de 3,75. Consequence mesuree le jour meme : le nettoyage des constantes a rendu trois
+intervalles de confiance contenant TOUS zero -- rien ne discrimine. C est le meme mur que celui qui
+avait tue le critique appris (signal de valeur constant a 99,6 % : `time.clamp(max=cap)` fait
+saturer tout candidat qui survit, donc la cible n a rien a classer).
+Tant que la survie sature, ni le nettoyage des constantes ni un critique appris ne sont mesurables.
+
+LEVIER CHOISI = LA REPOUSSE, et l arithmetique le designe :
+  arriver a un bosquet avec 55 d energie -> manger 2 baies (+80, ecrete a 100) -> traverser 10 m
+  (-45) -> arriver a 55. Le cycle est EXACTEMENT a l equilibre. Il ne tient que parce que la
+  repousse (2500 ticks) remplit les bosquets a temps. La ralentir augmente la probabilite d arriver
+  sur un bosquet VIDE = l echec pertinent pour la DECISION, et celui que la memoire doit eviter.
+On ne touche NI au drain NI au restore NI a la vitesse : ce sont des proprietes du corps, et les
+changer rendrait incomparables tous les chiffres du jour.
+
+BALAYAGE : regrow dans {2500 (actuel), 4000, 6000, 8000}. Config par ailleurs identique a celle
+validee (cone 120, kin_turn 6.0, memoire ON, 4 bosquets x 2 baies, mono-pulsion, seed 1, 12 vies).
+
+CRITERES -- pre-enregistres :
+  CALIBRE : 30 % <= episodes pleins <= 70 %  ET  vies au plancher de famine < 20 %
+            ET ecart-type des durees de vie > 400 ticks (il FAUT de la dispersion, c est l objet)
+  SATURE  : episodes pleins > 80 %  -> trop facile, la valeur ne discriminera pas
+  MUR     : plancher >= 40 %  OU  pleins < 20 %  -> on mesurerait un mur, pas une decision
+  On retient le regrow CALIBRE le PLUS FAIBLE (le moins de changement par rapport a l existant).
+
+CE QUE CE TEST NE DIT PAS : une graine, 12 vies. Directionnel. Le reglage retenu sera reconfirme
+sur 2 graines avant d etre ecrit comme defaut.
