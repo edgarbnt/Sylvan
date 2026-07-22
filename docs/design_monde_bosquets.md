@@ -389,3 +389,44 @@ géométrique (§6-bis) a déjà montré que descendre à 0,12 exigerait ~200 % 
 ⇒ **Conclusion de l'arc** : l'aliasing par épuisement est un vrai levier mais MODESTE dans ce
 corps ; le facteur qui domine reste l'omniscience de la rétine 360° à 10 m. Cf §6-ter : mémoire et
 recherche ne sont pas fixables par le monde seul ici.
+
+---
+
+# 13. A/B MÉMOIRE SOUS CÔNE — **PASS**, et c'est une INTERACTION
+
+Pré-inscription + avenant cône + caveat d'interprétation : tous commités AVANT le run.
+Activation vérifiée par bras dans le log serveur (cône des deux côtés, mémoire côté ON seulement).
+
+| condition | repas moy | pleins | plancher |
+|---|---|---|---|
+| 360°, rotation 1,5, mémoire off | 1,45 | 25 % | 8 % |
+| 360°, rotation 1,5, mémoire ON | 1,68 | 20 % | 0 % |
+| cône 120°, rotation 6,0, mémoire off | 1,62 | 28 % | 0 % |
+| **cône 120°, rotation 6,0, mémoire ON** | **3,80** | **98 %** | 0 % |
+
+- effet mémoire à 360° : **+0,23** (rien)
+- effet corps rapide + cône sans mémoire : **+0,18** (rien)
+- **effet mémoire SOUS CÔNE : +2,17**, IC 95 % bootstrap **[+1,77 ; +2,58]**, 1,52 σ,
+  direction identique sur les 2 graines (+2,20 / +2,15)
+
+**Ni l'un ni l'autre séparément ; les deux ensemble.** C'est la signature d'une interaction, et elle
+était PRÉDITE : le G0 simulé annonçait un écart nul tant que le hors-vue reste marginal. On l'a fait
+passer de 6,2 % à 73,2 % en redistribuant les rayons, et la mémoire est devenue porteuse.
+
+Le bras ON fait 3,80 repas pour un besoin métabolique de 3,75 : il mange exactement ce qu'il faut.
+
+## Caveats — à lire avec le résultat, pas après
+
+1. **Confusion cône × vitesse de rotation.** Les deux ont changé ensemble. Le bras OFF montre que la
+   vitesse seule n'apporte rien (+0,18), donc elle ne porte pas l'effet — mais la cellule
+   « cône + rotation lente + mémoire » n'a PAS été mesurée en vrai (seulement en simulation, où elle
+   donnait 0/20). Le rôle exact de la vitesse reste non isolé.
+2. **La survie sature de nouveau** (98 % pleins) : ne plus juger là-dessus, utiliser les repas.
+3. **C'est de la mémoire PASSIVE, pas de la perception active** (caveat pré-inscrit, `ee5dd65`) :
+   le coût du planner ne contient aucun terme d'information, l'entité ne tourne jamais POUR regarder.
+   Elle retient ce qu'elle a vu en se déplaçant pour d'autres raisons. Ne pas revendiquer autre chose.
+4. **Fidélité du latent du WM sous cône : NON VÉRIFIÉE.** Le slot transfère par construction (angles
+   géométriques recalculés), mais l'encodeur a été entraîné sur des rétines 360° et voit désormais une
+   distribution inédite. Dette à payer avant de construire dessus.
+5. **Le corps a changé** (rotation ×4) : toutes les constantes de décision calibrées sur l'ancien
+   corps sont désormais suspectes, `surv_turn_rate = 0,015` en premier.
