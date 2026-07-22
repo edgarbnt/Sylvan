@@ -413,7 +413,9 @@ Activation vérifiée par bras dans le log serveur (cône des deux côtés, mém
 était PRÉDITE : le G0 simulé annonçait un écart nul tant que le hors-vue reste marginal. On l'a fait
 passer de 6,2 % à 73,2 % en redistribuant les rayons, et la mémoire est devenue porteuse.
 
-Le bras ON fait 3,80 repas pour un besoin métabolique de 3,75 : il mange exactement ce qu'il faut.
+⚠️ **RETRACTE (2026-07-22)** : j'avais ecrit ici « le bras ON fait 3,80 repas pour un besoin
+metabolique de 3,75, il mange exactement ce qu'il faut ». Le besoin est **1,25 repas**, pas 3,75 —
+j'avais oublie le reservoir initial de 100 points. La coincidence n'en etait qu'une.
 
 ## Caveats — à lire avec le résultat, pas après
 

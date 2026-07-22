@@ -45,3 +45,25 @@ BALAYAGE 2 : berries dans {4, 3, 2} a repousse 2500, 4 bosquets, reste identique
 Effet secondaire recherche : avec moins de baies que de bosquets, certains bosquets sont VIDES des
 le depart tout en gardant leur buisson-marqueur visible -- c est exactement l aliasing qu on veut.
 CRITERES INCHANGES (30-70 % pleins, plancher < 20 %, ecart-type > 400).
+
+--- RESULTAT DU BALAYAGE 2 (stock initial) + CORRECTION D UN CHIFFRE FAUX ---
+| baies | pleins | plancher | ecart-type | repas | verdict |
+|   8   |  92 %  |   0 %    |     33     | 3,67  | SATURE  |
+|   4   |  92 %  |   0 %    |     83     | 2,17  | SATURE  |
+|   3   |  92 %  |   0 %    |     55     | 2,00  | SATURE  |
+|   2   |  33 %  |  17 %    |    348     | 1,17  | entre-deux |
+
+🚨 CHIFFRE FAUX QUE J AI REPETE TOUTE LA SESSION : « besoin metabolique = 3,75 repas ». FAUX.
+J avais divise le drain TOTAL (3000 x 0,05 = 150 points) par le restore (40) en OUBLIANT le
+RESERVOIR INITIAL. L entite demarre a 100 : il ne lui manque que 50 points = 1,25 REPAS.
+Verification sur les donnees, exacte : a B=3, deux repas donnent 100 + 80 - 150 = 30 points
+restants -> elle finit l episode (92 % pleins, mesure). A B=2, 1,17 repas donne -3 -> elle meurt
+juste avant (survie mediane 2800, mesuree).
+A RETIRER EXPLICITEMENT : le commentaire « le bras ON fait 3,80 repas pour un besoin de 3,75, il
+mange exactement ce qu il faut » (§13) etait une COINCIDENCE, pas une confirmation.
+
+VERDICT : B=2 est le seul regime qui discrimine (durees de vie
+[2000, 2000, 2420, 2610, 2730, 2800, 2800, 2800, 3000, 3000, 3000, 3000] = vraie dispersion),
+mais il ECHOUE le critere d ecart-type : 348 contre 400 exige. Barre NON deplacee malgre les
+52 ticks d ecart et malgre une distribution visiblement dispersee.
+=> non concluant par pre-inscription. A re-mesurer sur 2 graines et 20 vies avant d etre adopte.
