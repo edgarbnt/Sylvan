@@ -67,3 +67,30 @@ VERDICT : B=2 est le seul regime qui discrimine (durees de vie
 mais il ECHOUE le critere d ecart-type : 348 contre 400 exige. Barre NON deplacee malgre les
 52 ticks d ecart et malgre une distribution visiblement dispersee.
 => non concluant par pre-inscription. A re-mesurer sur 2 graines et 20 vies avant d etre adopte.
+
+--- CONFIRMATION B=2 (2 graines x 20 vies) + CRITERE DECLARE MAL POSE ---
+                pleins   plancher   ecart-type   repas
+  graine 1       50 %      10 %        306        1,40
+  graine 2       60 %      20 %        395        1,40
+  POOLE n=40     55 %      15 %        354        1,40
+
+VERDICT PRE-INSCRIT : NON CALIBRE (2 criteres sur 3 ; l ecart-type echoue, 354 < 400).
+LA BARRE N EST PAS DEPLACEE ET LE RUN N EST PAS REFAIT.
+
+🚨 MAIS LE CRITERE ETAIT MATHEMATIQUEMENT MAL POSE, et c est une propriete de ma pre-inscription,
+pas une re-lecture du resultat. La duree de vie est BORNEE : plancher de famine 2000, plafond
+d episode 3000. Sur [2000, 3000] :
+    dispersion UNIFORME (ce qu on cherche)      -> ecart-type 289
+    bimodale 50/50 aux extremes                 -> ecart-type 500  = MAXIMUM ABSOLU
+    mesure                                      -> ecart-type 354
+Exiger > 400 revient donc a exiger du TOUT-OU-RIEN, pas de la dispersion. Une distribution
+parfaitement etalee ECHOUE ce critere par construction. Les 354 mesures sont DEJA plus disperses
+qu une uniforme.
+
+CRITERE BIEN POSE, declare ici pour les pre-inscriptions FUTURES (jamais applique retroactivement
+a ce run) : fraction de vies NI au plancher NI au plafond >= 25 %. Mesure ici : 30 % (12/40).
+
+DECISION LAISSEE A L OWNER : adopter B=2 (55 % pleins, 15 % plancher, 30 % de traine
+intermediaire, seul regime non sature du balayage) est un JUGEMENT apres une pre-inscription
+ECHOUEE -- a ne jamais relire comme « B=2 a passe son gate ». Ne PAS relancer avec le critere
+corrige : le choisir en connaissant deja la reponse serait de la ceremonie, pas de la rigueur.
