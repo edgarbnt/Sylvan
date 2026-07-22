@@ -39,3 +39,18 @@ CONSEQUENCE SUR LA LECTURE DU RESULTAT :
   n encode presque rien a memoriser. Ne pas conclure (a) sans avoir teste le regard.
 - Symetriquement, si la memoire paie, c est un gain PASSIF (retenir ce qu on a vu en allant
   ailleurs), pas une perception active. Ne pas le revendiquer comme de la perception active.
+
+--- CELLULE MANQUANTE (pre-inscrit 2026-07-22, avant lancement) ---
+Le +2,17 repas a ete mesure en changeant FOV et kin_turn ENSEMBLE. Rien dans ces donnees ne les
+separe. Cellule manquante = preset bosquets_v1_slowturn (cone 120 conserve, kin_turn 6.0 -> 1.5),
+memoire ON, 20 vies, graine 1. Le selfcheck du preset ASSERTE qu il ne differe que sur kin_turn.
+REFERENCE = bosquets_v1 + memoire ON : 3,80 repas, 98 % pleins.
+
+LECTURES PRE-ENREGISTREES :
+  s effondre (repas <= 2,0 ou majorite au plancher) -> la rotation rapide est NECESSAIRE ; le
+      recit du balayage impayable est confirme EN VIES, et le corps rapide devient une condition
+      du cone, pas un accessoire.
+  equivalent (repas >= 3,3) -> la vitesse de rotation ne portait RIEN, mon explication etait
+      FAUSSE, et le cone seul produit l effet. Meilleure nouvelle : pas besoin de toucher au corps,
+      donc pas de constantes perimees a trainer.
+  intermediaire (2,0 < repas < 3,3) -> on connaitra la part de chacun.

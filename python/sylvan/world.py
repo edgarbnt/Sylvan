@@ -158,6 +158,14 @@ BOSQUETS_V1 = WorldPreset(
 )
 
 
+#: ABLATION of BOSQUETS_V1: the cone WITHOUT the fast body. Isolates what the turn rate carries.
+#: The +2.17 meals of 2026-07-22 was measured with FOV and kin_turn changed TOGETHER, so nothing in
+#: that data separates them. The claim it rested on — "the 360 retina compensates a body too slow to
+#: afford looking around" — comes from arithmetic (a full scan costs 89 % of the inter-meal budget at
+#: 1.5) and from a SIMULATION (0/20 full lives), never from lives. This preset tests it.
+BOSQUETS_V1_SLOWTURN = dataclasses.replace(BOSQUETS_V1, name="bosquets_v1_slowturn", kin_turn=1.5)
+
+
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
     p = BOSQUETS_V1
@@ -191,6 +199,13 @@ def selfcheck() -> int:
     except dataclasses.FrozenInstanceError:
         print("  [ok] presets are immutable")
 
+    ab = BOSQUETS_V1_SLOWTURN
+    assert ab.kin_turn == 1.5 and ab.retina_fov_deg == BOSQUETS_V1.retina_fov_deg, "ablation must vary ONLY the turn"
+    diff = [f.name for f in dataclasses.fields(ab)
+            if f.name != "name" and getattr(ab, f.name) != getattr(BOSQUETS_V1, f.name)]
+    assert diff == ["kin_turn"], f"ablation differs on more than the turn rate: {diff}"
+    print(f"  [ok] slowturn ablation differs from bosquets_v1 on exactly {diff}")
+
     assert PERPETUAL_V0.retina_fov_deg == 360.0 and PERPETUAL_V0.patches_per_resource == 0
     print("  [ok] perpetual_v0 still describes the pre-patch world")
     print("SELFCHECK PASSED")
@@ -205,7 +220,8 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "perpetual_v0": PERPETUAL_V0}[a.preset]
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN,
+     "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():
             print(f"export {k}={v}")
