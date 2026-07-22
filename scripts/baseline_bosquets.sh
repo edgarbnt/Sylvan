@@ -9,6 +9,10 @@
 #
 # ⚠️ Ce n'est PAS le juge. Le juge est l'A/B mémoire ON/OFF, qui vient après.
 #
+# 💾 COÛT DISQUE : SYLVAN_BC_LOG écrit un journal complet du planner, ~150 Mo par bras de 20 vies.
+#    Un A/B à 4 bras = ~600 Mo. Le disque est déjà tendu — SUPPRIMER data/replay_buffer/<TAG>/
+#    une fois l'analyse faite (les verdicts vivent dans docs/, pas dans le corpus).
+#
 # Usage: bash scripts/baseline_bosquets.sh [episodes=6] [regrow=2000] [berries=6]
 #   SEED=1 PORT=6081 bash scripts/baseline_bosquets.sh 6 2000 6
 set +e
