@@ -61,7 +61,15 @@ var next_perturbation_steps := 60
 
 
 func _ready() -> void:
-	randomize()
+	# DETERMINISME : sans SYLVAN_SEED on garde l'entropie (comportement historique). Avec, on
+	# seede le RNG GLOBAL au lieu de randomize() -> gait_phase (donc la proprio sin/cos aux dims
+	# 1137-1138) devient reproductible entre runs. Requis par le juge de contrefactuels : deux
+	# runs meme seed doivent donner la MEME commande au step 0.
+	var _sd := OS.get_environment("SYLVAN_SEED")
+	if _sd != "":
+		seed(int(_sd))
+	else:
+		randomize()
 	if world_scene != null:
 		world_instance = world_scene.instantiate()
 		add_child(world_instance)

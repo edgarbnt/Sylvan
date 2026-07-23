@@ -87,3 +87,17 @@ PROCHAIN PAS avant tout juge de rang : rendre le rejeu deterministe. Pistes a ve
 (1) retirer/seeder `randomize()` (main.gd:64) ; (2) seeder le RNG cote serveur planner + memoire
 spatiale. Puis re-passer le CONTROLE 1 (deux runs identiques -> repas identiques) AVANT de mesurer
 un seul candidat. NEGATIF BANKE : ne pas lire le controle 2 tant que le controle 1 ne passe pas.
+
+--- DETERMINISME PAYE (2026-07-23) : trois causes, trois corrections ---
+Deux runs meme seed etaient NON reproductibles (0 vs 2 repas, commande divergente des le step 0).
+Traque : la COMMANDE diverge au step 0 (pas l energie) -> source cote planner, pas Godot physique.
+Trois causes empilees, corrigees dans l ordre :
+1. RNG GLOBAL de Godot : `gait_phase = randf()` (main.gd:536) alimente la proprio (sin/cos, dims
+   1137-1138) -> WM voit une entree differente. FIX : main.gd:64 seede le RNG global depuis
+   SYLVAN_SEED au lieu de randomize() ; sans SYLVAN_SEED, randomize() conserve (non-regression).
+2. TORCH MULTI-THREAD : reductions flottantes non-associatives -> argmax bascule sur candidats
+   quasi ex-aequo. FIX : SYLVAN_PLANNER_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1.
+3. SERVEUR PARTAGE STATEFUL : la memoire spatiale (MultiSlotMemory) garde son belief d un run a
+   l autre. FIX : un serveur FRAIS par run.
+Les TROIS sont necessaires. Verifie : serveur frais + seed + mono-thread => 201/201 pas
+bit-identiques entre deux runs. Le juge de contrefactuels est DEBLOQUE.
