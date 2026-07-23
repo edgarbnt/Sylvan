@@ -101,3 +101,32 @@ Trois causes empilees, corrigees dans l ordre :
    l autre. FIX : un serveur FRAIS par run.
 Les TROIS sont necessaires. Verifie : serveur frais + seed + mono-thread => 201/201 pas
 bit-identiques entre deux runs. Le juge de contrefactuels est DEBLOQUE.
+
+--- JUGE EN FENÊTRE AUX FORKS (2026-07-23) : NÉGATIF INATTAQUABLE ---
+Déterminisme PAYÉ (serveur frais + seed + mono-thread) : deux runs sans CF -> 1=1 repas dans la
+fenêtre. Le juge mesure enfin la vraie chose.
+
+Seed 3, fork k=1560 (repas connu à 1680), fenêtre [1560,2160]. Les 21 candidats donnent TOUS
+**1 repas** — y compris le demi-tour brutal (vx=0.75, om=-0.6). AUCUNE variation.
+
+Contrôle de qualité du fork (run déterministe) : à k=1560 la bouffe est à **2,1 m**, l'agent
+APPROCHE, affamé (énergie 23). C'est un VRAI fork, pas une bouchée déjà acquise. Forcer le pire
+choix pendant 60 ticks ne coûte pourtant pas le repas : le planner replanifie à 1620 et rattrape,
+toujours dans la fenêtre.
+
+⇒ VERDICT TRIPLEMENT CONFIRMÉ (diag_consequence 1,9 % ; juge vie-entière 0 variation ; juge
+fenêtre-fork 0 variation à 2,1 m) : **AUCUNE DÉCISION UNIQUE NE COMPTE dans ce monde.** Le planner
+(replan 60) récupère de n'importe quel choix. Un critique qui améliore le classement d'UNE décision
+ne peut donc rien apporter. Sa seule valeur possible = le compoundage de micro-améliorations sur
+TOUTES les décisions, que le gate sur vécu a estimé à +0,093 R² FRAGILE, sans feature porteuse.
+
+⇒ **CHANTIER CRITIQUE FERMÉ POUR CE MONDE.** Pas parce que « l'appris ne marche pas » (la mémoire
+apprise a payé +2,17 sous cône) mais parce que le MONDE ne rend aucune décision conséquente. Même
+cause-racine que le WM-prédicteur inutile et la perception active affamée : le corps/monde est trop
+RÉCUPÉRABLE. Le seul levier qui débloquerait les trois ensemble = l'IRRÉVERSIBILITÉ (momentum,
+effet différé, ou perte permanente d'une ressource sur mauvais choix — occlusion+mémoire en est une
+forme). C'est un changement de CORPS/MONDE, décision owner.
+
+NÉGATIF BANKÉ : ne pas rouvrir le critique appris tant que les décisions ne sont pas rendues
+conséquentes. L'instrument déterministe (hook CF + juge fenêtre) est PRÊT pour re-juger dès qu'elles
+le seront.
