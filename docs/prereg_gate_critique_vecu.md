@@ -130,3 +130,31 @@ forme). C'est un changement de CORPS/MONDE, décision owner.
 NÉGATIF BANKÉ : ne pas rouvrir le critique appris tant que les décisions ne sont pas rendues
 conséquentes. L'instrument déterministe (hook CF + juge fenêtre) est PRÊT pour re-juger dès qu'elles
 le seront.
+
+--- DISTRIBUTION DE CONSÉQUENCE (2026-07-23) : le « fermé » du matin était PRÉMATURÉ ---
+Balayage : pire choix tenu 240 ticks, 6 graines x 3 ticks fixes, fenêtre 800, rejeu déterministe.
+
+  seed tick ref pire conseq | seed tick ref pire conseq
+   1  600  1   1    non  |  6  600  0   0    non
+   1 1200  0   0    non  |  6 1200  1   0    OUI
+   1 1800  0   0    non  |  6 1800  0   0    non
+   3  600  0   0    non  |  8  *     0   0    non (x3)
+   3 1200  1   0    OUI  |  9  600  1   1    non
+   3 1800  0   0    non  |  9 1200  0   0    non
+   5  *     0   0    non (x3)|  9 1800  1   0    OUI
+
+TAUX pré-inscrit : 3/18 = 17 % (IC95 [4,41], barre 15) -> PASS MARGINAL.
+NUANCE 1 : 13/18 points ont ref=0 (pas de repas en jeu -> pas des forks). Conditionnel aux points
+où un repas est EN JEU (ref>=1) : 3/5 = 60 % (IC95 [15,95], n=5 minuscule).
+NUANCE 2 (cruciale) : cette conséquence exige de tenir le pire choix 240 TICKS. Au régime actuel
+(replan 60) une décision SEULE ne change rien (déjà prouvé). La conséquence existe SOUS engagement
+long, pas au régime vécu.
+
+⇒ **CORRECTION : le « chantier fermé » du matin était PRÉMATURÉ.** La conséquence EXISTE (17 % brut,
+~60 % quand un repas est en jeu) mais elle est CONDITIONNELLE et le signal est mince (n=5). Rouvrir
+le critique n'a de sens que COUPLÉ à un levier qui rend les décisions conséquentes AU RÉGIME VÉCU.
+
+⇒ **DÉCISION OWNER (2026-07-23) : modifier le CORPS/MONDE pour rendre les décisions conséquentes**,
+plutôt qu'abandonner le critique. C'est la cause-racine (récupérabilité) attaquée de front. Le
+balayage `scripts/cf_fork_distribution.sh` DEVIENT LE GATE : appliquer un levier -> re-mesurer le
+taux de conséquence. Objectif : taux (repas en jeu) nettement > baseline, SANS casser la survie (§2).
