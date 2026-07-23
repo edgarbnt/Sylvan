@@ -66,3 +66,24 @@ ne dit pas qu une tete saura ranger. Ces deux questions sont desormais clairemen
 DECISION OWNER REQUISE : le juge de classement demande une infra Godot (save/restore d etat +
 commande forcee) — un vrai build, non chiffre ici, peut-etre pas faisable sans toucher au moteur
 (a scoper). A trancher avant de s y engager.
+
+--- JUGE DE CONTREFACTUELS : HOOK OK, mais REJEU NON DETERMINISTE (2026-07-23) ---
+
+Le hook SYLVAN_CF_TICK/CF_CMD fonctionne (commit fbf9904, override d une decision au tick k verifie).
+Sonde de validation a un etat (scripts/cf_rank_probe.sh, tick 600, 21 candidats + 2 controles) :
+
+CONTROLE 1 (determinisme) ECHOUE : deux runs SANS contrefactuel, config identique, donnent
+2 repas (survie 3000) contre 0 repas (survie 2000). Le rejeu n est PAS reproductible.
+CONTROLE 2 : variation presente (repas 0 a 2 entre candidats) MAIS non interpretable, car une
+partie est du bruit de rejeu, pas l effet du candidat.
+
+⇒ VERDICT : le juge de contrefactuels est BLOQUE tant que le rejeu n est pas deterministe. C est
+exactement ce que le scoping avait signale : main.gd:64 `randomize()` reseed le RNG GLOBAL depuis
+l entropie a chaque lancement. En cinematique il ne touche QUE gait_phase (cosmetique) pour la
+MOTRICITE — mais une autre piece (memoire spatiale ? planner ?) introduit une source non-seedee
+entre deux runs identiques, assez pour changer 0->2 repas.
+
+PROCHAIN PAS avant tout juge de rang : rendre le rejeu deterministe. Pistes a verifier :
+(1) retirer/seeder `randomize()` (main.gd:64) ; (2) seeder le RNG cote serveur planner + memoire
+spatiale. Puis re-passer le CONTROLE 1 (deux runs identiques -> repas identiques) AVANT de mesurer
+un seul candidat. NEGATIF BANKE : ne pas lire le controle 2 tant que le controle 1 ne passe pas.
