@@ -207,6 +207,7 @@ var _blank_vision := false    # SYLVAN_BLANK_VISION=1 → vision channel is all 
 var _cf_tick := -1
 var _cf_vx := 0.0
 var _cf_om := 0.0
+var _cf_hold := 0
 var _food_as_command := false # SYLVAN_FOOD_AS_COMMAND=1 → deploy: vision = a clean heading-bump toward the NEAREST
                               # pellet (matches the training command exactly), NOT the saturated multi-pellet radar
 var _ep_start_pos := Vector3.ZERO  # torso position at episode start (CPG straightness/forward-progress diagnostic)
@@ -301,6 +302,8 @@ func _update_heading() -> void:
 		_food_as_command = OS.get_environment("SYLVAN_FOOD_AS_COMMAND") == "1"
 		var _cf_env := OS.get_environment("SYLVAN_CF_TICK")
 		_cf_tick = int(_cf_env) if _cf_env != "" else -1
+		var _cfh := OS.get_environment("SYLVAN_CF_HOLD")
+		_cf_hold = int(_cfh) if _cfh != "" else 0
 		var _cf_cmd := OS.get_environment("SYLVAN_CF_CMD")
 		if _cf_cmd != "":
 			var _p := _cf_cmd.split(",")
@@ -308,7 +311,7 @@ func _update_heading() -> void:
 				_cf_vx = _p[0].to_float()
 				_cf_om = _p[1].to_float()
 		if _cf_tick >= 0:
-			print("[Godot] CONTREFACTUEL : tick=%d cmd=(%.2f,%.2f)" % [_cf_tick, _cf_vx, _cf_om])
+			print("[Godot] CONTREFACTUEL : tick=%d hold=%d cmd=(%.2f,%.2f)" % [_cf_tick, _cf_hold, _cf_vx, _cf_om])
 		if _food_as_command:
 			print("[Godot] FOOD-AS-COMMAND | vision = clean heading bump toward nearest pellet (matches training)")
 		# RE-ARCH Phase 0: command-conditioned CPG base. SYLVAN_CPG=1 enables the analytic walk+turn
@@ -544,7 +547,7 @@ func _physics_process(delta: float) -> void:
 				# CONTREFACTUEL (juge de classement du critique) : au tick _cf_tick, UNE decision est
 				# remplacee par (_cf_vx,_cf_om), puis le planner reprend. Determinisme cinematique => le
 				# rejeu atteint le MEME etat a _cf_tick. Defaut (_cf_tick<0) OFF, bit-identique.
-				if _cf_tick >= 0 and episode_manager.current_step_id == _cf_tick:
+				if _cf_tick >= 0 and episode_manager.current_step_id >= _cf_tick and episode_manager.current_step_id <= _cf_tick + _cf_hold:
 					agent_instance.set_cpg_command(_cf_vx, _cf_om)
 			var act: Array = resp.get("action", [])
 			var typed_action: Array[float] = []
