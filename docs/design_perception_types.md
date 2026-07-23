@@ -214,3 +214,30 @@ même commit que le build.
   l'indice apporte, pas la contiguïté » → Étape B, Mur A.
 - *Unsupervised Object Discovery: A Comprehensive Survey* (arXiv 2024) : regrouper (prototypes)
   puis rattacher le sens — Étape A, Mur B.
+
+---
+
+## ÉTAT HONNÊTE DES REQUÊTES-COULEUR (re-clarifié 2026-07-23)
+
+Question owner : « les requêtes-couleur, on avait déjà réglé ça ? ». Réponse mesurée :
+
+**Résolu à ~80 %, PAS promu.**
+- La config VIVANTE (`wm_objcentric_kin`) porte encore les requêtes CODÉES-MAIN : `[1,0,0]` rouge,
+  `[0,0,1]` bleu. C'est là que « le rouge = bouffe » reste dit a priori.
+- Le checkpoint `wm_objcentric_kin_typed` porte des requêtes MESURÉES (couleurs rendues :
+  `[0.876,0.349,0.333]` etc.) + seuils par-type mesurés (0.808/0.859/0.920) → perception « 100 %
+  apprise » au sens : requêtes = couleurs vraies mesurées, lien slot→drive découvert par conséquence.
+- Juge : **PASS-PARITÉ 42/10** — l'appris ÉGALE la main, ne perd rien.
+
+**CE QUI MANQUE, et pourquoi ce n'est pas « fait » :**
+1. **PASS-VALEUR non claimé** (doc §verdict) : l'appris égale la main, ne la BAT pas. Remplacement
+   propre, pas gain de capacité.
+2. **GATE-CAPACITÉ jamais payé** : le vrai test (swap d'apparence en cours de vie → re-regroupe et
+   continue de manger) exige 2 pièces manquantes (déclencheur de re-mesure + bouton swap Godot), et
+   l'inventaire note qu'il a ÉCHOUÉ en diagnostic (« le slot lit cos-RGB, pas la teinte »).
+
+⇒ Il ne reste PAS à refaire : la pièce apprise existe et passe la parité. Il reste à (a) la PROMOUVOIR
+dans la config vivante, et (b) payer le gate-capacité qui prouverait qu'elle survit VRAIMENT à un
+changement d'apparence. C'est de l'intégration + une démonstration, pas un nouveau chantier.
+Correction assumée : j'avais dit « les requêtes sont la dernière chose codée-main » sans préciser
+qu'une version apprise existe déjà, à parité, non promue.
