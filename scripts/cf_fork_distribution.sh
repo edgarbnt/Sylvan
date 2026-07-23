@@ -16,7 +16,8 @@ ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 SEEDS="1 3 5 6 8 9"
 TICKS="600 1200 1800"
 HOLD=240; W=800; MAXS=2600; BP=6400
-WE=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset bosquets_v2 --env | sed 's/^export //' | tr '\n' ' ')
+PRESET=${PRESET:-bosquets_v2}   # override : PRESET=bosquets_v3_perish bash scripts/cf_fork_distribution.sh
+WE=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset "$PRESET" --env | sed 's/^export //' | tr '\n' ' ')
 FOV=$(echo "$WE" | tr ' ' '\n' | grep '^SYLVAN_RETINA_FOV_DEG=' | cut -d= -f2)
 
 godot_run() {   # $1=tag $2=seed $3=cf_tick("") $4=cmd $5=hold $6=port
@@ -50,7 +51,7 @@ print(sum(1 for i in range(1,len(rows)) if k<=rows[i][0]<=k+w and rows[i][1]-row
 PY
 }
 
-echo "=== DISTRIBUTION DE CONSÉQUENCE — pire choix tenu $HOLD ticks, fenêtre $W ==="
+echo "=== DISTRIBUTION DE CONSÉQUENCE ($PRESET) — pire choix tenu $HOLD ticks, fenêtre $W ==="
 echo "  seed  tick  ref  pire  consequent?"
 total=0; conseq=0
 for seed in $SEEDS; do

@@ -100,6 +100,13 @@ var _regrow_ticks := 2000         # une baie repousse SUR PLACE après ce délai
 var _patch_centres: Array[Vector3] = []
 var _alive: Array[bool] = []      # une baie consommée devient invisible et non-consommable
 var _regrow_at: Array[int] = []   # tick de vie auquel elle réapparaît (-1 = vivante)
+# PÉRISSABLE (levier CONSÉQUENCE, 2026-07-23) : une baie vivante non mangée PERISH ticks après sa
+# naissance disparaît (comme cueillie mais SANS énergie) et repousse plus tard. Rend la
+# récupérabilité COÛTEUSE : perdre du temps sur un mauvais choix fait périr la baie avant le retour.
+# Opt-in SYLVAN_<PREFIX>_PERISH (0 = OFF, bit-identique). GRATUIT côté WM (règle de monde, la baie
+# reste perçue par la rétine comme avant tant qu'elle est là).
+var _perish_ticks := 0
+var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
 # Vert clair, CHOISI PAR RECHERCHE NUMÉRIQUE contre les requêtes RÉELLES des deux WM vivants, pas
@@ -281,6 +288,9 @@ func _read_patch_env() -> void:
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
+	var pe := OS.get_environment("SYLVAN_%s_PERISH" % _prefix)
+	if pe != "":
+		_perish_ticks = maxi(0, int(pe))
 
 
 func _sample_patch_centres() -> void:
@@ -315,20 +325,34 @@ func _sample_patch_centres() -> void:
 		push_warning("[patch] aucun centre placé (spacing=%.1f trop grand pour l'anneau)" % _patch_spacing)
 
 
-func _patch_berry_pos(i: int) -> Vector3:
+func _patch_berry_pos(i: int, patch_idx: int = -1) -> Vector3:
 	# COURONNE, pas disque : les baies doivent tomber HORS du buisson-marqueur, sinon celui-ci les
 	# ENGLOBE et le raycast de la rétine frappe le buisson en premier — la baie devient invisible.
 	# Mesuré : à rayon 1,2 m, 22 % des baies étaient englobées -> 73 % localisées ; à 0,6 m, 87 %
 	# englobées -> 0 % localisées, l'entité mourait aveugle à côté de sa nourriture. La géométrie
 	# prédit la mesure au point près, c'est bien le buisson qui masquait.
 	# Borne haute : rayon < eat_radius (1.0 m) pour qu'arriver au centre capture toute la couronne.
-	var c: Vector3 = _patch_centres[i % _patch_centres.size()]
+	# patch_idx >= 0 force le bosquet (relocalisation périssable) ; défaut = bosquet attitré i%N.
+	var pi := (i % _patch_centres.size()) if patch_idx < 0 else (patch_idx % _patch_centres.size())
+	var c: Vector3 = _patch_centres[pi]
 	var ang := _rng.randf_range(0.0, TAU)
 	var inner := PATCH_BUSH_R + 0.05
 	var outer := maxf(inner + 0.05, _patch_radius)
 	var u := _rng.randf()
 	var r := sqrt(inner * inner + u * (outer * outer - inner * inner))   # uniforme en aire
 	return Vector3(c.x + cos(ang) * r, food_y, c.z + sin(ang) * r)
+
+
+func _nearest_patch(i: int) -> int:
+	# Bosquet le plus proche de la baie i (pour la relocalisation périssable : sauter AILLEURS).
+	var best := 0
+	var bd := INF
+	for k in range(_patch_centres.size()):
+		var d: float = _positions[i].distance_to(_patch_centres[k])
+		if d < bd:
+			bd = d
+			best = k
+	return best
 
 
 func reset(_episode_index: int = 0) -> void:
@@ -339,6 +363,7 @@ func reset(_episode_index: int = 0) -> void:
 	_positions.clear()
 	_alive.clear()
 	_regrow_at.clear()
+	_born_at.clear()
 	if _patch_count > 0:
 		_sample_patch_centres()
 	for i in range(food_count):
@@ -346,6 +371,9 @@ func reset(_episode_index: int = 0) -> void:
 		_positions.append(p)
 		_alive.append(true)
 		_regrow_at.append(-1)
+		# Périssable : stagger les naissances sur [-perish, 0] pour que les baies ne périssent PAS
+		# toutes au même tick (sinon relocalisation synchronisée). OFF -> 0, bit-identique.
+		_born_at.append(-(_rng.randi() % _perish_ticks) if _perish_ticks > 0 else 0)
 		_meshes[i].global_position = p
 		_meshes[i].visible = true
 		_apply_appearance(i)
@@ -546,11 +574,28 @@ func _tick_regrowth() -> void:
 	# l'agent. OFF (_patch_count == 0) : boucle jamais exécutée, bit-identique.
 	if _patch_count <= 0:
 		return
+	# PÉRISSABLE = attaque de la RÉCUPÉRABILITÉ (levier conséquence, 2026-07-23). Une baie vivante
+	# trop vieille NE DISPARAÎT PAS (ce monde n'a que 2 baies -> disparaître = famine, mesuré 0 repas)
+	# : elle se RELOCALISE sur un AUTRE bosquet. Le compte de baies vivantes reste invariant (survie
+	# préservée, §2), mais la baie que l'agent visait n'est plus là où il allait -> un choix trop lent
+	# (hésitation, virage inutile) perd son trajet. La densité est constante ; seule la DÉCISION coûte.
+	if _perish_ticks > 0 and not _patch_centres.is_empty():
+		for i in range(_positions.size()):
+			if _alive[i] and _life_tick - _born_at[i] >= _perish_ticks:
+				var nb := _patch_centres.size()
+				# saute vers un bosquet DIFFÉRENT de l'actuel (si >1 bosquet), sinon même bosquet
+				var cur := _nearest_patch(i)
+				var pk := cur if nb <= 1 else ((cur + 1 + (_rng.randi() % (nb - 1))) % nb)
+				_born_at[i] = _life_tick
+				_positions[i] = _patch_berry_pos(i, pk)
+				_meshes[i].global_position = _positions[i]
+				_apply_appearance(i)
 	for i in range(_positions.size()):
 		if _alive[i] or _regrow_at[i] < 0 or _life_tick < _regrow_at[i]:
 			continue
 		_alive[i] = true
 		_regrow_at[i] = -1
+		_born_at[i] = _life_tick
 		if not _patch_centres.is_empty():
 			_positions[i] = _patch_berry_pos(i)
 			_meshes[i].global_position = _positions[i]

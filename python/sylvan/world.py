@@ -61,6 +61,7 @@ class WorldPreset:
     patch_spacing_min_m: float = 9.0
     patch_spacing_max_m: float = 11.0
     regrow_ticks: int = 2500
+    perish_ticks: int = 0        # 0 = OFF ; >0 = une baie non mangee perit apres ce delai
     spawn_annulus_m: tuple[float, float] = (3.0, 11.0)
     eat_radius_m: float = 1.0
 
@@ -112,6 +113,7 @@ class WorldPreset:
             "SYLVAN_FOOD_PATCH_SPACING": f"{self.patch_spacing_min_m}",
             "SYLVAN_FOOD_PATCH_SPACING_MAX": f"{self.patch_spacing_max_m}",
             "SYLVAN_FOOD_REGROW": f"{self.regrow_ticks}",
+            "SYLVAN_FOOD_PERISH": f"{self.perish_ticks}",
             "SYLVAN_FOOD_MIN_RADIUS": f"{self.spawn_annulus_m[0]}",
             "SYLVAN_FOOD_SPAWN_RADIUS": f"{self.spawn_annulus_m[1]}",
         }
@@ -178,6 +180,13 @@ BOSQUETS_V1_SLOWTURN = dataclasses.replace(BOSQUETS_V1, name="bosquets_v1_slowtu
 #: l ancien corps (surv_turn_rate=0.015 en tete) est ANNULEE : elles redeviennent valides.
 BOSQUETS_V2 = dataclasses.replace(BOSQUETS_V1, name="bosquets_v2", kin_turn=1.5)
 
+#: LEVIER CONSÉQUENCE (2026-07-23) : v2 + baies PÉRISSABLES. Une baie non mangée 300 ticks (~3,3 m
+#: la baie que l'agent visait SAUTE sur un autre bosquet (elle ne disparaît PAS : ce monde n'a que
+#: 2 baies, disparaître = famine, mesuré 0 repas). Densité constante -> survie préservée, mais un
+#: choix trop lent perd son trajet. Attaque la RÉCUPÉRABILITÉ. Gate = scripts/cf_fork_distribution.sh
+#: (taux de conséquence doit monter SANS effondrer la survie). GRATUIT côté WM (règle de monde).
+BOSQUETS_V3_PERISH = dataclasses.replace(BOSQUETS_V2, name="bosquets_v3_perish", perish_ticks=800)
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -236,7 +245,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():
