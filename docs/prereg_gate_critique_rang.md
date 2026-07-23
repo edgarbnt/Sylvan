@@ -40,3 +40,37 @@ exactement le signal recherche depuis le debut — un monde ou le glouton cesse 
 100) REFUTEE par mesure (correlation negative aussi forte chez les affames : -0,385).
 
 PROCHAIN PAS : brancher le vrai cout analytique comme reference, puis seulement juger le gain.
+
+--- 🚨 LE « PASS » EST RETIRE (2026-07-23, meme jour) : LA CIBLE ETAIT ARTEFACTUELLE ---
+
+Apres avoir branche le VRAI cout analytique (command_planner.py:578-583, reproduit fidelement avec
+-min_dist et le terme de cap ; sanity : il prefere bien om=+0,6 vers la ressource), il obtient
+**0,196 en pairwise, tau -0,609** — encore plus bas que mon proxy homme de paille. Un cout qui fait
+VIVRE l entite en vrai (1,40 repas, 50 % de survie) ne peut pas classer sous le hasard : c est donc
+la CIBLE ou le SIMULATEUR qui est en cause, pas le cout.
+
+**ARTEFACT DE FENETRE, demontre arithmetiquement.** La cible `faim(tau+delta)` recompense de manger
+JUSTE AVANT la fin de la fenetre, car on n a pas eu le temps de re-drainer apres :
+    faim 69, fenetre 600 : manger a t=100 -> cible 0,90 | manger a t=500 -> cible 1,00
+A REPAS EGAL. La cible mesurait le MOMENT du repas, pas la qualite de la decision. La tete apprise
+a donc appris a predire un artefact — le 0,712 est un FAUX POSITIF.
+
+**ET LE CORRIGER NE SUFFIT PAS.** En comptant les repas DIRECTEMENT (au lieu de les deriver de la
+faim finale), la correlation avec le vrai cout passe de -0,302 a -0,194 : elle reste NEGATIVE.
+L artefact de fenetre expliquait une partie, pas tout.
+
+⇒ **VERDICT : GATE NON FIABLE, aucun resultat n en sort.** Soit mon simulateur (relais glouton
+code a la main) ne reproduit pas la dynamique reelle du planner, soit autre chose m echappe. Tant
+que ce n est pas elucide, ce gate ne peut ni valider ni invalider une tete.
+
+**CE QUI RESTE ACQUIS** (et qui vaut le detour) :
+- la METRIQUE est saine (selfcheck : oracle 1,000 / hasard 0,406 / inverse 0,000) et le controle
+  permute (0,476) exclut la fuite. L infrastructure de rang intra-etat est bonne ;
+- le principe « juger au RANG INTRA-ETAT, jamais au R2 poole » reste juste ;
+- la lecon : une cible derivee d un ETAT FINAL sur fenetre fixe encode le TIMING. Compter
+  l EVENEMENT (les repas) est plus honnete — mais ne suffit pas ici.
+
+**NEGATIF BANKE** : ne pas entrainer de critique sur `faim(tau+delta)` a fenetre fixe. Et ne pas
+juger une tete sur un simulateur dont on n a pas verifie qu il reproduit le classement d un cout
+DONT ON SAIT qu il marche en vies. Le prochain gate doit d abord passer ce test de coherence :
+« mon simulateur classe-t-il comme le cout qui fait vivre l entite ? » — sinon il ne mesure rien.

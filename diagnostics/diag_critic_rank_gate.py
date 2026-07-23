@@ -47,6 +47,9 @@ CANDS = [(vx, om) for vx in _CONS.VX_GRID for om in _CONS.OM_GRID]
 
 # --------------------------------------------------------------- CRITÈRES PRÉ-INSCRITS
 #     écrits AVANT de lancer — la barre ne bouge pas après avoir vu les chiffres
+HEADING_WEIGHT = 2.0    # command_planner.py:62, defaut SERVI par le harnais
+HEADING_FAR_GATE = 2.0  # command_planner.py:69
+
 BAR_PAIRWISE = 0.65     # accuracy pairwise intra-état, sur les paires DÉPARTAGEABLES
 BAR_TAU = 0.30          # Kendall tau intra-état moyen
 BAR_VS_INNE = 0.05      # il faut battre le coût analytique d'au moins ça en pairwise
@@ -94,11 +97,51 @@ def token(state: tuple, cand: tuple) -> list[float]:
             1.0 if best else 0.0]
 
 
-def innate_score(state: tuple, cand: tuple) -> float:
-    """Le coût analytique, en réduit : préférer avancer vers la ressource. C'est la référence à
-    battre — elle est designée, exacte pour classer selon l'audit, et gratuite."""
-    t = token(state, cand)
-    return t[4] * t[6] - 0.3 * t[7]        # cos(bearing après virage) x vitesse, moins le virage
+def innate_score(state: tuple, cand: tuple, replan: int, horizon: int = 80) -> float:
+    """LE VRAI coût analytique du planner en mono-pulsion, reproduit à l'identique.
+
+    Source : command_planner.py:578-583, branche `plan_wm_slot` — celle qu'émettent réellement les
+    corpus mono-drive (`reason: "plan_wm_slot"`, vérifié). Formule :
+        score = −min_dist + heading_weight·mean_align + energy_weight·E_fin − done_penalty·P(chute)
+    avec `mean_align = mean(cos(bearing) · min(dist/heading_far_gate, 1))`.
+
+    Ce qui est reproduit FIDÈLEMENT : `−min_dist` (distance MINIMALE atteinte sur toute la
+    trajectoire — le terme DOMINANT, et celui que mon premier proxy avait omis, d'où un classement
+    sous le hasard) et le terme de cap avec sa porte de distance. Coefficients = les défauts servis
+    (heading_weight 2.0, heading_far_gate 2.0).
+
+    Ce qui est OMIS, et déclaré : `energy_weight·E_fin` et `done_penalty·P(chute)` viennent de têtes
+    du WM. En corps cinématique `has_fallen` est câblé à False (sylvan_agent.gd:756) donc la
+    pénalité de chute est nulle par construction ; et E_fin ne dépend quasiment pas du candidat sur
+    un horizon de 80 pas (drain constant). Leur omission ne peut donc pas inverser un classement.
+    """
+    x, z, yaw, _hunger, patches = state
+    vx, om = cand
+    tgt = None
+    for q in patches:
+        if q[2] <= 0:
+            continue
+        d = math.hypot(q[0] - x, q[1] - z)
+        if tgt is None or d < tgt[0]:
+            tgt = (d, q)
+    if tgt is None:
+        return 0.0
+    _, q = tgt
+
+    # rollout du candidat sur l'horizon du planner (analytique : le corps obéit exactement)
+    min_dist, aligns = float("inf"), []
+    cx, cz, cyaw = x, z, yaw
+    for _ in range(horizon):
+        cyaw += om / 0.6 * _CONS.TURN
+        step = vx / 0.75 * _CONS.SPEED
+        cx += math.sin(cyaw) * step
+        cz += math.cos(cyaw) * step
+        d = math.hypot(q[0] - cx, q[1] - cz)
+        min_dist = min(min_dist, d)
+        brg = math.atan2(q[0] - cx, q[1] - cz) - cyaw
+        brg = (brg + math.pi) % (2 * math.pi) - math.pi
+        aligns.append(math.cos(brg) * min(d / HEADING_FAR_GATE, 1.0))
+    return -min_dist + HEADING_WEIGHT * (sum(aligns) / len(aligns))
 
 
 def build(states: list[tuple], delta: int, replan: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -152,7 +195,7 @@ def fit_ridge(Xtr, Ytr, Xte, lam=1e-2):
 def run(n_states: int, delta: int, replan: int, seed: int, folds: int = 4) -> dict:
     states = sample_states(n_states, seed)
     X, Y, G = build(states, delta, replan)
-    inn = np.array([innate_score(states[G[i]], CANDS[i % len(CANDS)]) for i in range(len(X))])
+    inn = np.array([innate_score(states[G[i]], CANDS[i % len(CANDS)], replan) for i in range(len(X))])
 
     # SPLIT PAR ÉTAT (l'analogue du split par vie) : jamais deux candidats du même état
     # de part et d'autre de la frontière, sinon la tête a déjà vu la réponse.
@@ -226,7 +269,7 @@ def main() -> int:
 
     agg = run(a.states, a.delta, a.replan, a.seed)
     print(f"  {'prédicteur':<26s} {'pairwise':>10s} {'Kendall tau':>13s} {'regret@1 (pts)':>16s}")
-    for k, lbl in (("innate", "inné (coût analytique)"), ("learned", "tête apprise (ridge)"),
+    for k, lbl in (("innate", "VRAI coût analytique"), ("learned", "tête apprise (ridge)"),
                    ("perm", "contrôle permuté")):
         if k in agg:
             m = agg[k]
