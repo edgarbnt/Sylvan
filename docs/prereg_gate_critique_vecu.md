@@ -38,3 +38,31 @@ VERDICT : PASS.
 tete (capacite > ridge) sur cette cible et ce corpus, et surtout construire le juge de CLASSEMENT
 qui manque — probablement en instrumentant le serveur pour logger le score par candidat, plutot
 qu en fabriquant des contrefactuels (ce qui a deja coute un faux positif).
+
+--- LE JUGE DE CLASSEMENT NE PEUT PAS ETRE HORS-LIGNE (2026-07-23) ---
+
+Avant de batir un juge de classement (« la tete met-elle le meilleur candidat en tete ? »), test
+de fidelite du simulateur hors-ligne, cheap et decisif : le piloter par le VRAI cout analytique
+(argmax -min_dist+heading sur 117 candidats, replan=60) et comparer sa performance a la REALITE.
+
+  simulateur + vrai cout : survie mediane 3000, 100 % pleins, 8,00 repas/vie
+  REALITE (vecu)         : survie mediane 2900,  50 % pleins, 1,40 repas/vie
+
+Le simulateur est **6x trop facile**. Il connait toutes les positions et tous les stocks, et
+navigue parfaitement ; l entite reelle ne voit qu a travers son cone 120, perd les bosquets
+hors-champ, et son slot localise avec erreur. Aucun classement calcule dans ce monde ne vaut pour
+le monde reel.
+
+⇒ **NEGATIF STRUCTUREL** : le juge de classement (la seule mesure qui reponde a la vraie question
+d un critique dans un planner MPC — le RANG des candidats) exige des contrefactuels DANS GODOT
+(rejouer un etat, forcer un candidat, observer la suite). Il ne peut pas se construire hors-ligne.
+C est aussi l explication profonde de l echec du gate de ce matin : pas seulement le relais glouton,
+mais un monde hors-ligne entierement trop clement.
+
+⇒ CE QUI RESTE VALIDE : le gate sur le VECU (corpus reel, PASS +0,093) n est PAS touche — il
+n utilise aucun simulateur, seulement des outcomes vecus. Il dit que la cible vaut la peine ; il
+ne dit pas qu une tete saura ranger. Ces deux questions sont desormais clairement separees.
+
+DECISION OWNER REQUISE : le juge de classement demande une infra Godot (save/restore d etat +
+commande forcee) — un vrai build, non chiffre ici, peut-etre pas faisable sans toucher au moteur
+(a scoper). A trancher avant de s y engager.
