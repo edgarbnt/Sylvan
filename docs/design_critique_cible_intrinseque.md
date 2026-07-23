@@ -52,3 +52,44 @@ d'un autre. Chantier CORPS/MONDE, pas critique. À pré-inscrire séparément.
   sans étiqueter les 117 candidats (rêve WM, biaisé) ou re-collecter en branchant des alternatifs.
 - symlog écrase l'étendue 48-98 → 0,70 (rejeté) ; HL-Gauss ne bat MSE qu'en dynamique déterministe,
   or respawn aléatoire (différé, pas prioritaire).
+
+---
+
+# ADDENDUM (2026-07-23) — le levier est le PLANNER, pas le corps
+
+`diagnostics/diag_consequence_g0.py`, gratuit, selfcheck passé (dont un contrôle décisif : à
+horizon trivial la variance intra est EXACTEMENT nulle, la sonde ne fabrique pas de signal).
+
+Le KILL disait « le corps est trop récupérable ». La sonde SÉPARE les deux causes possibles en
+déroulant les 117 candidats du planner depuis un MÊME état — de vrais contrefactuels, que le corpus
+ne pouvait pas fournir (il n'observe qu'un candidat exécuté par tick).
+
+| replan | ratio intra | faim moyenne | regret |
+|---|---|---|---|
+| **10 (actuel)** | **1,9 %** | 77,5 | 0,8 |
+| 30 | 4,1 % | 78,1 | 1,7 |
+| **60** | **12,7 %** | 78,6 | 3,6 |
+| **120** | **38,9 %** | 78,6 | 7,9 |
+| 300 | 71,8 % | **58,2** ⚠️ | 30,0 |
+
+Axe corps (inertie `tau`) à replan=10 : 2,2 % / 2,1 % / 2,0 % / 4,2 % / **11,1 %** pour
+tau = 0 / 5 / 15 / 30 / **60** ticks. Il faut donc un corps qui met ~60 ticks à répondre — pataud,
+et qui imposerait une recollecte du WM.
+
+⇒ **L'engagement du planner obtient le même effet à `replan-every` 60-120, qui est un PARAMÈTRE
+EXISTANT** (aujourd'hui 10). Gratuit, réversible, zéro ré-entraînement.
+
+**Contrôle anti-fausse-solution (§2) PASSÉ** : entre 60 et 120 la faim moyenne ne bouge pas
+(77,5 → 78,6) pendant que le regret monte de 0,8 à 7,9 — on crée de quoi choisir SANS dégrader.
+À 300 la faim s'effondre à 58,2 : là on fabriquerait de la variance en cassant l'agent, refusé.
+
+⚠️ **Le chiffre d'hier (8,2 %) était OPTIMISTE** : il groupait des ticks proches faute de
+contrefactuels. Avec de vrais candidats du même instant : **1,9 %**. Le KILL est plus net, et sa
+cause est déplacée — ce n'est pas que le corps soit récupérable, c'est que **le planner efface sa
+propre décision dix ticks plus tard**. Replanifier souvent rend l'agent robuste, et c'est
+exactement ce qui le prive de décisions à apprendre.
+
+⚠️ **CE QUE ÇA NE DIT PAS** : qu'il y aurait quelque chose à CLASSER, pas que l'entité ira mieux.
+Allonger le replan la rendra moins réactive, et ceci est mesuré en simulation avec un relais
+glouton, pas en vies. Condition NÉCESSAIRE. Le vrai test = A/B en vies sur `--replan-every`
+(10 vs 60 vs 120), jugé sur les repas, AVANT de rouvrir le critique appris.
