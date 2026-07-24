@@ -91,6 +91,31 @@ var gait_imitation := 1.0
 const GAIT_IMIT_SIGMA := 0.1
 var cpg_command := Vector2.ZERO   # (vx, omega) command, set per episode/segment by main.gd
 
+# ── LE REGARD (2026-07-24, docs/design_foret_complete.md §2.4) — OPT-IN SYLVAN_GAZE=1 ──────────
+# La tête tourne INDÉPENDAMMENT du corps : la rétine suit le REGARD, le déplacement suit le CORPS.
+# C'est la seule action identifiée dont la valeur soit PUREMENT INFORMATIONNELLE — regarder ne
+# rapproche de rien et ne rapporte aucun repas, ça réduit une incertitude.
+# ⚠️ ON DONNE LA CAPACITÉ, JAMAIS LE COMPORTEMENT (§4) : aucun balayage automatique ici. L'angle ne
+# bouge que sur commande. Ce que l'agent en fait — quand balayer, quoi fixer — doit être appris.
+# 🚨 CE QUE CE MÉCANISME NE DONNE PAS, et il faut le dire : le planner servi ne peut PAS encore
+# CHOISIR de regarder. Déduction structurelle lue sur le code (ce n'est pas une mesure) : le WM n'a
+# aucune variable latente d'incertitude (audit A4) et le coût du planner n'a aucun terme
+# d'information — 0 occurrence. Toutes les valeurs de regard obtiendraient donc le MÊME score. On
+# construit ici la DYNAMIQUE, pour que la collecte l'enseigne au WM ; la décision de regarder
+# viendra quand l'incertitude existera (A4), sans second retrain du substrat.
+var gaze_enabled := false
+var kin_gaze := 0.0               # angle de la tête RELATIF au corps, en radians (état intégré)
+var gaze_rate := 1.5              # rad/s par unité de commande — même échelle que kin_turn
+var gaze_limit := PI * 0.5        # butée mécanique : ±90°, une tête ne fait pas le tour
+var gaze_command := 0.0           # 3ᵉ composante de commande, dans [-1, 1]
+
+# ── TERRAIN QUI RALENTIT (2026-07-24, docs/design_foret_complete.md §2.3) ──────────────────────
+# Facteur multiplicatif appliqué à la vitesse effective, calculé par main.gd à partir de la densité
+# LOCALE d'arbres (sous-bois). 1.0 = terrain dégagé (défaut, bit-identique). < 1.0 = ralenti.
+# C'est le FIX DIRECT du R² 0,985 (§2.3) : le déplacement dépend enfin de OÙ l'on est, pas seulement
+# de ce qu'on commande. La CAUSE est perceptible (les arbres sont sur la rétine), donc §1 filtre OK.
+var terrain_speed_scale := 1.0
+
 # KINEMATIC body (pivot corps différentiel, 2026-07-06) — court-circuite le CPG/pattes : le corps GLISSE
 # rigidement à (vx, omega) (roues invisibles). Les pattes restent gelées en pose neutre (statue qui glisse)
 # → proprio 132 cohérente (angles neutres, vitesses jointes nulles), tout le contrat obs/WM/torso préservé.
@@ -599,6 +624,26 @@ func enable_kinematic(enabled: bool, speed: float, turn: float) -> void:
 func set_cpg_command(vx: float, omega: float) -> void:
 	cpg_command = Vector2(vx, omega)
 
+
+# ACTIONNEUR SÉPARÉ, et ce n'est pas un détail de style.
+# 🚨 Première version : un 3ᵉ argument optionnel `gaze := 0.0` sur set_cpg_command. Effet MESURÉ
+# (couverture du regard 0,0 % au premier run) : le babillage rappelle set_cpg_command à chaque
+# ré-échantillonnage, et le défaut à 0 REMETTAIT le regard à zéro à chaque fois. La tête ne bougeait
+# jamais. Un argument par défaut sur un chemin très fréquenté n'est pas neutre : il écrase.
+# Le regard est un actionneur INDÉPENDANT du déplacement — il a donc son propre point d'entrée, et
+# aucun appelant existant ne peut le toucher par accident (donc défaut OFF bit-identique).
+func set_gaze_command(gaze: float) -> void:
+	gaze_command = clampf(gaze, -1.0, 1.0)
+
+
+# Vecteur AVANT DE LA RÉTINE. Sans regard, c'est l'avant du corps (bit-identique à l'existant).
+# Avec regard, c'est l'avant du corps TOURNÉ de kin_gaze : c'est précisément là que perception et
+# cap se DÉCOUPLENT, et c'est la dynamique nouvelle que le WM doit apprendre.
+func gaze_forward(body_forward: Vector3) -> Vector3:
+	if not gaze_enabled or is_zero_approx(kin_gaze):
+		return body_forward
+	return Basis(Vector3.UP, kin_gaze) * body_forward
+
 # Voluntary gait modulation — big/small steps, run, knee bend. Set dynamically by the brain (the JEPA
 # planner / a policy) the same way (vx, omega) is. 1.0 = nominal. This is what stops the CPG being a cage.
 func set_cpg_modulation(stride_scale: float, cadence_scale: float, lift_scale: float) -> void:
@@ -720,9 +765,16 @@ func _kinematic_step(delta: float) -> void:
 		reset_timer -= delta
 	else:
 		kin_yaw += kin_turn * cpg_command.y * delta
+		# REGARD : intégré comme le cap, mais BUTÉ. Le corps ne bouge pas d'un iota à cause de lui —
+		# c'est tout l'intérêt : une action qui ne change QUE ce qu'on perçoit.
+		if gaze_enabled:
+			kin_gaze = clampf(kin_gaze + gaze_rate * gaze_command * delta, -gaze_limit, gaze_limit)
 	var yaw_basis := Basis(Vector3.UP, kin_yaw)
 	var forward := (yaw_basis * Vector3(0.0, 0.0, 1.0)).normalized()
-	var vel := (forward * (kin_speed * cpg_command.x)) if moving else Vector3.ZERO
+	# Vitesse EFFECTIVE = commande x terrain. terrain_speed_scale vaut 1.0 hors sous-bois (donc
+	# bit-identique tant que le terrain est OFF) et < 1.0 dans un sous-bois dense.
+	var _eff_speed := kin_speed * terrain_speed_scale
+	var vel := (forward * (_eff_speed * cpg_command.x)) if moving else Vector3.ZERO
 	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
 	if moving:
 		if _obstacle_mask < 0:
@@ -746,7 +798,7 @@ func _kinematic_step(delta: float) -> void:
 		body.linear_velocity = vel
 		body.angular_velocity = angvel
 	# Bookkeeping (corps droit, toujours debout — pas de chute possible).
-	forward_velocity = kin_speed * cpg_command.x
+	forward_velocity = _eff_speed * cpg_command.x   # vitesse RÉELLE (terrain compris) -> proprio honnête
 	center_height = bodies["torso"].global_position.y - global_position.y
 	uprightness_metric = 1.0
 	torso_tilt_metric = 0.0
@@ -1081,6 +1133,11 @@ func get_locomotion_metrics() -> Dictionary:
 	}
 
 func _rebuild_proprioception() -> void:
+	# ⚠️ CONTRAT DUR : 132 dims (CLAUDE.md interdit de le changer sans synchroniser constants.py,
+	# observation_builder.gd, sylvan_agent.gd et symmetry.py). Le regard AJOUTE une 133ᵉ dimension,
+	# et SEULEMENT quand SYLVAN_GAZE=1 — sans le drapeau, la sortie est bit-identique à l'historique.
+	# Il la faut : la rétine devient relative à la TÊTE, donc sans connaître l'angle de tête l'agent
+	# ne peut plus relier ce qu'il voit à la direction où il avance.
 	latest_proprio.clear()
 	var torso: RigidBody3D = bodies["torso"]
 
@@ -1137,4 +1194,12 @@ func _rebuild_proprioception() -> void:
 	latest_proprio.append(sin(TAU * gait_phase))
 	latest_proprio.append(cos(TAU * gait_phase)) # 2
 
-	# Total = 7 + 54 + 4 + 3 + 12 + 12 + 2 = 94
+	# REGARD (opt-in) : APPENDÉ TOUT À LA FIN, pour que les 132 premières dimensions gardent
+	# exactement leur indice historique — des lecteurs pointent des indices en dur (proprio[11]).
+	# Angle NORMALISÉ par sa butée : borné dans [-1, 1], sans discontinuité de repliement puisqu'il
+	# est buté à ±90° (c'est ce qui permet UNE dimension là où le gait en demande deux), et de signe
+	# opposé sous miroir — ce dont l'augmentation par symétrie aura besoin.
+	if gaze_enabled:
+		latest_proprio.append(kin_gaze / gaze_limit) # 1
+
+	# Total = 7 + 54 + 4 + 3 + 12 + 12 + 2 = 94   (+1 si le regard est actif)

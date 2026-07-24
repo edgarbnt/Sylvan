@@ -57,6 +57,17 @@ func setup(world_node: Node, agent_node: Node = null, seed_value: int = 0) -> vo
 			_camera.current = true
 		_make_ground_grass(world_node)
 
+	# 🚨 SYLVAN_FOREST_DECOR=0 — n'éteint QUE le semis décoratif, PAS la caméra ni le jour/nuit.
+	# Distinction apprise en regardant une fenêtre vide (2026-07-24) : ce module ne fait pas que du
+	# décor, il porte aussi la caméra 3ᵉ personne et le soleil. Or une CAMÉRA ne ment pas — c'est le
+	# point de vue de l'observateur ; un ARBRE que l'entité ne perçoit ni ne heurte, si. Couper les
+	# deux ensemble donnait une scène sans caméra qui suit et sans cycle, donc illisible.
+	# Le semis reste suppressible pour qu'on puisse voir la forêt SOLIDE sans arbres fantômes à côté.
+	if OS.get_environment("SYLVAN_FOREST_DECOR") == "0":
+		print("[decor] semis DECORATIF eteint (SYLVAN_FOREST_DECOR=0) — camera et jour/nuit CONSERVES ; "
+			+ "tout arbre visible vient donc de la foret SOLIDE, percue par l'entite")
+		return
+
 	var files := _list_gltf()
 	if files.is_empty():
 		push_warning("ForestManager: no glTF files found at %s" % _dir)
