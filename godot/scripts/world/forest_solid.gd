@@ -227,11 +227,15 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		% [_centers.size(), _bodies.size(), _keepout, resource_positions.size()])
 	if _min_gap > 0.0:
 		print("[forest] espacement mini entre arbres : %.2f m" % _min_gap)
-	if _stands > 0 or _clearings > 0:
-		# PROUVER l'arrangement au lieu de l'affirmer (règle de méthode du projet).
-		print("[forest] structure : %d peuplements (sigma %.1f m), %d clairieres (r %.1f m) | "
-			% [_stand_centers.size(), _stand_sigma, _clearing_centers.size(), _clearing_r]
-			+ "Clark-Evans MESURE %.2f (<1 = groupe, 1 = aleatoire)" % _clark_evans())
+	# PROUVER l'arrangement au lieu de l'affirmer (règle de méthode du projet).
+	# ⚠️ IMPRIMÉ EN PERMANENCE, pas seulement en mode peuplements : le gate demande « Clark-Evans < 1
+	# en peuplements, ≈ 1 en UNIFORME ». Tant que la ligne n'était émise que si _stands > 0, le TÉMOIN
+	# uniforme était structurellement inobservable — on ne pouvait pas passer le gate, seulement
+	# l'affirmer.
+	print("[forest] structure : %d peuplements (sigma %.1f m), %d clairieres (r %.1f m) | "
+		% [_stand_centers.size(), _stand_sigma, _clearing_centers.size(), _clearing_r]
+		+ "n=%d ppv_moyen MESURE %.3f m | aire %.1f m2 | Clark-Evans MESURE %.3f (<1 = groupe, 1 = aleatoire)"
+		% [_centers.size(), _mean_nn(), _support_area(), _clark_evans()])
 
 
 func _sample_structure() -> void:
@@ -264,13 +268,13 @@ func _propose_position() -> Vector3:
 	return p
 
 
-func _clark_evans() -> float:
-	# INDICE DE CLARK-EVANS = (distance moyenne au plus proche voisin) / (attendue sous Poisson).
-	# < 1 = GROUPÉ (peuplements), = 1 = aléatoire, > 1 = régulier. C'est la statistique standard en
-	# écologie spatiale : elle PROUVE que l'arrangement est groupé au lieu qu'on l'affirme.
+# Distance MOYENNE au plus proche voisin, en mètres. C'est la grandeur BRUTE, sans hypothèse de
+# normalisation : c'est elle qu'on compare entre le tirage uniforme et les peuplements. L'indice de
+# Clark-Evans ci-dessous en dérive, mais il dépend d'une aire de référence — donc d'un choix.
+func _mean_nn() -> float:
 	var n := _centers.size()
 	if n < 3:
-		return 1.0
+		return 0.0
 	var tot := 0.0
 	for i in range(n):
 		var best := INF
@@ -278,9 +282,35 @@ func _clark_evans() -> float:
 			if i != j:
 				best = minf(best, _centers[i].distance_to(_centers[j]))
 		tot += best
-	var observed := tot / float(n)
-	var density := float(n) / (PI * _radius_max * _radius_max)
-	return observed / (0.5 / sqrt(density))
+	return tot / float(n)
+
+
+# AIRE DE RÉFÉRENCE = le support RÉELLEMENT échantillonné, pas le disque commode.
+# ⚠️ Le code d'origine divisait toujours par PI*rmax^2. En tirage uniforme les arbres sortent d'un
+# ANNEAU [rmin, rmax] : surestimer l'aire sous-estime la densité, donc SURESTIME la distance
+# attendue, donc SOUS-ESTIME l'indice — le témoin « uniforme » aurait paru groupé sans qu'aucun
+# arbre ne soit groupé. En mode peuplements les gaussiennes remplissent le disque entier (elles
+# peuvent tomber sous rmin), donc le support y est bien le disque.
+func _support_area() -> float:
+	if _stand_centers.is_empty():
+		return PI * (_radius_max * _radius_max - _radius_min * _radius_min)
+	return PI * _radius_max * _radius_max
+
+
+func _clark_evans() -> float:
+	# INDICE DE CLARK-EVANS = (distance moyenne au plus proche voisin) / (attendue sous Poisson).
+	# < 1 = GROUPÉ (peuplements), = 1 = aléatoire, > 1 = régulier. C'est la statistique standard en
+	# écologie spatiale : elle PROUVE que l'arrangement est groupé au lieu qu'on l'affirme.
+	# ⚠️ DEUX BIAIS CONNUS, à garder en tête en lisant le chiffre : (a) EFFET DE BORD — dans un
+	# domaine borné les arbres du pourtour n'ont pas de voisin au-delà, ce qui GONFLE l'indice ;
+	# (b) le tirage uniforme historique tire le rayon en randf_range(rmin, rmax), donc uniformément
+	# EN RAYON et non en AIRE, ce qui laisse une densité en 1/r et GROUPE légèrement vers l'intérieur.
+	# ⇒ le discriminant honnête reste la comparaison des ppv_moyen mesurés entre les deux modes.
+	var n := _centers.size()
+	if n < 3:
+		return 1.0
+	var density := float(n) / _support_area()
+	return _mean_nn() / (0.5 / sqrt(density))
 
 
 func get_positions() -> Array[Vector3]:
