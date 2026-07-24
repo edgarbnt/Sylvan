@@ -500,6 +500,79 @@ gros monde et un gros doute.
 
 ---
 
+## 6quater. ANGLES MORTS — relecture critique (2026-07-24)
+
+Relecture de tout ce qui précède à la recherche de ce qu'on a oublié. Classés par gravité.
+
+### ⛔ A. QU'EST-CE QUI PERSISTE D'UNE VIE À L'AUTRE ? (le plus grave, jamais posé)
+
+On n'a **jamais** répondu à ça, et ça conditionne l'apprenabilité de presque tout ce qu'on a décidé :
+
+- **La table type → valeur** : si elle est retirée à chaque épisode, elle est **structurellement
+  inapprenable** — l'agent ne peut pas « avoir goûté » dans une vie précédente. Or c'est le SEUL levier
+  qui a passé le filtre. ⇒ elle doit être **FIXE sur toute la campagne**, pas seulement dans une vie.
+- **La disposition de la forêt** : nouvelle à chaque vie ⇒ la mémoire spatiale ne sert **qu'à
+  l'intérieur d'une vie**. C'est peut-être suffisant (retrouver une flaque vue il y a 500 ticks), mais
+  ça doit être un CHOIX, pas un défaut hérité.
+- **La position des flaques**, idem.
+
+⚠️ Le piège symétrique : si tout est identique à chaque vie, l'agent peut **mémoriser la carte** au
+lieu d'apprendre à percevoir — on fabriquerait un sur-apprentissage qu'on prendrait pour de
+l'intelligence. Le bon réglage est probablement : **table type→valeur FIXE** (c'est une loi du monde),
+**géographie VARIABLE** (c'est un tirage). À trancher explicitement.
+
+### ⛔ B. LE DANGER — mentionné, jamais conçu
+
+`hazard_manager.gd` existe et §2.9 le cite en une ligne. Rien n'est spécifié. Trois formes possibles,
+de valeur très différente selon notre filtre :
+
+- **Zones dangereuses fixes** (ravin, marécage) — perceptibles, prévisibles ⇒ probablement
+  **dérivables** : « évite ce qui est rouge-vif » est une formule. Faible valeur d'apprentissage,
+  mais utile comme structure spatiale (ça contraint les trajets, comme les arbres).
+- **⭐ Le RISQUE DE BLESSURE À LA CHASSE** — une grosse proie peut blesser (le pack Quaternius a
+  littéralement des animations *Kicks*). Attaquer devient un **pari** : gain contre risque.
+  ⚠️ **MAIS ATTENTION** : le projet a DÉJÀ échoué là-dessus. Le chantier P2-bis a mesuré qu'un risque
+  « pricé en espérance sans ancre d'aversion » dégrade tout, et le G3 arbitrage a exporté ses dégâts
+  (danger 5→13). Ne pas rouvrir ça sans lire `design_purete_hjepa.md` §P2.
+- **Un prédateur qui chasse le loup** — coûteux (un second agent mobile), et redondant avec le risque
+  de blessure pour ce qu'on cherche.
+
+### ⚠️ C. CHANGER LA VITESSE INVALIDE LA CALIBRATION MÉTABOLIQUE
+
+Si on ouvre l'éventail de vitesse (§2.13), **toutes les constantes calées sur l'ancienne vitesse
+deviennent fausses** : drain d'énergie par tick, rayon de capture 1 m, portée rétine 10 m, durée
+d'épisode, densité de ressources. Le monde a été calibré pour 0,011 m/tick.
+⇒ **Re-calibrer explicitement**, et ne pas s'étonner si la survie s'effondre au premier essai. C'est
+un travail de mesure à part entière, pas un effet de bord.
+
+### ⚠️ D. LE COÛT DE CALCUL D'UN MONDE RICHE (risque pratique de tout faire capoter)
+
+Grande forêt + proies mobiles + distracteurs + flaques = beaucoup plus d'objets, de raycasts et de
+collisions **par tick**. Or on collecte des **millions** de ticks.
+⇒ **Mesurer les ticks/seconde AVANT de s'engager**, sur le monde cible. Si une collecte passe de 25 min
+à 6 h, tout le plan change. Aucun de nos gates ne couvre ça aujourd'hui.
+
+### ⚠️ E. POUR QUE LE TAPI AIT UN SENS, LA PROIE DOIT AVOIR UNE PERCEPTION
+
+§2.11 propose de se tapir pour être moins visible, et §2.7a la distance de fuite. Les deux supposent
+que **la proie voit** — donc qu'on lui implémente un modèle de perception (ligne de vue, portée,
+seuil de détection dépendant du couvert et de la posture). Ce n'est pas une ligne de code : c'est un
+petit système à part entière, et il n'est spécifié nulle part.
+
+### 📋 F. Plus petits, mais à ne pas oublier
+
+- **Relief / hauteur** — les loups utilisent le terrain pour observer. Un point haut qui donne une
+  meilleure vue coupe bien avec le regard (§2.4) et l'occlusion. Non évoqué jusqu'ici.
+- **Bord du monde** — aujourd'hui une arène circulaire avec réflexion. Dans une grande forêt, qu'y
+  a-t-il au bord ? Un mur invisible est un artefact que l'agent apprendra à exploiter.
+- **Déterminisme** — la recette (seed + mono-thread + serveur frais) a été payée cher. Beaucoup plus
+  d'objets = beaucoup plus de consommateurs de RNG ⇒ **re-vérifier le rejeu bit-identique** après
+  construction, sinon tous les juges contrefactuels tombent.
+- **Cycle de vie** — le north-star mentionne des têtes ré-entraînées « la nuit » sur le vécu. Rien
+  dans ce document ne dit comment le monde s'y raccorde.
+
+---
+
 ## 7. RÉFÉRENCES
 
 **Écologie spatiale** : processus de Neyman-Scott/Thomas (semis groupés) ; indice de Clark-Evans
