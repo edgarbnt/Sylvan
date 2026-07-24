@@ -58,3 +58,45 @@ l'appris). Prochaine étape : construire la tête critique et l'A/B pleine-polit
 conséquent. Les leviers 2 (coût-virage) et 1 (danger) restent à tester/combiner ensuite (§4, un à la
 fois). Note honnête : 33 % = seuil, pas une marge confortable ; 3/6 graines portent toute la
 conséquence (5, 8, +1,9) — à confirmer si on veut plus de robustesse (plus de graines/ticks).
+
+---
+
+# Suite (2026-07-24) — Y a-t-il une MARGE pour un critique ?
+
+Le levier a rendu les décisions conséquentes (33 %). Question suivante, posée AVANT d'entraîner
+quoi que ce soit : un critique appris aurait-il quelque chose à gagner ?
+
+## Gate n°1 (gratuit, POOLÉ) — la cible est-elle plus que de la géométrie ?
+`diagnostics/diag_critic_beyond_geometry.py` sur le corpus `critic_bosq_a` (20 vies, WM vivant,
+held-out PAR ÉPISODE). AUC(dist seule) 0,709 → AUC(GEO=dist+cap) **0,800** → AUC(GEO+énergie)
+0,774, **delta −0,026 = KILL** selon le pré-enregistrement.
+
+**MAIS ce verdict n'est PAS retenu**, pour deux raisons dites honnêtement :
+1. **Sous-puissant** : seulement **25 vrais repas** (les 44 comptés la veille incluaient les 19
+   resets d'épisode — chiffre corrigé). L'effectif utile est 25 événements, pas 53 000 ticks.
+2. **Question POOLÉE** = très exactement l'erreur des 3 échecs historiques. Le planner classe
+   117 candidats DANS LE MÊME ÉTAT ; seule la variance INTRA-état décide.
+
+Bug de mesure corrigé en route : `torso0` = `(x, z, YAW)` ; inclure le yaw dans une norme faisait
+passer chaque enroulement à ±π (saut de 2π ≈ 6,28) pour un téléport → 94 fausses frontières
+d'épisode, labels et split corrompus. Frontières désormais sur (x,z) seuls → 19 frontières = 20
+épisodes exactement, insensible au seuil de 0,3 à 2,0 m.
+
+## Gate n°2 (le vrai, INTRA-état) — le coût analytique choisit-il déjà le mieux ?
+`scripts/cf_fork_probe.sh` (paramétré `PRESET=` + `HOLD=`) : à un fork conséquent, on rejoue les
+**21 candidats** en déterministe et on compare au repas que le planner obtient de lui-même (ref).
+`max(candidats) > ref` ⇒ marge capturable par un critique.
+
+| fork | ref (planner) | distribution des 21 candidats | marge |
+|------|---------------|-------------------------------|-------|
+| seed 5, k=1800 | **2** | 20 → 0 repas ; (0,75 ; +0,0) → 2 | **0** (planner déjà optimal) |
+| seed 8, k=1200 | **0** | 5 → 0 repas ; **16 → 1 repas** | **+1** (planner battu par 16/21) |
+
+**VERDICT : la marge EXISTE, et elle est grosse là où elle existe.** Au fork seed 8 le planner
+analytique est battu par **76 %** des commandes fixes : il replanifie toutes les 60 ticks,
+**hésite**, et n'atteint jamais la baie — alors que presque n'importe quel engagement TENU y
+arrive. C'est la pathologie que le monde périssable punit (hésiter ⇒ la baie se relocalise) et
+précisément ce qu'un critique valorisant l'engagement pourrait corriger. La marge est
+fork-DÉPENDANTE (nulle au fork seed 5) — conforme à la leçon « un fork ne suffit pas ».
+
+Contrôles : déterminisme vérifié à chaque fork (A=B), serveur frais par run, mono-thread.

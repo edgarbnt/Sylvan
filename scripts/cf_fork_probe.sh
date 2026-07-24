@@ -9,12 +9,16 @@
 # Rejeu DÉTERMINISTE (payé 2026-07-23) : SEED fixé + mono-thread + SERVEUR FRAIS PAR RUN. Épisode
 # tronqué à k+W (SYLVAN_MAX_EPISODE_STEPS) : la trajectoire jusqu'à k+W est identique, ~40% plus vite.
 #
-# Usage: SEED=3 K=1560 W=600 bash scripts/cf_fork_probe.sh
+# MARGE DU CRITIQUE (2026-07-24) : au fork, comparer le MAX sur les 21 candidats au repas que le
+# planner analytique obtient de lui-meme (ref). max > ref => il existe une MARGE qu un critique
+# pourrait capturer ; max == ref => -min_dist choisit deja le mieux, un critique n a rien a gagner.
+# Usage: SEED=5 K=1800 W=800 HOLD=240 PRESET=bosquets_v3_perish bash scripts/cf_fork_probe.sh
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 SEED=${SEED:-3}; K=${K:-1560}; W=${W:-600}; BASEPORT=${BASEPORT:-6280}
+HOLD=${HOLD:-0}; PRESET=${PRESET:-bosquets_v2}
 MAXS=$((K+W))
-WORLD_ENV=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset bosquets_v2 --env | sed 's/^export //' | tr '\n' ' ')
+WORLD_ENV=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset "$PRESET" --env | sed 's/^export //' | tr '\n' ' ')
 FOV=$(echo "$WORLD_ENV" | tr ' ' '\n' | grep '^SYLVAN_RETINA_FOV_DEG=' | cut -d= -f2)
 
 run_one() {   # $1=tag  $2=cf_tick("")  $3=cmd  $4=port -> repas dans [K, K+W]
@@ -32,7 +36,7 @@ run_one() {   # $1=tag  $2=cf_tick("")  $3=cmd  $4=port -> repas dans [K, K+W]
   for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$port" && { ok=1; break; }; sleep 1; done
   [ "$ok" = 0 ] && { kill -9 $SRV 2>/dev/null; echo "NA"; return; }
   local rundir=/tmp/ff_${tag}; rm -rf "$rundir"; mkdir -p "$rundir"
-  local CF=""; [ -n "$cf_tick" ] && CF="SYLVAN_CF_TICK=$cf_tick SYLVAN_CF_CMD=$cf_cmd"
+  local CF=""; [ -n "$cf_tick" ] && CF="SYLVAN_CF_TICK=$cf_tick SYLVAN_CF_CMD=$cf_cmd SYLVAN_CF_HOLD=$HOLD"
   env $CF $WORLD_ENV SYLVAN_MAX_EPISODE_STEPS=$MAXS \
     SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTION=7 \
     SYLVAN_CPG_SPEEDCAD=0.6 SYLVAN_CPG_PERIOD=0.5 SYLVAN_CPG_PLANNER=1 SYLVAN_RETINA_PLANNER=1 \
@@ -54,7 +58,7 @@ PY
   rm -rf "$rundir"
 }
 
-echo "=== JUGE EN FENÊTRE — seed=$SEED  fork k=$K  fenêtre W=$W  ([$K,$MAXS]) ==="
+echo "=== MARGE DU CRITIQUE — $PRESET  seed=$SEED  fork k=$K  fenetre W=$W  hold=$HOLD ==="
 echo "=== CONTRÔLE — déterminisme (2 runs sans CF, repas dans la fenêtre) ==="
 d1=$(run_one det1 "" "" $((BASEPORT+0))); d2=$(run_one det2 "" "" $((BASEPORT+1)))
 echo "  A=$d1  B=$d2 -> $([ "$d1" = "$d2" ] && echo DETERMINISTE || echo '!! NON-DET')"
@@ -69,4 +73,6 @@ for vx in $VXS; do for om in $OMS; do
   printf "  %.2f  %+.1f   %s\n" "$vx" "$om" "$m"
   i=$((i+1))
 done; done
+echo
+echo "  LECTURE : si le MAX des 21 candidats > ref, un critique a une MARGE a capturer."
 echo "ALL_DONE_FF"
