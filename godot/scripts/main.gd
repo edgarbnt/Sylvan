@@ -14,6 +14,7 @@ const FOOD_MANAGER_SCRIPT = preload("res://scripts/world/food_manager.gd")
 const HAZARD_MANAGER_SCRIPT = preload("res://scripts/world/hazard_manager.gd")
 const OBSTACLE_MANAGER_SCRIPT = preload("res://scripts/world/obstacle_manager.gd")  # hook local non stagé (chantier obstacle)
 const FOREST_SOLID_SCRIPT = preload("res://scripts/world/forest_solid.gd")  # forêt SOLIDE + OCCULTANTE (opt-in)
+const DISTRACTOR_MANAGER_SCRIPT = preload("res://scripts/world/distractor_manager.gd")  # animaux NON comestibles (opt-in §2.9)
 const PERCEPTION_SCRIPT = preload("res://scripts/agent/perception.gd")
 const FOREST_MANAGER_SCRIPT = preload("res://scripts/world/forest_manager.gd")
 const HUD_SCRIPT = preload("res://scripts/ui/hud.gd")
@@ -38,6 +39,7 @@ var hazard_manager = HAZARD_MANAGER_SCRIPT.new()  # zone nocive OPT-IN (SYLVAN_H
 var obstacle_manager = OBSTACLE_MANAGER_SCRIPT.new()  # mur solide OPT-IN (SYLVAN_OBSTACLE_COUNT>0), sinon inerte — hook local non stagé
 var forest_solid = FOREST_SOLID_SCRIPT.new()  # arbres solides+occultants OPT-IN (SYLVAN_FOREST_COUNT>0), sinon inertes
 var water_manager = FOOD_MANAGER_SCRIPT.new()  # 2ᵉ pulsion: eau (même classe, préfixe WATER)
+var distractor_manager = DISTRACTOR_MANAGER_SCRIPT.new()  # animaux NON comestibles OPT-IN (SYLVAN_DISTRACTOR_COUNT>0), sinon inerte
 var _water_enabled := false
 var _hud = null  # HUD in-game (signes vitaux), visual-only — reste null en headless
 var collecting := false
@@ -87,6 +89,7 @@ func _ready() -> void:
 	add_child(hazard_manager)  # zone nocive perceptible (opt-in) — doit être dans l'arbre avant begin_episode
 	add_child(obstacle_manager)  # mur solide perceptible (opt-in) — dans l'arbre avant begin_episode
 	add_child(forest_solid)  # arbres solides perceptibles (opt-in) — dans l'arbre avant begin_episode
+	add_child(distractor_manager)  # animaux non comestibles perceptibles (opt-in) — dans l'arbre avant begin_episode
 	# 2ᵉ PULSION (2026-06-18): l'EAU = un 2ᵉ FoodManager (même machinerie), préfixe d'env WATER,
 	# pastilles bleues. Planner-only (le WM ne la voit pas en étage 1). Activé seulement si demandé
 	# (SYLVAN_WATER_COUNT défini) → les runs mono-ressource existants restent identiques.
@@ -135,6 +138,7 @@ func _ready() -> void:
 	hazard_manager.set_seed(seed_value + 555)
 	obstacle_manager.set_seed(seed_value + 999)
 	forest_solid.set_seed(seed_value + 4242)
+	distractor_manager.set_seed(seed_value + 3131)   # flux DÉDIÉ : les distracteurs ne décalent pas les commandes (§6quater F)
 	_gaze_rng.seed = seed_value + 7171   # flux DÉDIÉ : le regard ne décale pas celui des commandes
 	if _water_enabled:
 		water_manager.set_seed(seed_value + 777)  # décalage → l'eau ne spawn pas SUR la bouffe
@@ -689,6 +693,7 @@ func _physics_process(delta: float) -> void:
 			_terrain_ticks += 1
 
 	agent_instance.step_agent(delta)
+	distractor_manager.advance(delta)   # animaux non comestibles : vaguent chaque tick, hors homéostasie (opt-in §2.9)
 
 	# Perturbation curriculum: random horizontal shove every ~0.75-1.5 s once the
 	# agent has settled. Forces active balance / stepping recovery (passive standing
@@ -823,6 +828,7 @@ func _start_episode() -> void:
 	homeostasis.reset_state()
 	hazard_manager.begin_episode(episode_index, spawn_manager.get_agent_spawn_position(),
 		food_manager.get_positions())  # zone nocive sur le trajet spawn→bouffe (opt-in)
+	distractor_manager.begin_episode(episode_index, spawn_manager.get_agent_spawn_position())  # animaux non comestibles (opt-in §2.9)
 	var _obst_targets = food_manager.get_positions()  # défaut : mur sur le trajet spawn→bouffe
 	if OS.get_environment("SYLVAN_OBSTACLE_AHEAD") != "":  # test G1(a) : mur DROIT DEVANT le spawn (drive-straight)
 		var _sy = spawn_manager.get_agent_spawn_yaw()
