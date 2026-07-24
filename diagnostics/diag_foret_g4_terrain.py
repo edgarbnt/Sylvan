@@ -72,6 +72,7 @@ TERRAIN_RADIUS = 2.5
 TERRAIN_FLOOR = 0.25
 
 R2_DROP_MIN = 0.05          # C doit être sous B d'au moins ça (le terrain ajoute au-delà des collisions)
+CTRL_CORR_MAX = 0.30        # |corr(facteur terrain, commande)| maxi : au-delà, l'obéissance est corrompue
 SLOWED_FRAC_MIN = 10.0      # % de ticks réellement ralentis pour que la mesure ait du sens
 
 # `[terrain] episode : facteur de vitesse moyen MESURE 0.812 | ralenti 34.0% des ticks (sur 900)`
@@ -118,42 +119,53 @@ def _run(label: str, trees: int, terrain: float, episodes: int, steps: int, seed
     return files[0], out
 
 
-def _r2_command_to_speed(jsonl: str) -> tuple[float, int, float]:
-    """R² d'un modèle vitesse_réalisée ~ vx, ajusté sur les décisions MOBILES.
+def _r2(y: np.ndarray, feats: np.ndarray) -> float:
+    a = np.column_stack([feats, np.ones(len(feats))])
+    coef, *_ = np.linalg.lstsq(a, y, rcond=None)
+    resid = y - a @ coef
+    ss_res = float(np.sum(resid ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    return 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    La vitesse réalisée = norme horizontale de la vitesse du torse (proprio dims 1 et 3), qui vaut
-    par construction vitesse_effective x vx. En arène plate elle est parfaitement linéaire en vx
-    (R²≈1) ; le sous-bois la rend position-dépendante (même vx, vitesses différentes) → R² chute.
-    On ne dépend PAS de l'orientation : |vitesse| = eff_speed x vx quel que soit le cap, donc pas
-    besoin de forcer la ligne droite. On écarte seulement les fenêtres immobiles (phase de reset).
+
+KIN_SPEED = 0.8   # sylvan_agent : vitesse = kin_speed x terrain_scale x vx (kin_speed=0.8, mesuré)
+
+
+def _r2_command_to_speed(jsonl: str) -> tuple[float, float, float, float, int, float]:
+    """Vitesse réalisée = |vitesse horizontale du torse| (proprio dims 1,3) = kin x terrain x vx.
+
+    Renvoie (R²(vx seul), corr(facteur_terrain, vx), eff_min, eff_max, n, vitesse_moyenne).
+      * R²(vx seul) : chute en sous-bois (la position se met à compter) = le but recherché.
+      * CONTRÔLABILITÉ (retour de pair) — au lieu de logger terrain_scale (capturé un tick trop tôt,
+        donc désaligné), on reconstruit le facteur terrain EFFECTIF = vitesse / (kin_speed x vx),
+        aligné avec la vitesse PAR DÉFINITION. Si le corps obéit, ce facteur ne dépend QUE de la
+        position, PAS de la commande : corr(facteur, vx) ≈ 0. S'il dépendait de vx, l'obéissance du
+        corps serait corrompue (corps cassé). Et son étendue [eff_min, eff_max] prouve que le terrain
+        engage vraiment. C'est non-circulaire : « vitesse ∝ vx à position fixe » sans supposer le
+        résultat. On ne dépend pas de l'orientation ; on écarte les fenêtres immobiles (reset).
     """
-    xs, ys = [], []
+    vxs, effs, ys = [], [], []
     with open(jsonl) as f:
         for line in f:
             if not line.strip():
                 continue
-            obs = json.loads(line).get("obs", {})
-            wm = json.loads(line).get("wm", {})
-            proprio = obs.get("proprio", [])
-            cmd = wm.get("cmd", [0.0, 0.0])
+            rec = json.loads(line)
+            proprio = rec.get("obs", {}).get("proprio", [])
+            cmd = rec.get("wm", {}).get("cmd", [0.0, 0.0])
             if len(proprio) < 4 or cmd[0] <= 0.0:
                 continue
             speed = math.hypot(proprio[1], proprio[3])   # vitesse horizontale RÉALISÉE (sans lag)
             if speed <= 0.001:                           # fenêtre immobile (reset) — hors sujet
                 continue
-            xs.append(cmd[0])
+            vxs.append(cmd[0])
+            effs.append(speed / (KIN_SPEED * cmd[0]))    # facteur terrain EFFECTIF, aligné par def.
             ys.append(speed)
     if len(ys) < 20:
         raise SystemExit(f"{jsonl} : {len(ys)} décisions mobiles — trop peu pour un R² fiable")
-    x = np.array(xs)
-    y = np.array(ys)
-    a = np.column_stack([x, np.ones(len(x))])          # [vx, 1]
-    coef, *_ = np.linalg.lstsq(a, y, rcond=None)
-    resid = y - a @ coef
-    ss_res = float(np.sum(resid ** 2))
-    ss_tot = float(np.sum((y - y.mean()) ** 2))
-    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-    return r2, len(ys), float(y.mean())
+    y, vx, eff = np.array(ys), np.array(vxs), np.array(effs)
+    r2_cmd = _r2(y, vx)
+    corr = 0.0 if eff.std() < 1e-9 else float(np.corrcoef(eff, vx)[0, 1])
+    return r2_cmd, abs(corr), float(eff.min()), float(eff.max()), len(ys), float(y.mean())
 
 
 def _terrain_measured(out: str) -> tuple[float, float]:
@@ -183,21 +195,25 @@ def main() -> int:
     res = {}
     for label, trees, terr, desc in conds:
         jsonl, out = _run(label, trees, terr, 1, a.steps, a.seed)
-        r2, n, spd = _r2_command_to_speed(jsonl)
+        r2, ctrl_corr, eff_lo, eff_hi, n, spd = _r2_command_to_speed(jsonl)
         fac, slowed = _terrain_measured(out)
-        res[label] = {"r2": r2, "n": n, "spd": spd, "fac": fac, "slowed": slowed}
+        res[label] = {"r2": r2, "corr": ctrl_corr, "eff_lo": eff_lo, "eff_hi": eff_hi,
+                      "n": n, "spd": spd, "fac": fac, "slowed": slowed}
         os.system(f"rm -rf /tmp/foret_g4_{label}")
         extra = f" | terrain: facteur {fac:.3f}, ralenti {slowed:.1f}% des ticks" if terr > 0 else ""
         print(f"\n  {desc}")
-        print(f"    R²(commande→vitesse) = {r2:.3f}  ({n} décisions, vitesse moyenne {spd:.3f}){extra}")
+        print(f"    R²(commande→vitesse) = {r2:.3f} | facteur terrain effectif {eff_lo:.2f}..{eff_hi:.2f}, "
+              f"corr(facteur,commande) = {ctrl_corr:.3f}  ({n} décisions){extra}")
 
     a_, b_, c_ = res["A_plat"], res["B_foret"], res["C_terrain"]
     drop_terrain = a_["r2"] - c_["r2"]
     drift_collision = a_["r2"] - b_["r2"]
     print("\n=== LECTURE ===")
-    print(f"  arène plate     R² {a_['r2']:.3f}  (cinématique pure — doit valoir ~1)")
-    print(f"  + collisions    R² {b_['r2']:.3f}  (doit RESTER ~1 : la vitesse ignore la collision, écart {drift_collision:+.3f})")
-    print(f"  + sous-bois     R² {c_['r2']:.3f}  (chute due au TERRAIN : {-drop_terrain:+.3f})")
+    print(f"  arène plate     R²(cmd) {a_['r2']:.3f}  (cinématique pure — doit valoir ~1)")
+    print(f"  + collisions    R²(cmd) {b_['r2']:.3f}  (doit RESTER ~1 : la vitesse ignore la collision, écart {drift_collision:+.3f})")
+    print(f"  + sous-bois     R²(cmd) {c_['r2']:.3f}  (chute due au TERRAIN : {-drop_terrain:+.3f})")
+    print(f"  CONTRÔLABILITÉ  facteur terrain {c_['eff_lo']:.2f}..{c_['eff_hi']:.2f} (engage) et "
+          f"INDÉPENDANT de la commande (corr {c_['corr']:.3f} ≈ 0) → le corps OBÉIT, le terrain module.")
 
     fails = []
     if a_["r2"] < 0.95:
@@ -207,8 +223,15 @@ def main() -> int:
         fails.append(f"la forêt SANS terrain fait déjà bouger le R² de {drift_collision:+.3f} — la "
                      "vitesse ne devrait PAS voir la collision ; confondant non contrôlé")
     if drop_terrain < R2_DROP_MIN:
-        fails.append(f"le terrain ne fait chuter le R² que de {drop_terrain:.3f} (< {R2_DROP_MIN}) — "
+        fails.append(f"le terrain ne fait chuter le R²(cmd) que de {drop_terrain:.3f} (< {R2_DROP_MIN}) — "
                      "la vitesse reste prédictible depuis la commande, le fix ne mord pas")
+    if c_["corr"] > CTRL_CORR_MAX:
+        # RETOUR DE PAIR : un corps qui n'obéit plus est aussi inutile qu'un corps trop obéissant.
+        fails.append(f"le facteur terrain DÉPEND de la commande (corr {c_['corr']:.3f} > {CTRL_CORR_MAX}) — "
+                     "l'obéissance du corps est corrompue, le terrain ne le module pas proprement (corps cassé)")
+    if c_["eff_hi"] - c_["eff_lo"] < 0.1:
+        fails.append(f"le facteur terrain effectif ne varie que de {c_['eff_hi']-c_['eff_lo']:.2f} — "
+                     "le sous-bois n'engage pas (attendu une étendue nette entre plancher et 1)")
     if c_["slowed"] < SLOWED_FRAC_MIN:
         fails.append(f"le terrain n'a ralenti que {c_['slowed']:.1f}% des ticks (< {SLOWED_FRAC_MIN}) — "
                      "le sous-bois n'est presque jamais rencontré, augmenter densité/rayon")
@@ -222,18 +245,19 @@ def main() -> int:
             print(f"  ✗ {f}")
         print("  G4 TERRAIN = ÉCHEC")
         return 1
-    print(f"  G4 TERRAIN = PASS — la commande explique {c_['r2']*100:.0f}% de la vitesse en sous-bois "
-          f"contre {a_['r2']*100:.0f}% en plat : la POSITION compte désormais.")
+    print(f"  G4 TERRAIN = PASS — la commande SEULE n'explique plus que {c_['r2']*100:.0f}% de la vitesse "
+          f"en sous-bois (contre {a_['r2']*100:.0f}% en plat : la POSITION compte), MAIS le facteur "
+          f"terrain est indépendant de la commande (corr {c_['corr']:.3f}) : le corps OBÉIT, le terrain module.")
     print("  ⚠️ NON MESURÉ ICI : que l'entité navigue mieux ou survive — cela se mesure en vies,")
     print("     après collecte et retrain (le terrain change la dynamique que le WM doit apprendre).")
     return 0
 
 
-def _fake(cmd_vx: float, speed: float) -> dict:
-    """Une transition minimale : proprio dims 1..3 = vitesse du torse, wm.cmd = commande."""
+def _fake(cmd_vx: float, speed: float, ts: float = 1.0) -> dict:
+    """Une transition minimale : proprio dims 1..3 = vitesse du torse, wm.cmd + terrain_scale."""
     proprio = [0.0] * 4
     proprio[1] = speed        # vitesse horizontale portée par le seul axe x, hypot = speed
-    return {"obs": {"proprio": proprio}, "wm": {"cmd": [cmd_vx, 0.0]}}
+    return {"obs": {"proprio": proprio}, "wm": {"cmd": [cmd_vx, 0.0], "terrain_scale": ts}}
 
 
 def selfcheck() -> int:
@@ -244,21 +268,39 @@ def selfcheck() -> int:
             vx = 0.55 + 0.2 * (i % 3) / 2.0
             tf.write(json.dumps(_fake(vx, 0.8 * vx)) + "\n")   # vitesse = kin_speed x vx, cinématique pure
         clean = tf.name
-    r2, n, _ = _r2_command_to_speed(clean)
+    r2, corr, lo, hi, n, _ = _r2_command_to_speed(clean)
     os.unlink(clean)
-    assert r2 > 0.999 and n == 200, (r2, n)
-    print(f"  [ok] R²=1 sur une vitesse exactement proportionnelle à la commande ({n} décisions)")
+    assert r2 > 0.999 and n == 200 and abs(hi - 1.0) < 1e-6, (r2, n, hi)
+    print(f"  [ok] R²(cmd)=1 sur une vitesse proportionnelle à la commande, facteur terrain 1.0 ({n} décisions)")
 
-    # Vitesse rendue INDÉPENDANTE de la commande (facteur terrain aléatoire) → R²≈0.
+    # Terrain fort qui MODULE proprement : vitesse = kin × vx × ts, ts tiré INDÉPENDAMMENT de vx.
+    # → R²(cmd) chute (position domine) MAIS facteur terrain ⊥ commande (corr≈0) = corps OBÉIT.
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as tf:
         rng = np.random.default_rng(0)
-        for _ in range(200):
-            tf.write(json.dumps(_fake(0.65, float(rng.uniform(0.1, 0.5)))) + "\n")
-        noisy = tf.name
-    r2n, _, _ = _r2_command_to_speed(noisy)
-    os.unlink(noisy)
-    assert r2n < 0.2, r2n
-    print(f"  [ok] R²≈0 ({r2n:.3f}) quand la vitesse ne dépend PAS de la commande — le test discrimine")
+        for _ in range(400):
+            vx = 0.55 + 0.2 * rng.random()
+            ts = float(rng.uniform(0.25, 1.0))
+            tf.write(json.dumps(_fake(vx, 0.8 * vx * ts, ts)) + "\n")
+        good = tf.name
+    r2g, corrg, log, hig, _, _ = _r2_command_to_speed(good)
+    os.unlink(good)
+    assert r2g < 0.6 and corrg < CTRL_CORR_MAX and (hig - log) > 0.3, (r2g, corrg, log, hig)
+    print(f"  [ok] terrain qui module : R²(cmd)={r2g:.3f} (position compte), facteur {log:.2f}..{hig:.2f} "
+          f"⊥ commande (corr {corrg:.3f}) — corps OBÉIT (contrôlabilité, retour de pair)")
+
+    # Corps CASSÉ : le facteur terrain DÉPEND de la commande (ts corrélé à vx) → corr élevé, refusé.
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as tf:
+        rng = np.random.default_rng(1)
+        for _ in range(400):
+            vx = 0.55 + 0.2 * rng.random()
+            ts = 0.25 + 0.7 * (vx - 0.55) / 0.2      # facteur LIÉ à vx = obéissance corrompue
+            tf.write(json.dumps(_fake(vx, 0.8 * vx * ts, ts)) + "\n")
+        broken = tf.name
+    _, corrb, _, _, _, _ = _r2_command_to_speed(broken)
+    os.unlink(broken)
+    assert corrb > CTRL_CORR_MAX, corrb
+    print(f"  [ok] corps cassé : facteur terrain corrélé à la commande (corr {corrb:.3f} > {CTRL_CORR_MAX}) "
+          "— le test le REFUSE")
 
     line = "[terrain] episode : facteur de vitesse moyen MESURE 0.812 | ralenti 34.0% des ticks (sur 900)"
     fac, slowed = _terrain_measured(line)
