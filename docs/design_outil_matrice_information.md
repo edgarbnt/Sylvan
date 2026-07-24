@@ -169,3 +169,63 @@ mémoire. À la profondeur 0 les deux coïncident, ce qui rend les deux lectures
   corps cinématique est `wm_objcentric_kin`.)
 - La matrice n'est PAS un module d'architecture : elle ne figure donc pas dans la carte, au même titre
   que `guards.py` et `archi_hud` eux-mêmes.
+
+---
+
+# 8. LES DEUX COMPLÉMENTS (§4) — construits eux aussi
+
+## 8.1 Vérificateur de contrat de monde — `diagnostics/diag_world_contract.py`
+
+```
+PYTHONPATH=python env_pytorch_3.12/bin/python diagnostics/diag_world_contract.py \
+    data/replay_buffer/critic_bosq_ripe11 [--set SYLVAN_ENERGY_DRAIN=0.05] [--preset-file run.env]
+```
+
+Dix clauses, chacune = un réglage DEMANDÉ face à une mesure qui l'atteste sur le corpus SERVI :
+drains énergie/soif, restore absorbé d'un repas, vitesse du corps, **rayon de capture mesuré à la
+distance réelle au moment du repas**, nombre d'apparences de proie réellement rendues, jitter
+d'apparence, indice de maturité, régénération de santé, dégâts subis. Quand la variable n'est pas
+posée, c'est le **défaut du code** qui est opposé à la mesure, et il est cité avec son fichier —
+inventer un défaut ferait de l'outil un menteur de plus. Sortie ≠ 0 en cas de divergence, donc
+utilisable en garde-fou AVANT une collecte de plusieurs heures.
+
+Trois verdicts, et le troisième est celui qui rend l'outil utile : *demandé et servi* ✅,
+*demandé mais NON servi* 🚨 (le réglage n'a pas pris), et **servi SANS avoir été demandé** 🚨 — le
+réglage fantôme, exactement le mode de panne qui a coûté trois fois du temps au projet.
+
+Vérifié sur les corpus existants : sur `ripe11`, opposé aux seuls défauts du code, il signale
+correctement le drain à 0,05 et l'indice de maturité actif ; avec le preset réel il est vert. Sur
+`typ31` il retrouve les 4 apparences servies, un rayon de capture de 0,66 m sous la bouche de 1,0 m,
+et une vitesse de 0,60 m/s sous les 0,8 déclarés — cohérent avec la constante mesurée du corps.
+
+**Piège trouvé en le construisant** : la dispersion brute des couleurs de proie criait « variation
+d'apparence servie » dès que les TYPES étaient actifs (quatre teintes exactes suffisent à la monter à
+0,136). `_n_types` et `_appearance_var` sont deux mécanismes distincts ; les confondre accusait un
+réglage fantôme là où le monde faisait exactement ce qu'on lui demandait. Le jitter est donc mesuré
+comme l'écart RÉSIDUEL à la couleur de type la plus proche.
+
+## 8.2 Tableau de bord des gates — `diagnostics/diag_gates_board.py`
+
+```
+PYTHONPATH=python env_pytorch_3.12/bin/python diagnostics/diag_gates_board.py [--chantier obstacle] [--full]
+PYTHONPATH=python env_pytorch_3.12/bin/python diagnostics/diag_gates_board.py --run <gate> [--force]
+```
+
+**Aucun registre écrit à la main** — un registre recopié dériverait du code en une semaine. Tout est
+dérivé : la liste des gates vient des `diagnostics/diag_*.py` dont le docstring pré-enregistre un
+critère, la question de leur première ligne, le critère de leur bloc « CRITÈRES PRÉ-ENREGISTRÉS », et
+**le verdict est CITÉ depuis git** — le commit le plus récent qui porte un mot de verdict explicite
+ET mentionne ce gate. 44 gates découverts ; `--run` rejoue et inscrit dans `tools/gates/ledger.jsonl`,
+avec refus des gates coûteux sans `--force` et un timeout qui inscrit l'abandon au lieu de bloquer.
+
+Contrôle : sur `--chantier obstacle` il rend G0 ✅ G1 ✅ G2 ✅ et `obstacle_memory_g0` ⏸️ — exactement
+l'état réel du chantier (G0-G2 bankés, mémoire STOP).
+
+**Deux pièges trouvés en le construisant, tous deux du type « l'outil ment poliment »** :
+1. le drapeau « gate coûteux » était lu dans le DOCSTRING — or presque tous les diagnostics *parlent*
+   d'entraînement : ils existent pour l'éviter. Le drapeau était donc inversé et marquait « cher » les
+   tests gratuits. Il est maintenant lu dans le CODE (le script lance-t-il Godot ou un entraîneur ?) ;
+2. attribuer à un gate le verdict du dernier commit qui a **effleuré** son fichier fabriquait des
+   verdicts faux. Il faut désormais un mot de verdict explicite ET une mention du gate ; sinon « ? »,
+   qui veut dire « non retrouvable ici », jamais « non testé ». Le sujet du commit prime sur le corps
+   (un « G1 PASS » dont le corps mentionne un chantier gelé rendait « gelé »).
