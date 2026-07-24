@@ -36,6 +36,7 @@ from pathlib import Path
 
 import torch
 
+from sylvan.critic_corpus import load_bc_corpus, meal_flags, residual_label, auc, episode_split
 from sylvan.models.command_wm import CommandWorldModel
 
 MEAL_JUMP = 5.0        # un repas = l'énergie remonte de plus de 5 points en un tick
@@ -124,7 +125,7 @@ def main() -> None:
     args = ap.parse_args()
 
     torch.manual_seed(0)
-    obs, energy, bounds = load_corpus(Path(args.corpus))
+    obs, energy, _cmds, bounds = load_bc_corpus(Path(args.corpus))
     n_ep = len(bounds) - 1
     print(f"corpus {args.corpus} : {len(energy)} ticks, {n_ep} épisodes détectés (téléport torse)")
 

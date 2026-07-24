@@ -62,6 +62,7 @@ class WorldPreset:
     patch_spacing_max_m: float = 11.0
     regrow_ticks: int = 2500
     perish_ticks: int = 0        # 0 = OFF ; >0 = une baie non mangee perit apres ce delai
+    ripe_cue: bool = False       # True = la LUMINOSITE du buisson encode l'age de sa baie (invisible aux slots)
     spawn_annulus_m: tuple[float, float] = (3.0, 11.0)
     eat_radius_m: float = 1.0
 
@@ -114,6 +115,7 @@ class WorldPreset:
             "SYLVAN_FOOD_PATCH_SPACING_MAX": f"{self.patch_spacing_max_m}",
             "SYLVAN_FOOD_REGROW": f"{self.regrow_ticks}",
             "SYLVAN_FOOD_PERISH": f"{self.perish_ticks}",
+            "SYLVAN_FOOD_RIPE_CUE": "1" if self.ripe_cue else "0",
             "SYLVAN_FOOD_MIN_RADIUS": f"{self.spawn_annulus_m[0]}",
             "SYLVAN_FOOD_SPAWN_RADIUS": f"{self.spawn_annulus_m[1]}",
         }
@@ -187,6 +189,15 @@ BOSQUETS_V2 = dataclasses.replace(BOSQUETS_V1, name="bosquets_v2", kin_turn=1.5)
 #: (taux de conséquence doit monter SANS effondrer la survie). GRATUIT côté WM (règle de monde).
 BOSQUETS_V3_PERISH = dataclasses.replace(BOSQUETS_V2, name="bosquets_v3_perish", perish_ticks=800)
 
+#: MATURITÉ VISIBLE (2026-07-24) : v3 + la LUMINOSITÉ du buisson-marqueur encode l'âge de sa baie
+#: (vif = fraîche, sombre = imminente). Le buisson est à cos 0,40/0,45 des requêtes rouge/bleu, donc
+#: SOUS le seuil 0,55 -> ses rayons sont exclus EN DUR des deux slots ; et l'affinité étant un
+#: COSINUS, elle est invariante par changement d'échelle (mesuré : 0,402/0,453 de x1,0 à x0,2).
+#: ⇒ l'indice est PROUVABLEMENT invisible aux slots (donc à `-min_dist`) et visible dans la rétine :
+#: seul un critique qui lit la SCÈNE (le latent) peut s'en servir. C'est ce qui donne du travail au
+#: critique sans câbler la réponse dans la perception (§2/§3).
+BOSQUETS_V4_RIPE = dataclasses.replace(BOSQUETS_V3_PERISH, name="bosquets_v4_ripe", ripe_cue=True)
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -245,7 +256,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():

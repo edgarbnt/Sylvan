@@ -22,6 +22,7 @@ SEED=${SEED:-1}
 PORT=${PORT:-6081}
           # par ressource : 2 bouffe + 2 eau = 4 bosquets
 REPLAN=${REPLAN:-10}           # ticks entre deux decisions du planner. 10 = actuel.
+HORIZON=${HORIZON:-80}       # profondeur du reve. 80 = 0,88 m parcourus ; la bouffe est a ~7 m (myopie mesuree 2026-07-24)
                                # Le G0 conséquence montre qu a 10 une commande n engage RIEN
                                # (variance intra 1,9 %) : le planner efface sa propre decision.
 HW=${HW:-2.0}                  # heading_weight : ACTIF en mono-pulsion (branche plan_wm_slot, l.580).
@@ -67,7 +68,7 @@ SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
-  --host 127.0.0.1 --port $PORT --horizon 80 --replan-every $REPLAN $MEM_FLAGS > /tmp/${TAG}_srv.log 2>&1 &
+  --host 127.0.0.1 --port $PORT --horizon ${HORIZON:-80} --replan-every $REPLAN $MEM_FLAGS > /tmp/${TAG}_srv.log 2>&1 &
 SRV=$!
 for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
 

@@ -106,6 +106,7 @@ var _regrow_at: Array[int] = []   # tick de vie auquel elle réapparaît (-1 = v
 # Opt-in SYLVAN_<PREFIX>_PERISH (0 = OFF, bit-identique). GRATUIT côté WM (règle de monde, la baie
 # reste perçue par la rétine comme avant tant qu'elle est là).
 var _perish_ticks := 0
+var _ripe_cue := false          # indice de MATURITÉ VISIBLE (luminosité du buisson) — opt-in, OFF = bit-identique
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -288,6 +289,9 @@ func _read_patch_env() -> void:
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
+	var rc := OS.get_environment("SYLVAN_%s_RIPE_CUE" % _prefix)
+	if rc != "":
+		_ripe_cue = rc != "0"
 	var pe := OS.get_environment("SYLVAN_%s_PERISH" % _prefix)
 	if pe != "":
 		_perish_ticks = maxi(0, int(pe))
@@ -341,6 +345,38 @@ func _patch_berry_pos(i: int, patch_idx: int = -1) -> Vector3:
 	var u := _rng.randf()
 	var r := sqrt(inner * inner + u * (outer * outer - inner * inner))   # uniforme en aire
 	return Vector3(c.x + cos(ang) * r, food_y, c.z + sin(ang) * r)
+
+
+func _update_ripeness_cue() -> void:
+	# MATURITÉ VISIBLE (2026-07-24) : la LUMINOSITÉ du buisson-marqueur encode l'âge de SA baie —
+	# vif = fraîche, sombre = sur le point de se relocaliser (ou bosquet vide).
+	#
+	# POURQUOI LE BUISSON ET PAS LA BAIE. Le slot pondère ses rayons par une saillance
+	# `max(RGB) − min(RGB)` : teinter la BAIE ferait mécaniquement préférer la plus fraîche au slot,
+	# donc la PERCEPTION arbitrerait à la place du critique et `-min_dist` en profiterait aussi —
+	# raccourci câblé, interdit (§2/§3). Le buisson, lui, est à cos 0,40 du rouge et 0,45 du bleu,
+	# donc SOUS le seuil 0,55 : ses rayons sont exclus EN DUR des deux slots. Et l'affinité est un
+	# COSINUS, invariant par changement d'échelle — mesuré : cos reste 0,402/0,453 de x1,0 à x0,2.
+	# ⇒ l'indice est prouvablement INVISIBLE aux slots (position inchangée) et VISIBLE dans la
+	# rétine brute : seul un critique lisant la scène (le latent) peut s'en servir, jamais -min_dist.
+	if not _ripe_cue or _perish_ticks <= 0 or _patch_centres.is_empty():
+		return
+	for k in range(_patch_meshes.size()):
+		if k >= _patch_centres.size():
+			continue
+		var age := 1.0                                  # 1 = aucune baie vivante ici -> éteint
+		for i in range(_positions.size()):
+			if _alive[i] and _nearest_patch(i) == k:
+				var a := float(_life_tick - _born_at[i]) / float(_perish_ticks)
+				age = minf(age, clampf(a, 0.0, 1.0))
+		var s := 1.0 - 0.8 * age                        # x1,0 (fraîche) -> x0,2 (imminente)
+		var c := Color(PATCH_BUSH_COLOR.r * s, PATCH_BUSH_COLOR.g * s, PATCH_BUSH_COLOR.b * s)
+		var mat: StandardMaterial3D = _patch_meshes[k].material_override
+		if mat != null:
+			mat.albedo_color = c
+			mat.emission = c * 0.3
+		if k < _patch_areas.size():
+			_patch_areas[k].set_meta("retina_color", c)   # la rétine lit CE champ, pas le mesh
 
 
 func _nearest_patch(i: int) -> int:
@@ -601,6 +637,7 @@ func _tick_regrowth() -> void:
 			_meshes[i].global_position = _positions[i]
 		_meshes[i].visible = true
 		_apply_appearance(i)
+	_update_ripeness_cue()
 
 
 func alive_count() -> int:

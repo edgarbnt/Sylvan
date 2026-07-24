@@ -185,3 +185,71 @@ BANKÉ. Deux pistes distinctes en sortent, à gater séparément (§4) :
   (b) **ENTRÉE PLUS RICHE** — le token jette la scène (autres bosquets, buissons) que le latent
       porte ; un critique sur le LATENT verrait ce que `-min_dist` ne voit pas. C'est la seule
       forme qui puisse battre la géométrie, puisque sur la géométrie seule il n'y a rien à gagner.
+
+---
+
+# Suite (2026-07-24) — critique-LATENT, horizon, et MATURITÉ VISIBLE
+
+## 1. Critique-LATENT : ÉCHEC, la donnée est la contrainte
+`python/scripts/train_latent_critic.py` (entrée = latents RÊVÉS open-loop sous les commandes vécues,
+donc train = déploiement ; WM gelé ; split par épisode). AUC POOLÉE held-out **0,623**, avec
+SURAPPRENTISSAGE franc (la loss descend pendant que l'AUC se dégrade après l'époque 40) : 128
+dimensions d'entrée pour **25 repas** vécus.
+
+Juge intra-état (fork seed 8 k=1200) :
+
+| critique | top-1 | AUC intra-état | verdict |
+|----------|-------|----------------|---------|
+| token (géométrie) | 0 repas | 0,562 | pas de gain (analytique 0,587) |
+| latent (scène) | 1 repas | **0,325** | ÉCHEC, classement ANTI-corrélé |
+| analytique `-min_dist` | 0 repas | 0,587 | — |
+
+⚠️ **Bug de verdict corrigé** : le script concluait « LE CRITIQUE GAGNE » sur le seul top-1, alors
+que le pré-enregistrement exigeait top-1 ET meilleur classement. Or **76 % des candidats atteignent
+le max ici** → un choix ALÉATOIRE « gagne » le top-1 3 fois sur 4. Le top-1 seul ne prouve rien ; le
+juge affiche désormais le taux de base et exige les deux conditions. Sans ce garde-fou j'aurais
+relayé de la chance comme un succès.
+
+⇒ La contrainte n'est ni la cible, ni le monde, ni la forme : c'est le **volume de vécu**. 25 repas
+ne peuvent entraîner aucun critique riche. Un corpus puissant demande ~150-200 vies (~200+ repas).
+
+## 2. Horizon : le gain OFFLINE ne TRANSFÈRE PAS (négatif)
+A/B closed-loop `bosquets_v3_perish`, 8 vies, seed 1 :
+
+| horizon | imagination | survie méd. | repas (8 vies) | vies pleines |
+|---------|-------------|-------------|----------------|--------------|
+| **80** | 0,88 m | **2900** | **11** | **4/8** |
+| 300 | 3,30 m | 2000 (plancher) | 2 | 0/8 |
+
+L'offline prédisait l'INVERSE (AUC 0,587 → 0,637 en allant de 80 à 400). Cause probable : sur 300
+pas le rêve open-loop DÉRIVE, donc le planner optimise une fantaisie. H=700 TUÉ avant la fin (9× le
+coût, même logique de transfert déjà réfutée). **Piste horizon fermée** ; leçon re-confirmée : un
+gain de classement offline ne prédit pas le comportement en vie.
+
+## 3. MATURITÉ VISIBLE — bâtie et PROUVÉE neutre pour la perception de position
+`SYLVAN_FOOD_RIPE_CUE` (preset `bosquets_v4_ripe`) : la LUMINOSITÉ du buisson-marqueur encode l'âge
+de sa baie (x1,0 fraîche → x0,2 imminente ; bosquet vide = éteint).
+
+**Pourquoi le buisson et PAS la baie** : le slot pondère ses rayons par une saillance
+`max(RGB) − min(RGB)`. Teinter la BAIE ferait mécaniquement préférer la plus fraîche AU SLOT — la
+perception arbitrerait à la place du critique, et `-min_dist` en profiterait aussi. Raccourci câblé,
+refusé (§2/§3).
+
+**Preuve d'invariance** (mesurée, pas supposée) : le buisson est à cos **0,402** du rouge et
+**0,453** du bleu, sous le seuil 0,55 → ses rayons sont exclus EN DUR des deux slots ; et l'affinité
+étant un COSINUS, elle est invariante par changement d'échelle. Vérifié sur **2000 observations
+réelles** (10 708 rayons de buisson touchés) : luminosité ×0,8 / ×0,5 / ×0,2 → écart max du slot
+bouffe = **0,00000000 m**.
+⇒ l'indice est PROUVABLEMENT invisible à `-min_dist` et présent dans la rétine, donc exploitable
+UNIQUEMENT par un critique qui lit la scène. C'est le premier signal du monde que la géométrie ne
+peut pas voir.
+
+⚠️ Première vérification MAL CONÇUE et écartée : comparer deux runs closed-loop (cue OFF vs ON) à
+graine égale ne teste rien, car l'indice change la rétine → le latent → le plan → les trajectoires
+divergent (divergence ATTENDUE). L'invariance devait être testée à OBSERVATION ÉGALE ; c'est ce qui
+est fait ci-dessus.
+
+## Prochain pas
+Collecter UN gros corpus sur `bosquets_v4_ripe` (~150-200 vies) : il sert les DEUX besoins d'un coup
+— le volume qui manquait, et le signal que seule la scène porte. Puis ré-entraîner le critique-latent
+et le repasser au juge intra-état. Ne PAS ajouter d'autre levier avant ce verdict (§4).

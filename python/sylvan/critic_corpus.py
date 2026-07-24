@@ -23,15 +23,19 @@ TELEPORT_M = 0.5       # reset d'épisode = saut du torse > 0,5 m en (x,z) ; vit
 RETINA_DIM = 144
 
 
-def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, list[int]]:
-    """Log BC (une ligne par tick) → (obs [N,277], énergie [N], bornes d'épisodes).
+def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    """Log BC (une ligne par tick) → (obs [N,277], énergie [N], commandes [N,2], bornes d'épisodes).
+
+    Les commandes RÉELLEMENT exécutées sont rendues parce que le critique-latent doit être entraîné
+    sur des latents RÊVÉS sous ces commandes — sinon on entraîne sur une distribution (teacher-forced)
+    et on déploie sur une autre (rêve open-loop), ce qui est le train ≠ déploiement classique.
 
     ⚠️ `torso0` = (x, z, YAW). Le 3ᵉ canal est un ANGLE : l'inclure dans une norme fait passer chaque
     enroulement à ±π (saut de 2π ≈ 6,28) pour un téléport — bug mesuré le 2026-07-24, il fabriquait
     94 fausses frontières sur 20 épisodes et corrompait labels ET split. On n'utilise que (x, z).
     """
     path = Path(path)
-    proprio, retina, energy, torso = [], [], [], []
+    proprio, retina, energy, torso, cmd = [], [], [], [], []
     with open(path / "ep_0000.jsonl") as fh:
         for line in fh:
             r = json.loads(line)
@@ -39,6 +43,7 @@ def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, list[i
             retina.append(r["wm"]["retina0"])
             energy.append(r["obs"]["energy"])
             torso.append(r["wm"]["torso0"])
+            cmd.append((r["wm"].get("cmd") or [0.0, 0.0])[:2])
     e = torch.tensor(energy, dtype=torch.float32)
     obs = torch.cat([
         torch.tensor(proprio, dtype=torch.float32),
@@ -48,7 +53,7 @@ def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, list[i
     t = torch.tensor(torso, dtype=torch.float32)
     step = (t[1:, :2] - t[:-1, :2]).norm(dim=1)
     bounds = [0] + [int(i) + 1 for i in torch.nonzero(step > TELEPORT_M).flatten()] + [len(e)]
-    return obs, e, bounds
+    return obs, e, torch.tensor(cmd, dtype=torch.float32), bounds
 
 
 def meal_flags(e: torch.Tensor, bounds: list[int]) -> torch.Tensor:

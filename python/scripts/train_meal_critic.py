@@ -73,7 +73,7 @@ def main() -> None:
     torch.manual_seed(args.seed)                      # A/B non reproductible = A/B inutile
     torch.set_num_threads(1)
 
-    obs, energy, bounds = load_bc_corpus(args.corpus)
+    obs, energy, _cmds, bounds = load_bc_corpus(args.corpus)
     n_ep = len(bounds) - 1
     print(f"corpus {args.corpus} : {len(energy)} ticks, {n_ep} épisodes")
 

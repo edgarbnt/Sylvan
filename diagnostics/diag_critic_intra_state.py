@@ -71,6 +71,7 @@ def main() -> None:
     ap.add_argument("--outcomes", default="data/forks/s8_k1200_outcomes.txt")
     ap.add_argument("--wm", default="data/checkpoints/wm_objcentric_kin/wm_best.pt")
     ap.add_argument("--critic", default="data/checkpoints/meal_critic/critic_best.pt")
+    ap.add_argument("--critic-type", choices=["token", "latent"], default="token")
     ap.add_argument("--horizon", type=int, default=80)
     args = ap.parse_args()
 
@@ -94,7 +95,11 @@ def main() -> None:
     wm.eval()
 
     ck = torch.load(args.critic, map_location="cpu", weights_only=False)
-    critic = MealCritic()
+    if args.critic_type == "latent":
+        from sylvan.models.value_head import ValueHead
+        critic = ValueHead(ck["latent_dim"], ck.get("hidden", 256))
+    else:
+        critic = MealCritic()
     critic.load_state_dict(ck["model"])
     critic.eval()
 
@@ -103,8 +108,12 @@ def main() -> None:
     with torch.no_grad():
         out = wm.rollout_open_loop(obs0.expand(21, -1).contiguous(), seq)
         slot = out["slot"]                                                             # [21, T, 2]
-        lvl = torch.full(slot.shape[:2], energy / 100.0)
-        v_critic = critic.value(token(lvl, slot)).mean(dim=1)                          # agrégat mean
+        if args.critic_type == "latent":
+            # MÊME entrée qu'à l'entraînement : les latents RÊVÉS open-loop.
+            v_critic = critic.value(out["predicted_latents"]).mean(dim=1)
+        else:
+            lvl = torch.full(slot.shape[:2], energy / 100.0)
+            v_critic = critic.value(token(lvl, slot)).mean(dim=1)                      # agrégat mean
         v_analytic = -slot.norm(dim=-1).min(dim=1).values                              # -min_dist
 
     y = torch.tensor(outcomes, dtype=torch.float32)
@@ -119,20 +128,28 @@ def main() -> None:
               f"{float(v_analytic[i]):+.3f}")
 
     print()
-    for name, s in (("CRITIQUE", v_critic), ("ANALYTIQUE (-min_dist)", v_analytic)):
+    for name, s in ((f"CRITIQUE ({args.critic_type})", v_critic), ("ANALYTIQUE (-min_dist)", v_analytic)):
         top = int(s.argmax())
         a = auc(s, is_best)
         print(f"  {name:24s} : top-1 = ({[(x, o) for x in VXS for o in OMS][top]}) -> "
               f"{outcomes[top]} repas | AUC intra-état {a:.3f}")
 
     t_c, t_a = int(v_critic.argmax()), int(v_analytic.argmax())
+    a_c, a_a = auc(v_critic, is_best), auc(v_analytic, is_best)
+    base = float(is_best.mean())
     print()
-    if outcomes[t_c] > outcomes[t_a]:
-        print("  -> LE CRITIQUE GAGNE : il choisit un candidat strictement meilleur.")
-    elif outcomes[t_c] == outcomes[t_a]:
-        print(f"  -> ÉGALITÉ sur le top-1 ({outcomes[t_c]} repas) ; départager par l'AUC intra-état.")
+    # ⚠️ LE TOP-1 SEUL NE PROUVE RIEN quand la plupart des candidats atteignent le max : ici un tirage
+    # AU HASARD « gagne » avec probabilité `base`. Le verdict exige donc AUSSI un classement meilleur
+    # (AUC intra-état), conformément au pré-enregistrement. Sans ça on relaie de la chance.
+    print(f"  (taux de base : {100 * base:.0f} % des candidats atteignent le max -> un choix ALÉATOIRE "
+          f"'gagne' le top-1 {100 * base:.0f} % du temps ; le top-1 seul n'est pas une preuve)")
+    if outcomes[t_c] >= outcomes[t_a] and a_c > a_a:
+        print("  -> LE CRITIQUE GAGNE : top-1 au moins aussi bon ET meilleur classement.")
+    elif a_c < 0.5:
+        print(f"  -> LE CRITIQUE ÉCHOUE : son classement est ANTI-corrélé aux bonnes issues "
+              f"(AUC {a_c:.3f} < 0,5). Un top-1 favorable ici serait de la chance.")
     else:
-        print("  -> LE CRITIQUE PERD : il choisit un candidat strictement moins bon.")
+        print(f"  -> PAS DE GAIN démontré : classement {a_c:.3f} vs {a_a:.3f} pour l'analytique.")
 
 
 if __name__ == "__main__":
