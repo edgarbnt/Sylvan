@@ -102,7 +102,8 @@ PYTHONPATH=python env_pytorch_3.12/bin/python diagnostics/diag_info_matrix.py \
     --corpus data/replay_buffer/critic_bosq_ripe11 [--depths 0 20 79] [--rows type vue] [--json m.json]
 ```
 
-Lignes = propriétés du monde (position, distance, type, bouffe-en-vue, maturité, rétine entière ;
+Lignes = propriétés du monde (position, distance, type, bouffe-en-vue, maturité, rétine entière, et
+**repas à venir** = la cible du critique, seule ligne qui porte une CONSÉQUENCE et non une perception ;
 une mécanique de plus = une `Property` de plus). Colonnes = rétine brute → encodeur → latent rêvé à
 chaque profondeur → slot → token du planner. Chaque case : sonde LINÉAIRE **et** sonde MLP, held-out
 **par épisode**, baseline affichée (majorité pour une catégorie, moyenne pour un continu). WM GELÉ.
@@ -117,6 +118,15 @@ chaque profondeur → slot → token du planner. Chaque case : sonde LINÉAIRE *
 | ripe11 rétine ENTIÈRE depuis le latent (prof. 0) | +0,798 | **+0,808** | linéaire |
 | ripe11 position PRÉCISE du slot depuis le latent | +0,046 (distance −0,884) | **+0,048** (distance −0,911) | linéaire |
 | ripe11+12 maturité depuis le latent | lin +0,476 / MLP +0,650 | lin **+0,428** / MLP **+0,649** | les deux sondes |
+| bosq_a « repas dans 200 ticks » — taux de base / AUC(GEO+énergie) | 9,4 % / 0,774 | **9,5 % / 0,769** | AUC, token du planner |
+
+La dernière ligne est la troisième sonde existante (`diag_critic_beyond_geometry`) devenue une ligne de
+la matrice. Sa cible est RARE (9,5 % de positifs) : un R² proche de 0 y cacherait un classement
+parfaitement utile, donc la ligne rapporte aussi l'**AUC** (`critic_corpus.auc`, la métrique d'origine).
+La colonne « token planner » porte exactement les features `FULL` de la sonde d'origine, d'où la
+comparaison directe. Et ce que la ligne montre est cohérent avec l'audit : le repas à venir est
+illisible depuis la rétine, l'encodeur et le latent (AUC 0,63 / 0,65 / 0,62) mais lisible depuis le
+token géométrique (0,769) — l'issue, dans ce monde, est de la géométrie.
 
 Auto-contrôles qui tombent exactement où ils doivent : rétine→rétine = **+1,000**, slot→position =
 **+1,000**. Et deux runs successifs sont **bit-identiques** (test explicite).

@@ -38,7 +38,7 @@ from typing import Callable
 import torch
 from torch import nn
 
-from sylvan.critic_corpus import RETINA_DIM, token as planner_token
+from sylvan.critic_corpus import RETINA_DIM, auc as corpus_auc, token as planner_token
 from sylvan.models.command_wm import CommandWorldModel
 
 N_RAYS = 36                      # perception.gd : RETINA_RAYS
@@ -141,6 +141,7 @@ class Sample:
     energy: torch.Tensor       # [N]
     slot: torch.Tensor         # [N, 2] slot du WM VIVANT (x_droite, z_avant)
     palette: torch.Tensor      # [K, 3] palette de types retenue pour ce corpus
+    meal: torch.Tensor         # [N] 1 s'il y a un repas dans les K ticks à venir (cible du critique)
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,17 @@ def _p_food_distance(s: Sample) -> tuple[torch.Tensor, torch.Tensor]:
     return d.min(dim=1).values.unsqueeze(1), is_food.any(dim=1)
 
 
+def _p_meal(s: Sample) -> tuple[torch.Tensor, torch.Tensor]:
+    return s.meal.unsqueeze(1), torch.ones(len(s.meal), dtype=torch.bool)
+
+
+def _meal_extra(pred: torch.Tensor, truth: torch.Tensor) -> dict[str, float]:
+    """AUC en plus du R² : la cible est RARE et déséquilibrée, donc un R² proche de 0 peut cacher un
+    classement parfaitement utile. C'est la métrique de `diag_critic_beyond_geometry`, reprise telle
+    quelle (`critic_corpus.auc`) pour que les deux mesures restent comparables."""
+    return {"AUC": corpus_auc(pred.squeeze(-1), truth.squeeze(-1))}
+
+
 PROPERTIES: list[Property] = [
     Property("position", "position de la ressource (slot x,z)", "cont", _p_slot,
              extra=_slot_extra,
@@ -210,6 +222,9 @@ PROPERTIES: list[Property] = [
              why="indice perceptible NON géométrique, invisible au slot par construction"),
     Property("retine", "rétine entière (la scène)", "cont", _p_retina_full,
              why="borne haute : tout ce que l'observation contient"),
+    Property("repas", "repas à venir (cible du critique)", "cont", _p_meal, extra=_meal_extra,
+             why="la seule ligne qui porte une CONSÉQUENCE et non une perception : c'est ce qu'un "
+                 "critique doit prédire, et l'étage où elle meurt est l'étage qui le condamne"),
 ]
 PROPERTY_BY_KEY = {p.key: p for p in PROPERTIES}
 
@@ -254,13 +269,14 @@ def column_offset(col: str, mode: str) -> int:
 
 @torch.no_grad()
 def sample_at(wm: CommandWorldModel, obs: torch.Tensor, energy: torch.Tensor,
-              starts: torch.Tensor, offset: int, palette: torch.Tensor) -> Sample:
+              starts: torch.Tensor, offset: int, palette: torch.Tensor,
+              meal: torch.Tensor) -> Sample:
     """L'état RÉEL du monde à t+offset — la vérité-terrain, jamais une sortie du modèle."""
     idx = starts + offset
     o = obs[idx]
     slot = torch.cat([wm.encode_slot(o[i:i + 4096]) for i in range(0, len(o), 4096)])
     return Sample(obs=o, retina=o[:, wm.proprio_dim:wm.proprio_dim + RETINA_DIM],
-                  energy=energy[idx], slot=slot, palette=palette)
+                  energy=energy[idx], slot=slot, palette=palette, meal=meal[idx])
 
 
 @torch.no_grad()

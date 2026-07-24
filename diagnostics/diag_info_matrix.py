@@ -28,7 +28,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))          # guards.py (idiome du repo)
 
 from guards import sanity, scaffold_banner                              # noqa: E402
-from sylvan.critic_corpus import load_bc_corpora                        # noqa: E402
+from sylvan.critic_corpus import load_bc_corpora, meal_flags, residual_label  # noqa: E402
 from sylvan.info_matrix import (                                        # noqa: E402
     PALETTES, PROPERTIES, PROPERTY_BY_KEY, Cell, build_stages, column_offset, measure_cell,
     measure_palette, pick_palette, positional_split, sample_at, sample_starts,
@@ -88,6 +88,9 @@ def main() -> None:
     ap.add_argument("--mlp-steps", type=int, default=3000)
     ap.add_argument("--hidden", type=int, default=256)
     ap.add_argument("--frac-train", type=float, default=0.7)
+    ap.add_argument("--meal-horizon", type=int, default=200,
+                    help="K de la cible « repas dans les K ticks » (défaut = celui de "
+                         "diag_critic_beyond_geometry, pour rester comparable)")
     ap.add_argument("--palette", choices=["auto", "teinte", "luminosite"], default="auto")
     ap.add_argument("--target", choices=["predit", "percu"], default="predit",
                     help="predit = le latent à la profondeur d est jugé sur ce qui est VRAI à t+d "
@@ -165,7 +168,12 @@ def main() -> None:
     # sans ça, chaque colonne serait notée sur un jeu d'états différent et la matrice ne serait plus
     # comparable colonne à colonne — or c'est exactement ce qu'on lui demande.
     offsets = sorted({column_offset(c, args.target) for c in stages.names})
-    samples = {d: sample_at(wm, obs, energy, starts, d, palette) for d in offsets}
+    # Cible du critique : « un repas dans les K ticks à venir », bornée à l'épisode. L'étiquetage est
+    # repris de sylvan.critic_corpus — c'est LA convention du projet, on ne la ré-invente pas ici.
+    meal = residual_label(meal_flags(energy, bounds), bounds, args.meal_horizon)
+    samples = {d: sample_at(wm, obs, energy, starts, d, palette, meal) for d in offsets}
+    print(f"cible « repas » : {100 * float(meal[starts].mean()):.1f} % d'états positifs "
+          f"(horizon {args.meal_horizon} ticks)")
 
     for prop in rows:
         truth = {d: prop.extract(samples[d]) for d in offsets}
