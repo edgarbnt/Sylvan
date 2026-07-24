@@ -289,8 +289,14 @@ Le second fork est le test FORT : un seul candidat sur 21 atteint le max, donc l
 top-1 que 5 % du temps — et le critique TD désigne exactement ce candidat, avec un classement
 parfait. Rappel des formes précédentes au fork 1 : token 0,562, latent 0,325 (sous le hasard).
 
+| seed 9, k=1200 | 29 % | top-1 **1 repas**, AUC **0,778** | top-1 0 repas, AUC **0,467** |
+
+**3 forks sur 3.** Le critique TD désigne un candidat qui atteint le MAX aux trois ; l'analytique
+désigne un candidat à 0 repas aux trois, et au fork 3 son classement tombe SOUS le hasard (0,467).
+AUC moyenne : TD **0,822** vs analytique 0,668.
+
 ## Ce que ça ne prouve pas encore
-2 forks, pas une distribution. Le juge final reste un **A/B pleine-politique** (repas/survie sur
+3 forks, pas une distribution. Le juge final reste un **A/B pleine-politique** (repas/survie sur
 plusieurs vies) avec `SYLVAN_PLANNER_COST=critic`. À noter aussi : V est SOUS-PROPAGÉE (moyenne
 held-out 0,015 là où le taux de repas implique ~0,16) — plus d'itérations TD laisseraient peut-être
 encore du signal. Le gros corpus `bosquets_v4_ripe` (maturité visible) est en cours et n'a PAS servi
