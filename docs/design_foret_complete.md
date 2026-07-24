@@ -442,6 +442,64 @@ le Clark-Evans mesuré.
 
 ---
 
+## 6ter. CE QUI MANQUE À L'ARCHITECTURE — et dans quel ordre le construire
+
+**Question owner : faut-il un réseau plus gros ? NON, et c'est mesuré.** À chaque comparaison de la
+journée, un modèle LINÉAIRE a fait aussi bien qu'un MLP :
+
+| test | linéaire | MLP |
+|---|---|---|
+| arbitraire (types) | 69,2 % | 69,7 % |
+| hétérogénéité | 63,5 % | 64,0 % |
+| lire le type dans le latent | 31,5 % | 28,2 % |
+| lire l'objet dans le latent | +0,076 | −0,130 |
+
+Et le latent n'utilise que **27 % de sa capacité** (rang effectif 34/128) : il ne sature pas, il
+n'utilise pas ce qu'il a. **Un réseau plus gros n'aurait changé aucun résultat.** Le problème n'a
+jamais été la capacité à représenter — c'est qu'il n'y avait rien à représenter, ou que l'information
+avait été jetée en amont.
+
+**Ce qui manque vraiment — et aucune de ces briques n'est un écart au JEPA : ce sont les parties NON
+BÂTIES du blueprint de LeCun.**
+
+1. **Un chemin d'apprentissage entre la CONSÉQUENCE et la PERCEPTION.** Le slot a zéro paramètre
+   appris : l'agent ne peut pas réviser ce qu'il considère comme de la nourriture, quoi qu'il vive.
+   C'est le manque le plus profond, et le critère JEPA (représentation informative) l'exige.
+   Les requêtes apprises existent déjà (`wm_objcentric_kin_typed`), non promues.
+2. **La représentation de l'INCERTITUDE.** Le WM est déterministe. LeCun prescrit des variables
+   latentes pour les futurs multiples ; un JEPA déterministe prédit une *moyenne invalide* là où la
+   planification a besoin de futurs énumérables (anomalie A4). Avec des flaques variables et des
+   proies mobiles, ça devient bloquant.
+3. **L'ABSTRACTION TEMPORELLE (H-JEPA).** Monde plus grand + vies plus longues ⇒ planifier à une seule
+   échelle sur 80 ticks ne passera pas. C'est la réponse de LeCun au long horizon, et *la* brique qui
+   permet des « stratégies » au sens courant.
+4. **Une MÉMOIRE qui porte du poids.** `MultiSlotMemory` existe mais n'a jamais eu de raison d'exister.
+   Occlusion + flaques à retenir lui en donneraient une.
+
+**ORDRE, du plus causal au plus dérivé :**
+1. **Perception** — requêtes apprises + couleurs variables dans la collecte. Sans ça, tout le reste
+   s'appuie sur un substrat aveugle.
+2. **Incertitude** — variables latentes, parce que le monde dessiné est intrinsèquement incertain et
+   qu'un WM déterministe y prédira des moyennes qui n'existent pas.
+3. **Hiérarchie temporelle** — le plus gros chantier ; n'a de sens qu'une fois le substrat voyant et
+   le monde stratégique.
+4. **Le critique en DERNIER.** Il échouait parce qu'il n'avait rien à apprendre ; il échouerait demain
+   parce qu'il lit un substrat aveugle. **Il n'est pas la cause, il est le révélateur.**
+
+### ⚠️ LE VRAI RISQUE (à nommer, pas à minimiser)
+
+Ce n'est PAS « trop compliqué à apprendre ». C'est qu'**on ne sache plus ce qui échoue**. On empile
+beaucoup de nouveautés dans UNE collecte — et on n'a pas le choix, chacune exigeant le retrain. Si le
+résultat est mauvais, on ne saura pas laquelle est en cause. C'est en tension directe avec le principe
+« une étape solide avant la suivante ».
+
+**Seule mitigation : chaque ajout doit avoir SA sonde gratuite**, écrite en même temps que lui
+(cf. §6bis). L'encodeur lit-il la couleur ? le prédicteur bat-il « l'objet reste immobile » ?
+l'occlusion produit-elle du vu-puis-perdu ? Avec ça on peut ATTRIBUER un échec. Sans ça, on aura un
+gros monde et un gros doute.
+
+---
+
 ## 7. RÉFÉRENCES
 
 **Écologie spatiale** : processus de Neyman-Scott/Thomas (semis groupés) ; indice de Clark-Evans
