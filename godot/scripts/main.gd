@@ -100,6 +100,10 @@ func _ready() -> void:
 	# VISUAL-ONLY forest decor + day/night cycle. Gated on a real display so the headless
 	# training workers (--headless = dummy renderer) never load it → zero impact on learning.
 	if DisplayServer.get_name() != "headless":
+		# Ce module est TOUJOURS instancié : il porte la caméra 3ᵉ personne et le cycle jour/nuit,
+		# sans lesquels la fenêtre est illisible. C'est LUI qui décide s'il sème ses arbres
+		# décoratifs, selon SYLVAN_FOREST_DECOR (§2.1 : le visuel ne doit pas mentir — un arbre que
+		# l'entité ne perçoit pas est trompeur à côté de la forêt solide ; une caméra ne l'est pas).
 		var forest = FOREST_MANAGER_SCRIPT.new()
 		forest.name = "ForestManager"
 		add_child(forest)
