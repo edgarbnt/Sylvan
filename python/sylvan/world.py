@@ -65,6 +65,8 @@ class WorldPreset:
     ripe_cue: bool = False       # True = la LUMINOSITE du buisson encode l'age de sa baie (invisible aux slots)
     ripe_decay: float = 0.0      # 0 = OFF ; 0.75 = une baie mure ne rend plus que 25 % de son energie
     prey_speed: float = 0.0      # m/tick ; la nourriture SE DEPLACE (0 = OFF). Agent = 0.011 m/tick mesure
+    n_types: int = 0             # types de proies visibles (0 = OFF, max 4)
+    type_values: tuple = ()      # multiplicateur de valeur nutritive PAR TYPE -- ARBITRAIRE
     spawn_annulus_m: tuple[float, float] = (3.0, 11.0)
     eat_radius_m: float = 1.0
 
@@ -120,6 +122,8 @@ class WorldPreset:
             "SYLVAN_FOOD_RIPE_CUE": "1" if self.ripe_cue else "0",
             "SYLVAN_FOOD_RIPE_DECAY": f"{self.ripe_decay}",
             "SYLVAN_FOOD_PREY_SPEED": f"{self.prey_speed}",
+            "SYLVAN_FOOD_TYPES": f"{self.n_types}",
+            "SYLVAN_FOOD_TYPE_VALUES": ",".join(str(v) for v in self.type_values),
             "SYLVAN_FOOD_MIN_RADIUS": f"{self.spawn_annulus_m[0]}",
             "SYLVAN_FOOD_SPAWN_RADIUS": f"{self.spawn_annulus_m[1]}",
         }
@@ -224,6 +228,18 @@ BOSQUETS_V5_VALUE = dataclasses.replace(BOSQUETS_V4_RIPE, name="bosquets_v5_valu
 #: Les buissons restent des repères FIXES pendant que la nourriture bouge.
 BOSQUETS_V6_PREY = dataclasses.replace(BOSQUETS_V2, name="bosquets_v6_prey", prey_speed=0.0099)
 
+#: TYPES ARBITRAIRES (2026-07-24) — v6 + 4 types de proies dont la valeur nutritive est ARBITRAIRE.
+#: C'est la SEULE condition mesurée où un critique devient NÉCESSAIRE et pas seulement utile
+#: (`diagnostics/diag_arbitrary_headroom.py`) : une formule ajustée, à qui on donne même le type comme
+#: scalaire, plafonne à 49,5 % de la marge oracle, quand un modèle APPRIS atteint 69,7 %. Aucune
+#: formule ne peut contenir une table de correspondance arbitraire — il faut avoir goûté.
+#: Les 4 teintes ont été choisies PAR MESURE contre les requêtes réelles du WM : toutes dans le cône
+#: bouffe (cos rouge 0,79-0,99 > seuil 0,55), hors du cône eau (cos bleu < 0,45), écart RGB mutuel
+#: 0,187. Le type ne change donc QUE l'apparence, jamais la localisation par le slot.
+#: Valeurs volontairement NON MONOTONES en l'indice de teinte : rien dans l'apparence ne les ordonne.
+BOSQUETS_V7_TYPES = dataclasses.replace(BOSQUETS_V6_PREY, name="bosquets_v7_types",
+                                        n_types=4, type_values=(1.0, 0.25, 1.5, 0.6))
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -282,7 +298,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE, "bosquets_v6_prey": BOSQUETS_V6_PREY,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE, "bosquets_v6_prey": BOSQUETS_V6_PREY, "bosquets_v7_types": BOSQUETS_V7_TYPES,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():

@@ -119,6 +119,20 @@ var _prey_speed := 0.0          # m/tick ; 0 = OFF, bit-identique
 var _prey_dir: Array[Vector3] = []
 var _prey_turn := 0.01          # rad/tick de dérive (persistance : garde le transversal)
 var _prey_travel := 0.0         # distance cumulée parcourue par la proie (PREUVE de ce qui est servi)
+# TYPES ARBITRAIRES (2026-07-24). Chaque proie a un TYPE visible (teinte) dont la valeur nutritive
+# est ARBITRAIRE : rien dans la physique perceptible ne la prédit, il faut en avoir mangé une.
+# C'est la seule condition MESURÉE (diag_arbitrary_headroom.py) où un critique devient NÉCESSAIRE :
+# formule ajustée 49,5 % de la marge oracle contre 69,7 % pour un appris — aucune formule ne peut
+# contenir une table de correspondance arbitraire.
+# ⚠️ PALETTE CHOISIE PAR MESURE contre les requêtes RÉELLES du WM (leçon du buisson) : toutes les
+# teintes restent dans le cône « nourriture » (cos rouge 0,79-0,99 > seuil 0,55) et hors du cône
+# « eau » (cos bleu < 0,45), donc le slot les localise TOUTES de la même façon — le type ne change
+# QUE l'apparence, jamais la perception de position. Écart RGB minimal mesuré 0,187 = distinguables.
+const TYPE_COLORS := [Color(0.90, 0.10, 0.10), Color(0.80, 0.60, 0.15),
+					  Color(0.90, 0.10, 0.45), Color(0.85, 0.55, 0.35)]
+var _n_types := 0               # 0 = OFF, bit-identique
+var _type_values: Array[float] = []   # multiplicateur de valeur nutritive PAR TYPE (arbitraire)
+var _type_of: Array[int] = []
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -173,9 +187,14 @@ func _jitter(base: Color) -> Color:
 func _apply_appearance(i: int) -> void:
 	# Ré-échantillonne l'apparence de l'item i (couleur du matériau + meta retina_color lue par le
 	# raycast). OFF (_appearance_var<=0) : ne touche à rien → couleur unique partagée, bit-identique.
-	if _appearance_var <= 0.0 or i >= _areas.size():
+	if i >= _areas.size():
 		return
-	var c := _jitter(_albedo)
+	if _n_types <= 0 and _appearance_var <= 0.0:
+		return
+	# Le TYPE fixe la teinte (elle DOIT rester lisible : c'est le seul indice de la valeur).
+	var c: Color = _jitter(_albedo)
+	if _n_types > 0 and i < _type_of.size():
+		c = TYPE_COLORS[_type_of[i] % TYPE_COLORS.size()]
 	var mat := _meshes[i].material_override as StandardMaterial3D
 	if mat != null:
 		mat.albedo_color = c
@@ -301,6 +320,16 @@ func _read_patch_env() -> void:
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
+	var nt := OS.get_environment("SYLVAN_%s_TYPES" % _prefix)
+	if nt != "":
+		_n_types = clampi(int(nt), 0, TYPE_COLORS.size())
+	var tv := OS.get_environment("SYLVAN_%s_TYPE_VALUES" % _prefix)
+	_type_values.clear()
+	if tv != "":
+		for part in tv.split(","):
+			_type_values.append(maxf(0.0, float(part)))
+	while _type_values.size() < _n_types:
+		_type_values.append(1.0)
 	var pspd := OS.get_environment("SYLVAN_%s_PREY_SPEED" % _prefix)
 	if pspd != "":
 		_prey_speed = maxf(0.0, float(pspd))
@@ -422,6 +451,7 @@ func reset(_episode_index: int = 0) -> void:
 	_regrow_at.clear()
 	_born_at.clear()
 	_prey_dir.clear()
+	_type_of.clear()
 	if _patch_count > 0:
 		_sample_patch_centres()
 	for i in range(food_count):
@@ -434,6 +464,7 @@ func reset(_episode_index: int = 0) -> void:
 		_born_at.append(-(_rng.randi() % _perish_ticks) if _perish_ticks > 0 else 0)
 		var _pa := _rng.randf_range(0.0, TAU)
 		_prey_dir.append(Vector3(cos(_pa), 0.0, sin(_pa)))
+		_type_of.append(_rng.randi() % _n_types if _n_types > 0 else 0)
 		_meshes[i].global_position = p
 		_meshes[i].visible = true
 		_apply_appearance(i)
@@ -591,7 +622,10 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 			var _age := 0.0
 			if _perish_ticks > 0:
 				_age = clampf(float(_life_tick - _born_at[i]) / float(_perish_ticks), 0.0, 1.0)
-			restored += energy_per_food * (1.0 - _ripe_decay * _age)
+			var _tmul := 1.0
+			if _n_types > 0 and i < _type_of.size() and _type_of[i] < _type_values.size():
+				_tmul = _type_values[_type_of[i]]     # ARBITRAIRE : rien ne le prédit, il faut goûter
+			restored += energy_per_food * (1.0 - _ripe_decay * _age) * _tmul
 			consumed_this_episode += 1
 			if _patch_count > 0:
 				# MODE BOSQUETS : la baie disparaît LÀ OÙ ELLE ÉTAIT et repousse sur une horloge.
@@ -665,6 +699,8 @@ func _tick_regrowth() -> void:
 		_alive[i] = true
 		_regrow_at[i] = -1
 		_born_at[i] = _life_tick
+		if _n_types > 0 and i < _type_of.size():
+			_type_of[i] = _rng.randi() % _n_types      # nouveau tirage : le type n'est pas figé à vie
 		if not _patch_centres.is_empty():
 			_positions[i] = _patch_berry_pos(i)
 			_meshes[i].global_position = _positions[i]
