@@ -461,7 +461,10 @@
    ],
    "code": "godot/scripts/world/forest_solid.gd",
    "live_field": null,
-   "depends_on": ["monde_bosquets", "monde_obstacle"]
+   "depends_on": [
+    "monde_bosquets",
+    "monde_obstacle"
+   ]
   },
   {
    "id": "regard_actif",
@@ -483,7 +486,35 @@
    ],
    "code": "godot/scripts/agent/sylvan_agent.gd",
    "live_field": null,
-   "depends_on": ["monde_foret", "world_model"]
+   "depends_on": [
+    "monde_foret",
+    "world_model"
+   ]
+  },
+  {
+   "id": "eventail_vitesse",
+   "etat": "partiel",
+   "titre": "Éventail de vitesse (marcher / trotter / sprinter)",
+   "couche": "moteur",
+   "quoi": "Le corps cinématique accepte une plage de vitesse LARGE (vx 0,25-1,0 = x4 au lieu de ±15 %) et la locomotion COÛTE de l'énergie, en k·vx² par tick. Opt-in SYLVAN_SPEED_COST, défaut 0 = OFF bit-identique ; la plage vient du preset du monde et atteint les DEUX consommateurs (babillage de collecte et grille du planner).",
+   "role": "Faire de la vitesse une DÉCISION au lieu d'un paramètre. Mesuré : le planner choisissait dans une bande de ±15 % — une bande pareille ne peut porter aucun arbitrage. Et élargir ne suffit pas : si aller vite est gratuit, la vitesse maximale domine toujours, parce que le drain passif se paie quoi qu'il arrive. C'est le COÛT qui crée le choix.",
+   "comment": "Le coût est quadratique (puissance mécanique ~ v²) et calculé sur la vitesse COMMANDÉE, pas réalisée : dans un sous-bois on pousse autant pour avancer moins, donc le terrain devient cher au mètre. Conséquence : le coût AU MÈTRE vaut (D + k·vx²)/(kin_speed·vx), minimal en vx* = sqrt(D/k) et REMONTANT au-delà. Le prélèvement est séparé de apply_metabolism (dont le paramètre effort abîme la SANTÉ au-dessus de 0,9) pour ne pas coupler silencieusement « sprinter » et « se blesser » — la blessure est un chantier DIFFÉRÉ (§6quinquies B). Ancres : sylvan_agent.gd (locomotion_cost dans _kinematic_step), homeostasis.gd (spend_locomotion), main.gd (log [locomotion]), sylvan/world.py (vx_fan, speed_cost, identités), serve_planner_command.py (SYLVAN_PLANNER_VX_GRID).",
+   "apporte": "Un pari : sprinter coûte plus cher au mètre que trotter, mais arrive plus tôt. C'est la première grandeur du corps dont la valeur dépend de l'incertitude (vais-je attraper ?). Effet de bord mesuré par G2 : la portée d'imagination du planner passe de 0,88 m à 3,8 m sur ses 80 ticks — une attaque directe de l'anomalie A5 sans aucun changement d'architecture.",
+   "etat_detail": "⭐ MÉCANISME BÂTI ET GATÉ (2026-07-25). GATE G9 = PASS 5/5 (diag_foret_g9_vitesse.py, critères pré-enregistrés). Le corps OBÉIT encore (vitesse/vx = 2,830 identique aux trois bandes, dispersion 0,0 %), la dépense MESURÉE sur la jauge colle au modèle D + k·vx² à 0,0 %, et l'optimum au mètre est INTÉRIEUR (23,23 en marche > 16,51 au trot < 18,73 au sprint, soit +13,4 % pour le sprint). ⚠️ DEUX PIÈGES ATTRAPÉS PAR LA SONDE, aucun n'aurait été visible après coup : (a) `:=` sur un Variant (homeostasis) → le script ne charge plus et Godot tourne À VIDE (2 min de mur pour 0 s de CPU) — c'est le défaut (a) de G3, re-payé ; la sonde charge désormais Godot et quitte AVANT de mesurer, ce qui rend l'échec instantané ; (b) T1 a d'abord échoué à 2,8x parce que le babillage ne re-tire un vx que toutes les 40-80 décisions et qu'au régime candidat une vie ne dure que ~200 ticks : 3 à 5 tirages, donc une plage empirique qui SOUS-ESTIME l'éventail servi. Mesuré sur 8 vies : 0,26..0,98 = 3,8x. Conclure « capacité inerte » sur 4 tirages aurait été l'erreur exacte que T1 existe pour éviter.",
+   "limites": "Que l'entité APPRENNE à parier sa vitesse n'est PAS mesuré — il y faut le WM ré-entraîné sur la nouvelle dynamique (gate post-retrain). G9 valide la FORMULE que le corps applique, pas les constantes d'un monde donné : l'optimum vx* dépend de D et k, et peut sortir de l'éventail — c'est le selfcheck de sylvan.world qui l'assert pour le preset servi. Enfin le coût re-couple des grandeurs que G2 traitait comme indépendantes (aller vite consomme, donc exige plus de repas, donc plus de trajet) : la calibration de foret_v1 a dû être RE-RÉSOLUE, et son terme fragile (le trajet par événement) reste à mesurer au dry-run.",
+   "preuves": [
+    "diag_foret_g9_vitesse.py (2026-07-25, gratuit, 5 conditions x 3 vies) T3 : dépense lue sur la JAUGE D'ÉNERGIE (l'état de l'homéostasie), pas sur le coût que le code dit avoir facturé — écart au modèle D + k·vx² : 0,0 % aux trois bandes. Non-circulaire par construction : un double prélèvement ou un coût calculé sur la vitesse réalisée s'y verrait.",
+    "diag_foret_g9_vitesse.py T4 : coût au mètre 23,23 (marche) > 16,51 (trot) < 18,73 (sprint). Le minimum est INTÉRIEUR à l'éventail, donc sprinter est un arbitrage. Contrôle négatif inscrit dans le selfcheck : à coût nul le coût au mètre décroît jusqu'au bout et T4 échouerait, comme il doit.",
+    "sylvan.world --selfcheck : le preset foret_v1 vérifie ses propres identités — plancher de famine 750 ticks = 25,0 % de la vie, vx* = 0,60 intérieur à (0,25 / 0,60 / 1,00), événements par vie 6,9 / 13,1 / 26,5 selon la vitesse de croisière choisie par l'entité.",
+    "NÉGATIF banké : la calibration du candidat D de G2 ne SURVIT PAS telle quelle à deux pulsions + un coût de locomotion (35 événements/vie, hors bande). Cause structurelle : à l'optimum économique le coût de locomotion ÉGALE le drain passif, donc la consommation à la croisière vaut le DOUBLE du drain passif. Résolu sans relâcher aucun critère (réservoir 75, repas 80), pas en élargissant la bande."
+   ],
+   "code": "diagnostics/diag_foret_g9_vitesse.py",
+   "live_field": null,
+   "depends_on": [
+    "corps_cpg",
+    "monde_foret",
+    "drives"
+   ]
   }
  ]
 }

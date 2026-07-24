@@ -116,6 +116,17 @@ var gaze_command := 0.0           # 3ᵉ composante de commande, dans [-1, 1]
 # de ce qu'on commande. La CAUSE est perceptible (les arbres sont sur la rétine), donc §1 filtre OK.
 var terrain_speed_scale := 1.0
 
+# ── ÉVENTAIL DE VITESSE : LE COÛT DE LA LOCOMOTION (2026-07-24, §2.13) ────────────────────────
+# Sans coût, aller vite est GRATUIT : la vitesse maximale domine toujours, et « marcher / trotter /
+# sprinter » n'est pas une décision mais un paramètre. Le coût est QUADRATIQUE en vx (puissance
+# mécanique ~ v²) et prélevé sur l'énergie, à côté du drain passif D. Conséquence, qui est tout
+# l'intérêt : le coût AU MÈTRE vaut (D + k·vx²)/(kin_speed·vx), minimal en vx* = sqrt(D/k) et
+# REMONTANT au-delà. Sprinter coûte donc plus cher au mètre que trotter, mais arrive plus tôt →
+# un PARI (dépenser contre une chance d'attraper), pas un choix gratuit. Défaut k=0 = OFF
+# bit-identique : le corps reste exactement celui d'avant.
+var speed_cost_k := 0.0            # SYLVAN_SPEED_COST — énergie/tick à vx=1 (0 = OFF)
+var locomotion_cost := 0.0         # coût du tick écoulé, MESURÉ (main.gd le prélève et le loggue)
+
 # KINEMATIC body (pivot corps différentiel, 2026-07-06) — court-circuite le CPG/pattes : le corps GLISSE
 # rigidement à (vx, omega) (roues invisibles). Les pattes restent gelées en pose neutre (statue qui glisse)
 # → proprio 132 cohérente (angles neutres, vitesses jointes nulles), tout le contrat obs/WM/torso préservé.
@@ -775,6 +786,11 @@ func _kinematic_step(delta: float) -> void:
 	# bit-identique tant que le terrain est OFF) et < 1.0 dans un sous-bois dense.
 	var _eff_speed := kin_speed * terrain_speed_scale
 	var vel := (forward * (_eff_speed * cpg_command.x)) if moving else Vector3.ZERO
+	# COÛT DE LA LOCOMOTION (§2.13) : calculé sur la vitesse COMMANDÉE, pas sur la réalisée. Dans un
+	# sous-bois on pousse autant pour avancer moins → le terrain devient cher AU MÈTRE. C'est la
+	# lecture honnête de l'effort ; l'inverse (facturer le déplacement obtenu) rendrait le sous-bois
+	# gratuit et annulerait la moitié de ce que le terrain apporte.
+	locomotion_cost = (speed_cost_k * cpg_command.x * cpg_command.x) if moving else 0.0
 	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
 	if moving:
 		if _obstacle_mask < 0:

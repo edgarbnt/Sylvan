@@ -856,6 +856,15 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = CommandPlanConfig(horizon=args.horizon, energy_weight=args.energy_weight)
+    # ÉVENTAIL DE VITESSE (§2.13) — la grille de vitesse du planner vient du PRESET DU MONDE
+    # (SYLVAN_PLANNER_VX_GRID, émis par sylvan.world), jamais d'un défaut recopié. Elle DOIT rester
+    # dans la plage babillée à la collecte, sinon le planner commande des vitesses que le WM n'a
+    # jamais vues. Absente → la grille historique (0.55, 0.65, 0.75), donc bit-identique.
+    _vxg = os.environ.get("SYLVAN_PLANNER_VX_GRID", "")
+    if _vxg:
+        cfg.vx_grid = tuple(float(v) for v in _vxg.split(","))
+        print(f"[planner-cmd] ÉVENTAIL DE VITESSE servi : vx_grid={cfg.vx_grid} "
+              f"(étendue {max(cfg.vx_grid) / min(cfg.vx_grid):.1f}x)")
     service = _PlannerService(Path(args.wm), Path(args.residual), cfg, args.replan_every,
                              retina_head_ckpt=Path(args.retina_head) if args.retina_head else None,
                              value_head_ckpt=Path(args.value_head) if args.value_head else None,

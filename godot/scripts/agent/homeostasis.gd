@@ -69,6 +69,16 @@ func apply_metabolism(effort_cost: float = 0.0) -> void:
 		health = minf(max_health, health + health_regen)   # regen lente (monde v2) ; un mort ne régénère pas
 
 
+func spend_locomotion(cost: float) -> void:
+	# ÉVENTAIL DE VITESSE (§2.13) — prélèvement SÉPARÉ de apply_metabolism, délibérément. Le
+	# paramètre effort_cost de apply_metabolism abîme la SANTÉ au-dessus de 0.9 (héritage des pattes) :
+	# y verser le coût de vitesse coupleraient silencieusement « sprinter » et « se blesser », deux
+	# mécaniques distinctes dont l'une (la blessure) est un chantier DIFFÉRÉ (§6quinquies B, échec
+	# P2-bis mesuré). On ne facture donc que l'énergie, et rien d'autre.
+	if cost > 0.0:
+		energy = maxf(0.0, energy - cost)
+
+
 func restore_energy(amount: float) -> void:
 	# Eating food refills energy (capped at max). The positive side of the homeostatic
 	# drive: metabolism drains, food restores — the gap is what the agent must learn to close.

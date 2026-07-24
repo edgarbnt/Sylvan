@@ -272,6 +272,13 @@ var _terrain_floor := 0.25   # plancher : même le sous-bois le plus dense laiss
 var _terrain_scale_sum := 0.0
 var _terrain_slowed_ticks := 0
 var _terrain_ticks := 0
+# ÉVENTAIL DE VITESSE (§2.13) — comptabilité MESURÉE du coût de locomotion réellement facturé.
+var _loco_cost_sum := 0.0    # énergie totale prélevée par la locomotion sur l'épisode
+var _loco_vx_sum := 0.0
+var _loco_vx_min := 9.0      # sentinelle : écrasée au premier tick mobile
+var _loco_vx_max := -9.0
+var _loco_dist := 0.0        # mètres réellement parcourus (vitesse EFFECTIVE, terrain inclus)
+var _loco_ticks := 0
 # 🚨 RNG SÉPARÉ, et c'est une CORRECTION DE BOGUE MESURÉE. Première version : les tirages de regard
 # sortaient de `_wm_rng`, celui des commandes. Effet constaté par la sonde G3 — la trajectoire du
 # CORPS n'était plus la même avec et sans regard, alors que le regard ne déplace rien : consommer
@@ -378,6 +385,19 @@ func _update_heading() -> void:
 				agent_instance._rebuild_proprioception()
 				print("[Godot] GAZE ON | tete mobile, retine decouplee du cap | rate=%.2f rad/s butee=+-%.0f deg | proprio 132->133"
 					% [agent_instance.gaze_rate, rad_to_deg(agent_instance.gaze_limit)])
+			# ÉVENTAIL DE VITESSE (§2.13) — le coût énergétique CROISSANT qui fait du sprint un pari.
+			# OPT-IN, défaut 0 = OFF bit-identique. Ne s'applique qu'au corps CINÉMATIQUE (le seul
+			# promu) : c'est _kinematic_step qui calcule le coût du tick.
+			var _sck := OS.get_environment("SYLVAN_SPEED_COST")
+			if _sck != "":
+				agent_instance.speed_cost_k = maxf(0.0, _sck.to_float())
+				if agent_instance.speed_cost_k > 0.0:
+					var _drain := OS.get_environment("SYLVAN_ENERGY_DRAIN")
+					var _d := _drain.to_float() if _drain != "" else 0.15
+					# vx* = sqrt(D/k) = la vitesse la moins chère AU MÈTRE. Annoncée pour qu'on puisse
+					# LIRE le régime servi au lieu de le déduire (§6bis).
+					print("[Godot] SPEED COST ON | cout locomotion k=%.3f energie/tick a vx=1 | drain passif %.4f | vx le moins cher au metre = %.2f"
+						% [agent_instance.speed_cost_k, _d, sqrt(_d / agent_instance.speed_cost_k)])
 			# TERRAIN QUI RALENTIT (§2.3) — le sous-bois dense ralentit sans bloquer. OPT-IN.
 			var _tsl := OS.get_environment("SYLVAN_TERRAIN_SLOW")
 			if _tsl != "":
@@ -709,6 +729,20 @@ func _physics_process(delta: float) -> void:
 	var torso: Node3D = agent_instance.bodies.get("torso")
 	if not _no_homeostasis:
 		homeostasis.apply_metabolism(agent_instance.effort * 0.08)
+		# ÉVENTAIL DE VITESSE (§2.13) : le coût de la locomotion, prélevé APRÈS le drain passif et
+		# MESURÉ ici même — on loggue ce qui a été facturé, jamais ce qui était demandé (§6bis).
+		if agent_instance.speed_cost_k > 0.0:
+			homeostasis.spend_locomotion(agent_instance.locomotion_cost)
+		# Comptabilité SÉPARÉE du prélèvement, et volontairement restreinte aux ticks où le corps
+		# BOUGE (hors fenêtre de settle) : mélanger les ticks immobiles fausserait le coût AU MÈTRE,
+		# la grandeur même que le gate T4 juge.
+		if agent_instance.speed_cost_k > 0.0 and agent_instance.reset_timer <= 0.0:
+			_loco_cost_sum += agent_instance.locomotion_cost
+			_loco_vx_sum += agent_instance.cpg_command.x
+			_loco_vx_min = minf(_loco_vx_min, agent_instance.cpg_command.x)
+			_loco_vx_max = maxf(_loco_vx_max, agent_instance.cpg_command.x)
+			_loco_dist += agent_instance.kin_speed * agent_instance.terrain_speed_scale * absf(agent_instance.cpg_command.x) * delta
+			_loco_ticks += 1
 		# Eat any food pellet the agent walks over → restore energy (the homeostatic reward loop).
 		if torso != null:
 			var restored: float = food_manager.try_consume(torso.global_position, homeostasis.energy / homeostasis.max_energy)
@@ -814,6 +848,12 @@ func _start_episode() -> void:
 	_terrain_scale_sum = 0.0
 	_terrain_slowed_ticks = 0
 	_terrain_ticks = 0
+	_loco_cost_sum = 0.0
+	_loco_vx_sum = 0.0
+	_loco_vx_min = 9.0
+	_loco_vx_max = -9.0
+	_loco_dist = 0.0
+	_loco_ticks = 0
 	_gaze_min = 0.0
 	_gaze_max = 0.0
 	_gaze_abs_sum = 0.0
@@ -899,6 +939,18 @@ func _finish_episode(reason: String) -> void:
 			   rad_to_deg(_gaze_min), rad_to_deg(_gaze_max),
 			   rad_to_deg(_gaze_abs_sum / float(_gaze_n)),
 			   float(_gaze_at_limit) / float(_gaze_n) * 100.0])
+	# §6bis — l'éventail de vitesse rapporte la PLAGE réellement parcourue et le coût réellement
+	# facturé. Une plage étroite ici voudrait dire que la capacité est inerte : le WM n'apprendrait
+	# la dynamique que d'un couloir, et on croirait avoir ouvert la vitesse (le mode de panne exact
+	# que le regard a connu, couverture 0 % pendant que tout le code semblait présent).
+	if _loco_ticks > 0:
+		# `:=` INTERDIT ici : homeostasis est un Variant, l'inférence échoue et le script ne charge
+		# plus — Godot tourne alors à vide (défaut (a) attrapé par G3, 641 s de mur pour 2 s de CPU).
+		var _passif: float = homeostasis.passive_energy_drain * float(_loco_ticks)
+		print("[locomotion] episode : vx MESURE %.2f..%.2f moyen %.2f | %.2f m parcourus | energie locomotion %.1f vs passive %.1f | cout au metre %.2f"
+			% [_loco_vx_min, _loco_vx_max, _loco_vx_sum / float(_loco_ticks), _loco_dist,
+			   _loco_cost_sum, _passif,
+			   (_loco_cost_sum + _passif) / maxf(0.001, _loco_dist)])
 	# §6bis — le terrain rapporte le ralentissement RÉELLEMENT servi, mesuré par tick.
 	if _terrain_slow > 0.0 and _terrain_ticks > 0:
 		print("[terrain] episode : facteur de vitesse moyen MESURE %.3f | ralenti %.1f%% des ticks (sur %d)"
