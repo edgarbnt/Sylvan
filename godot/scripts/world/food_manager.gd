@@ -139,6 +139,26 @@ var _n_types := 0               # 0 = OFF, bit-identique
 var _type_values: Array[float] = []   # multiplicateur de valeur nutritive PAR TYPE (arbitraire)
 var _type_of: Array[int] = []
 var _type_hues: Array[Color] = []     # palette SÉPARABLE opt-in (SYLVAN_<PREFIX>_TYPE_HUES) ; vide = TYPE_COLORS
+
+# ── FLAQUES (2026-07-24, docs/design_foret_complete.md §2.12 + §2.12bis) — OPT-IN _PUDDLE_PERIOD ──
+# L'eau comme flaques DISPERSÉES à disponibilité VARIABLE. La variation est la valeur d'apprentissage,
+# pas la 2ᵉ pulsion (§2.12 : l'arbitrage faim/soif est déjà tranché par un coût analytique).
+# 🚨 RÈGLE §2.12bis : l'incertitude doit être OBSERVABLE et GRADUELLE, jamais instantanée et cachée.
+# Le perish RELOCALISE (saut aléatoire) = MAUVAIS format (le WM déterministe ne peut pas l'anticiper,
+# anomalie A4). Une flaque, elle, RÉTRÉCIT en douceur : son niveau suit un cosinus surélevé, sa taille
+# VISUELLE ET son empreinte RÉTINE rétrécissent ENSEMBLE (le mesh porte l'Area de perception → jamais
+# de mensonge visuel, §2.1), et les flaques sont DÉSYNCHRONISÉES (au même instant, certaines pleines,
+# d'autres sèches -> il y a un CHOIX). Boire est gaté : une flaque trop sèche ne désaltère pas.
+var _puddle_period := 0.0             # ticks d'un cycle sec->plein->sec ; 0 = OFF, bit-identique
+var _puddle_floor := 0.15             # taille mini (flaque presque sèche, encore un peu visible)
+var _puddle_drink := 0.4              # niveau mini pour pouvoir boire (en dessous = trop sec)
+var _puddle_lvl: Array[float] = []
+var _pud_prev := PackedFloat32Array()   # §6bis : accumulateurs MESURÉS sur l'épisode
+var _pud_max_step := 0.0
+var _pud_min := 1.0
+var _pud_max := 0.0
+var _pud_desync_sum := 0.0
+var _pud_ticks := 0
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -358,6 +378,16 @@ func _read_patch_env() -> void:
 	var pspd := OS.get_environment("SYLVAN_%s_PREY_SPEED" % _prefix)
 	if pspd != "":
 		_prey_speed = maxf(0.0, float(pspd))
+	# FLAQUES (§2.12) : cycle sec/plein. Défaut 0 = OFF, bit-identique.
+	var pp := OS.get_environment("SYLVAN_%s_PUDDLE_PERIOD" % _prefix)
+	if pp != "":
+		_puddle_period = maxf(0.0, float(pp))
+	var pfl := OS.get_environment("SYLVAN_%s_PUDDLE_FLOOR" % _prefix)
+	if pfl != "":
+		_puddle_floor = clampf(float(pfl), 0.0, 1.0)
+	var pdk := OS.get_environment("SYLVAN_%s_PUDDLE_DRINK" % _prefix)
+	if pdk != "":
+		_puddle_drink = clampf(float(pdk), 0.0, 1.0)
 	var pt := OS.get_environment("SYLVAN_%s_PREY_TURN" % _prefix)
 	if pt != "":
 		_prey_turn = maxf(0.0, float(pt))
@@ -468,6 +498,20 @@ func _nearest_patch(i: int) -> int:
 
 func reset(_episode_index: int = 0) -> void:
 	_ensure_built()
+	# §6bis — flush des flaques de l'épisode ÉCOULÉ : on rapporte ce qui a été SERVI, mesuré par tick
+	# (gradualité = plus gros pas de niveau ; amplitude = min..max ; désync = écart moyen entre flaques
+	# = preuve qu'il y avait un CHOIX). Émis AVANT de réinitialiser, sauté au tout 1er reset.
+	if _puddle_period > 0.0 and _pud_ticks > 0:
+		print("[puddle] %s : cycle %d ticks | niveau MESURE %.2f..%.2f | plus gros pas/tick %.4f (graduel) | desync moyen %.3f (choix) | boire si >= %.2f"
+			% [_prefix, int(_puddle_period), _pud_min, _pud_max, _pud_max_step,
+			   _pud_desync_sum / float(_pud_ticks), _puddle_drink])
+	_pud_max_step = 0.0
+	_pud_min = 1.0
+	_pud_max = 0.0
+	_pud_desync_sum = 0.0
+	_pud_ticks = 0
+	_puddle_lvl.clear()
+	_pud_prev = PackedFloat32Array()
 	consumed_this_episode = 0
 	_life_tick = 0
 	_swapped = false
@@ -647,6 +691,11 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 		if _patch_count > 0 and not _alive[i]:
 			continue                     # baie déjà cueillie : elle repoussera SUR PLACE
 		if ground.distance_to(_positions[i]) <= eat_radius:
+			# FLAQUE TROP SÈCHE (§2.12) : disponibilité variable. Le niveau est OBSERVABLE (la flaque a
+			# visiblement rétréci) donc le gate n'est pas caché — l'entité peut apprendre à ne pas
+			# viser une flaque sèche. OFF (_puddle_period=0) : jamais bloqué, bit-identique.
+			if _puddle_period > 0.0 and i < _puddle_lvl.size() and _puddle_lvl[i] < _puddle_drink:
+				continue
 			# MATURITÉ -> VALEUR NUTRITIVE (2026-07-24). Le seul signal du monde qui soit à la fois
 			# PERCEPTIBLE (la luminosité du buisson l'annonce), NON-GÉOMÉTRIQUE (indépendant de la
 			# distance) et PRÉDICTIBLE (fonction déterministe de l'âge, contrairement au saut
@@ -706,6 +755,7 @@ func _respawn_near(center: Vector3) -> Vector3:
 
 
 func _tick_regrowth() -> void:
+	_update_puddles()   # FLAQUES (§2.12) : rétrécissement graduel, indépendant du régime bosquets
 	# Une baie cueillie réapparaît SUR SON BOSQUET après _regrow_ticks. Position ré-échantillonnée
 	# dans le bosquet (une baie ne repousse pas exactement au même millimètre) — jamais autour de
 	# l'agent. OFF (_patch_count == 0) : boucle jamais exécutée, bit-identique.
@@ -742,6 +792,48 @@ func _tick_regrowth() -> void:
 		_apply_appearance(i)
 	_move_prey()
 	_update_ripeness_cue()
+
+
+# Niveau d'une flaque dans [_puddle_floor, 1], lisse dans le temps, DÉSYNCHRONISÉ entre flaques.
+# Cosinus surélevé -> aucun saut ; la phase par flaque étale les cycles pour qu'à tout instant il y
+# ait des pleines ET des sèches (donc un choix). Déterministe (fonction de _life_tick) -> rejeu OK.
+func _puddle_level(i: int) -> float:
+	if _puddle_period <= 0.0:
+		return 1.0
+	var n := maxi(1, _positions.size())
+	var phase := float(i) / float(n)
+	var frac := fposmod(float(_life_tick) / _puddle_period + phase, 1.0)
+	var wet := 0.5 * (1.0 - cos(TAU * frac))          # [0,1] lisse, dérivée bornée
+	return _puddle_floor + (1.0 - _puddle_floor) * wet
+
+
+func _update_puddles() -> void:
+	if _puddle_period <= 0.0:
+		return
+	var n := _positions.size()
+	while _puddle_lvl.size() < n:
+		_puddle_lvl.append(1.0)
+	if _pud_prev.size() < n:
+		_pud_prev.resize(n)
+	var s := 0.0
+	var s2 := 0.0
+	for i in range(n):
+		var lvl := _puddle_level(i)
+		if _pud_ticks > 0:
+			_pud_max_step = maxf(_pud_max_step, absf(lvl - _pud_prev[i]))   # §6bis : gradualité MESURÉE
+		_pud_prev[i] = lvl
+		_puddle_lvl[i] = lvl
+		# UNE seule opération : scaler le MESH scale AUSSI l'Area de perception (enfant) → la flaque
+		# rétrécit pour l'OWNER et pour l'ENTITÉ ensemble. Pas de mensonge visuel (§2.1).
+		_meshes[i].scale = Vector3(lvl, lvl, lvl)
+		_pud_min = minf(_pud_min, lvl)
+		_pud_max = maxf(_pud_max, lvl)
+		s += lvl
+		s2 += lvl * lvl
+	if n > 0:
+		var mean := s / float(n)
+		_pud_desync_sum += sqrt(maxf(0.0, s2 / float(n) - mean * mean))   # écart entre flaques = choix
+	_pud_ticks += 1
 
 
 func _move_prey() -> void:
