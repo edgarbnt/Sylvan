@@ -317,6 +317,23 @@ func get_positions() -> Array[Vector3]:
 	return _centers
 
 
+# FACTEUR DE VITESSE DU TERRAIN à la position `pos` (docs/design_foret_complete.md §2.3).
+# Le sous-bois pousse là où les arbres sont denses ; y avancer est plus lent. On approxime le
+# sous-bois par la DENSITÉ LOCALE d'arbres — déjà perceptible (les arbres sont sur la rétine), donc
+# le §1 filtre est respecté sans ajouter d'objet invisible. `strength` = pente du ralentissement par
+# arbre proche. Retourne 1.0 (dégagé) à `floor_v` (le plus lent) ; 1.0 exact si strength <= 0 (OFF).
+# ⚠️ C'est DISTINCT de la collision (bit 2) : un tronc ARRÊTE net, le sous-bois RALENTIT en continu.
+func speed_multiplier_at(pos: Vector3, strength: float, radius: float, floor_v: float) -> float:
+	if strength <= 0.0 or _centers.is_empty():
+		return 1.0
+	var n := 0
+	var r2 := radius * radius
+	for c in _centers:
+		if Vector2(pos.x - c.x, pos.z - c.z).length_squared() < r2:
+			n += 1
+	return maxf(floor_v, 1.0 / (1.0 + strength * float(n)))
+
+
 func _env(key: String, dflt: String) -> String:
 	var v := OS.get_environment(key)
 	return v if v != "" else dflt

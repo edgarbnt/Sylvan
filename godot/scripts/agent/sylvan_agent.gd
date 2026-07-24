@@ -109,6 +109,13 @@ var gaze_rate := 1.5              # rad/s par unité de commande — même éche
 var gaze_limit := PI * 0.5        # butée mécanique : ±90°, une tête ne fait pas le tour
 var gaze_command := 0.0           # 3ᵉ composante de commande, dans [-1, 1]
 
+# ── TERRAIN QUI RALENTIT (2026-07-24, docs/design_foret_complete.md §2.3) ──────────────────────
+# Facteur multiplicatif appliqué à la vitesse effective, calculé par main.gd à partir de la densité
+# LOCALE d'arbres (sous-bois). 1.0 = terrain dégagé (défaut, bit-identique). < 1.0 = ralenti.
+# C'est le FIX DIRECT du R² 0,985 (§2.3) : le déplacement dépend enfin de OÙ l'on est, pas seulement
+# de ce qu'on commande. La CAUSE est perceptible (les arbres sont sur la rétine), donc §1 filtre OK.
+var terrain_speed_scale := 1.0
+
 # KINEMATIC body (pivot corps différentiel, 2026-07-06) — court-circuite le CPG/pattes : le corps GLISSE
 # rigidement à (vx, omega) (roues invisibles). Les pattes restent gelées en pose neutre (statue qui glisse)
 # → proprio 132 cohérente (angles neutres, vitesses jointes nulles), tout le contrat obs/WM/torso préservé.
@@ -764,7 +771,10 @@ func _kinematic_step(delta: float) -> void:
 			kin_gaze = clampf(kin_gaze + gaze_rate * gaze_command * delta, -gaze_limit, gaze_limit)
 	var yaw_basis := Basis(Vector3.UP, kin_yaw)
 	var forward := (yaw_basis * Vector3(0.0, 0.0, 1.0)).normalized()
-	var vel := (forward * (kin_speed * cpg_command.x)) if moving else Vector3.ZERO
+	# Vitesse EFFECTIVE = commande x terrain. terrain_speed_scale vaut 1.0 hors sous-bois (donc
+	# bit-identique tant que le terrain est OFF) et < 1.0 dans un sous-bois dense.
+	var _eff_speed := kin_speed * terrain_speed_scale
+	var vel := (forward * (_eff_speed * cpg_command.x)) if moving else Vector3.ZERO
 	var angvel := Vector3(0.0, kin_turn * cpg_command.y, 0.0) if moving else Vector3.ZERO
 	if moving:
 		if _obstacle_mask < 0:
@@ -788,7 +798,7 @@ func _kinematic_step(delta: float) -> void:
 		body.linear_velocity = vel
 		body.angular_velocity = angvel
 	# Bookkeeping (corps droit, toujours debout — pas de chute possible).
-	forward_velocity = kin_speed * cpg_command.x
+	forward_velocity = _eff_speed * cpg_command.x   # vitesse RÉELLE (terrain compris) -> proprio honnête
 	center_height = bodies["torso"].global_position.y - global_position.y
 	uprightness_metric = 1.0
 	torso_tilt_metric = 0.0

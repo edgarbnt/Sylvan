@@ -261,6 +261,13 @@ var _action_smooth2_pen := 0.0
 var _wm_collect := false
 var _wm_gaze_target := 0.0   # angle de tête VISÉ (normalisé) pendant l'exploration du regard
 var _wm_gaze_in := 0         # décisions restantes avant de retirer une cible de regard
+# TERRAIN QUI RALENTIT (§2.3) — OPT-IN SYLVAN_TERRAIN_SLOW, défaut 0.0 = OFF bit-identique.
+var _terrain_slow := 0.0     # pente du ralentissement par arbre proche (0 = OFF)
+var _terrain_radius := 2.0   # rayon de comptage du sous-bois autour du corps, en mètres
+var _terrain_floor := 0.25   # plancher : même le sous-bois le plus dense laisse 25 % de la vitesse
+var _terrain_scale_sum := 0.0
+var _terrain_slowed_ticks := 0
+var _terrain_ticks := 0
 # 🚨 RNG SÉPARÉ, et c'est une CORRECTION DE BOGUE MESURÉE. Première version : les tirages de regard
 # sortaient de `_wm_rng`, celui des commandes. Effet constaté par la sonde G3 — la trajectoire du
 # CORPS n'était plus la même avec et sans regard, alors que le regard ne déplace rien : consommer
@@ -367,6 +374,16 @@ func _update_heading() -> void:
 				agent_instance._rebuild_proprioception()
 				print("[Godot] GAZE ON | tete mobile, retine decouplee du cap | rate=%.2f rad/s butee=+-%.0f deg | proprio 132->133"
 					% [agent_instance.gaze_rate, rad_to_deg(agent_instance.gaze_limit)])
+			# TERRAIN QUI RALENTIT (§2.3) — le sous-bois dense ralentit sans bloquer. OPT-IN.
+			var _tsl := OS.get_environment("SYLVAN_TERRAIN_SLOW")
+			if _tsl != "":
+				_terrain_slow = _tsl.to_float()
+				var _tr := OS.get_environment("SYLVAN_TERRAIN_RADIUS")
+				if _tr != "": _terrain_radius = _tr.to_float()
+				var _tf := OS.get_environment("SYLVAN_TERRAIN_FLOOR")
+				if _tf != "": _terrain_floor = _tf.to_float()
+				print("[Godot] TERRAIN SLOW ON | sous-bois ralentit | pente=%.2f/arbre rayon=%.1f m plancher=%.2f"
+					% [_terrain_slow, _terrain_radius, _terrain_floor])
 			# FULLY-LEARNED mode (2026-06-14): bypass the CPG motor (policy outputs the 12 targets
 			# directly), but KEEP cpg_enabled=true so the command plumbing (sampling, obs, reward cmd)
 			# all keeps working. Only step_agent's motor application changes.
@@ -656,6 +673,21 @@ func _physics_process(delta: float) -> void:
 			_wm_t0 = _wm_snapshot()
 			_wm_ate = 0.0
 
+	# TERRAIN QUI RALENTIT (§2.3) : avant de faire glisser le corps, on lit la densité LOCALE d'arbres
+	# à sa position et on en déduit un facteur de vitesse. OFF (_terrain_slow<=0) → scale reste 1.0,
+	# donc bit-identique. C'est main.gd qui fait le pont : forest_solid connaît les arbres, l'agent
+	# ne connaît qu'un scalaire — aucun des deux n'a besoin de l'autre.
+	if _terrain_slow > 0.0:
+		var _tpos: Node3D = agent_instance.bodies.get("torso")
+		if _tpos != null:
+			var _sc := forest_solid.speed_multiplier_at(_tpos.global_position, _terrain_slow, _terrain_radius, _terrain_floor)
+			agent_instance.terrain_speed_scale = _sc
+			# §6bis : mesurer ce qui a RÉELLEMENT ralenti, pas ce qui est demandé.
+			_terrain_scale_sum += _sc
+			if _sc < 0.999:
+				_terrain_slowed_ticks += 1
+			_terrain_ticks += 1
+
 	agent_instance.step_agent(delta)
 
 	# Perturbation curriculum: random horizontal shove every ~0.75-1.5 s once the
@@ -773,6 +805,10 @@ func _start_episode() -> void:
 	agent_instance.gaze_command = 0.0
 	_wm_gaze_target = 0.0
 	_wm_gaze_in = 0
+	agent_instance.terrain_speed_scale = 1.0
+	_terrain_scale_sum = 0.0
+	_terrain_slowed_ticks = 0
+	_terrain_ticks = 0
 	_gaze_min = 0.0
 	_gaze_max = 0.0
 	_gaze_abs_sum = 0.0
@@ -857,6 +893,11 @@ func _finish_episode(reason: String) -> void:
 			   rad_to_deg(_gaze_min), rad_to_deg(_gaze_max),
 			   rad_to_deg(_gaze_abs_sum / float(_gaze_n)),
 			   float(_gaze_at_limit) / float(_gaze_n) * 100.0])
+	# §6bis — le terrain rapporte le ralentissement RÉELLEMENT servi, mesuré par tick.
+	if _terrain_slow > 0.0 and _terrain_ticks > 0:
+		print("[terrain] episode : facteur de vitesse moyen MESURE %.3f | ralenti %.1f%% des ticks (sur %d)"
+			% [_terrain_scale_sum / float(_terrain_ticks),
+			   float(_terrain_slowed_ticks) / float(_terrain_ticks) * 100.0, _terrain_ticks])
 	episode_manager.finish_episode(reason)
 	rollout_writer.end_episode()
 	completed_episodes += 1
