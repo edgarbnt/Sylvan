@@ -138,6 +138,7 @@ const TYPE_COLORS := [Color(0.900, 0.300, 0.200), Color(0.648, 0.216, 0.144),
 var _n_types := 0               # 0 = OFF, bit-identique
 var _type_values: Array[float] = []   # multiplicateur de valeur nutritive PAR TYPE (arbitraire)
 var _type_of: Array[int] = []
+var _type_hues: Array[Color] = []     # palette SÉPARABLE opt-in (SYLVAN_<PREFIX>_TYPE_HUES) ; vide = TYPE_COLORS
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -199,7 +200,11 @@ func _apply_appearance(i: int) -> void:
 	# Le TYPE fixe la teinte (elle DOIT rester lisible : c'est le seul indice de la valeur).
 	var c: Color = _jitter(_albedo)
 	if _n_types > 0 and i < _type_of.size():
-		c = TYPE_COLORS[_type_of[i] % TYPE_COLORS.size()]
+		# Palette séparable si fournie (SYLVAN_<PREFIX>_TYPE_HUES), sinon les TYPE_COLORS historiques.
+		if not _type_hues.is_empty():
+			c = _type_hues[_type_of[i] % _type_hues.size()]
+		else:
+			c = TYPE_COLORS[_type_of[i] % TYPE_COLORS.size()]
 	var mat := _meshes[i].material_override as StandardMaterial3D
 	if mat != null:
 		mat.albedo_color = c
@@ -328,6 +333,21 @@ func _read_patch_env() -> void:
 	var nt := OS.get_environment("SYLVAN_%s_TYPES" % _prefix)
 	if nt != "":
 		_n_types = clampi(int(nt), 0, TYPE_COLORS.size())
+	# PALETTE DE TYPES SÉPARABLE — opt-in SYLVAN_<PREFIX>_TYPE_HUES="r,g,b;r,g,b;..." (2026-07-24).
+	# 🚨 POURQUOI. Les TYPE_COLORS gelées sont des MULTIPLES SCALAIRES d'une même direction (mesuré
+	# diag_foret_g5_palette.py : cosinus mutuel 1,0000, sonde directionnelle 26% ≈ hasard). La
+	# perception NORMALISE la couleur (cosinus), donc elle ne voit que la DIRECTION : des teintes qui
+	# ne diffèrent que par la luminosité sont, pour elle, IDENTIQUES → c'est la racine des 29,5 %
+	# (verrou A1). Cet override sert une palette ÉTALÉE EN DIRECTION dans le cône bouffe, validée PASS
+	# par la même sonde (cos rouge > 0,55, hors eau, écart 19-33°, sonde 98%). Défaut vide = les
+	# TYPE_COLORS historiques, bit-identique. On NE mute PAS la constante gelée (repro historique).
+	_type_hues.clear()
+	var th := OS.get_environment("SYLVAN_%s_TYPE_HUES" % _prefix)
+	if th != "":
+		for grp in th.split(";"):
+			var p := grp.split(",")
+			if p.size() == 3:
+				_type_hues.append(Color(float(p[0]), float(p[1]), float(p[2])))
 	var tv := OS.get_environment("SYLVAN_%s_TYPE_VALUES" % _prefix)
 	_type_values.clear()
 	if tv != "":
@@ -492,6 +512,15 @@ func _log_patches() -> void:
 	print("[patch] %s : %d/%d bosquets placés | %d baies | espacement voisin MESURÉ %s (demandé %.1f-%.1f) | repousse %d ticks | buisson r=%.2f couleur=(%.2f,%.2f,%.2f)" % [
 		_prefix, _patch_centres.size(), _patch_count, food_count, gap_s, _patch_spacing, _patch_spacing_max,
 		_regrow_ticks, PATCH_BUSH_R, PATCH_BUSH_COLOR.r, PATCH_BUSH_COLOR.g, PATCH_BUSH_COLOR.b])
+	# §6bis — prouver la PALETTE de types réellement servie (la source des couleurs, pas juste leur nb).
+	if _n_types > 0:
+		var use_hues := not _type_hues.is_empty()
+		var src := ("SYLVAN_%s_TYPE_HUES (separable)" % _prefix) if use_hues else "TYPE_COLORS (historique, multiples scalaires)"
+		var s := ""
+		for t in range(_n_types):
+			var col: Color = _type_hues[t % _type_hues.size()] if use_hues else TYPE_COLORS[t % TYPE_COLORS.size()]
+			s += " (%.2f,%.2f,%.2f)" % [col.r, col.g, col.b]
+		print("[patch] %s : %d types SERVIS depuis %s |%s" % [_prefix, _n_types, src, s])
 
 
 func _place_patch_bushes() -> void:
