@@ -53,6 +53,21 @@ var _clump := 1                                    # troncs par MASSIF. 1 = arbr
                                                    # bit-identique). >1 = bosquet : plusieurs troncs
                                                    # groupés sous un MÊME corps → occulteur LARGE.
 var _clump_r := 1.0                                # rayon de dispersion des troncs dans le massif
+# ── ARRANGEMENT ÉCOLOGIQUE (2026-07-24) ────────────────────────────────────────────────────────
+# Une vraie forêt n'est PAS un tirage uniforme : les graines tombent près du parent (PEUPLEMENTS),
+# les arbres se concurrencent (ESPACEMENT MINIMAL), et un arbre tombé ouvre une CLAIRIÈRE. On
+# implémente le processus de Neyman-Scott/Thomas, standard en écologie spatiale : des centres de
+# peuplement, puis des arbres dispersés autour selon une gaussienne.
+# POURQUOI ÇA SERT ICI, au-delà du réalisme : une forêt STRUCTURÉE produit une occlusion NON
+# UNIFORME — couloirs de visibilité, écrans denses, ouvertures. C'est ce qui rend l'affût signifiant.
+# Un semis uniforme ne serait qu'un brouillard homogène, où aucune position ne vaut mieux qu'une autre.
+# OFF (_stands <= 0) → tirage uniforme historique, bit-identique.
+var _stands := 0                                   # nb de PEUPLEMENTS (0 = uniforme, historique)
+var _stand_sigma := 3.0                            # dispersion des arbres autour de leur peuplement
+var _clearings := 0                                # nb de CLAIRIÈRES (zones sans arbres)
+var _clearing_r := 4.0                             # rayon d'une clairière
+var _stand_centers: Array[Vector3] = []
+var _clearing_centers: Array[Vector3] = []
 var _color := TREE_COLOR
 var _rng := RandomNumberGenerator.new()
 
@@ -76,6 +91,10 @@ func _init() -> void:
 	_min_gap = _envf("SYLVAN_FOREST_MIN_GAP", _min_gap)
 	_clump = int(_env("SYLVAN_FOREST_CLUMP", "1"))
 	_clump_r = _envf("SYLVAN_FOREST_CLUMP_R", _clump_r)
+	_stands = int(_env("SYLVAN_FOREST_STANDS", "0"))
+	_stand_sigma = _envf("SYLVAN_FOREST_STAND_SIGMA", _stand_sigma)
+	_clearings = int(_env("SYLVAN_FOREST_CLEARINGS", "0"))
+	_clearing_r = _envf("SYLVAN_FOREST_CLEARING_R", _clearing_r)
 	# Override d'apparence = TEST DE PURETÉ : la réaction survit-elle à un changement de couleur ?
 	# (même contrat que SYLVAN_OBSTACLE_HUE). ⚠️ toute couleur ≠ verte RÉINTRODUIT de la fuite — c'est
 	# justement ce qu'on veut pouvoir mesurer.
@@ -167,14 +186,20 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 	if not active():
 		return
 	_ensure_built()
+	_sample_structure()
 	for i in range(_bodies.size()):
 		var center := Vector3.ZERO
 		var ok := false
 		for _try in range(40):
-			var a := _rng.randf_range(0.0, TAU)
-			var r := _rng.randf_range(_radius_min, _radius_max)
-			center = Vector3(cos(a) * r, 0.0, sin(a) * r)
+			center = _propose_position()
 			if center.distance_to(spawn_pos) < _clear_r + _effective_r():
+				continue
+			var in_clearing := false
+			for cc in _clearing_centers:              # un arbre ne pousse pas dans une clairière
+				if center.distance_to(cc) < _clearing_r:
+					in_clearing = true
+					break
+			if in_clearing:
 				continue
 			var clash := false
 			for p in resource_positions:
@@ -202,6 +227,60 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		% [_centers.size(), _bodies.size(), _keepout, resource_positions.size()])
 	if _min_gap > 0.0:
 		print("[forest] espacement mini entre arbres : %.2f m" % _min_gap)
+	if _stands > 0 or _clearings > 0:
+		# PROUVER l'arrangement au lieu de l'affirmer (règle de méthode du projet).
+		print("[forest] structure : %d peuplements (sigma %.1f m), %d clairieres (r %.1f m) | "
+			% [_stand_centers.size(), _stand_sigma, _clearing_centers.size(), _clearing_r]
+			+ "Clark-Evans MESURE %.2f (<1 = groupe, 1 = aleatoire)" % _clark_evans())
+
+
+func _sample_structure() -> void:
+	# Centres de PEUPLEMENT et de CLAIRIÈRE, tirés une fois par épisode (déterministe via _rng).
+	_stand_centers.clear()
+	_clearing_centers.clear()
+	for _i in range(_stands):
+		var a := _rng.randf_range(0.0, TAU)
+		var r := sqrt(_rng.randf()) * _radius_max     # uniforme en AIRE (sinon ça s'entasse au centre)
+		_stand_centers.append(Vector3(cos(a) * r, 0.0, sin(a) * r))
+	for _i in range(_clearings):
+		var a2 := _rng.randf_range(0.0, TAU)
+		var r2 := sqrt(_rng.randf()) * _radius_max
+		_clearing_centers.append(Vector3(cos(a2) * r2, 0.0, sin(a2) * r2))
+
+
+func _propose_position() -> Vector3:
+	# Sans peuplement : tirage uniforme historique. Avec : gaussienne autour d'un peuplement tiré au
+	# sort (processus de Thomas) — c'est ce qui produit des massifs et des trouées plutôt qu'un semis
+	# régulier, donc une occlusion NON uniforme.
+	if _stand_centers.is_empty():
+		var a := _rng.randf_range(0.0, TAU)
+		var r := _rng.randf_range(_radius_min, _radius_max)
+		return Vector3(cos(a) * r, 0.0, sin(a) * r)
+	var c: Vector3 = _stand_centers[_rng.randi() % _stand_centers.size()]
+	var p := c + Vector3(_rng.randfn(0.0, _stand_sigma), 0.0, _rng.randfn(0.0, _stand_sigma))
+	var d := Vector2(p.x, p.z).length()
+	if d > _radius_max:                                # rabattu dans l'arène, jamais inventé dehors
+		p = Vector3(p.x / d * _radius_max, 0.0, p.z / d * _radius_max)
+	return p
+
+
+func _clark_evans() -> float:
+	# INDICE DE CLARK-EVANS = (distance moyenne au plus proche voisin) / (attendue sous Poisson).
+	# < 1 = GROUPÉ (peuplements), = 1 = aléatoire, > 1 = régulier. C'est la statistique standard en
+	# écologie spatiale : elle PROUVE que l'arrangement est groupé au lieu qu'on l'affirme.
+	var n := _centers.size()
+	if n < 3:
+		return 1.0
+	var tot := 0.0
+	for i in range(n):
+		var best := INF
+		for j in range(n):
+			if i != j:
+				best = minf(best, _centers[i].distance_to(_centers[j]))
+		tot += best
+	var observed := tot / float(n)
+	var density := float(n) / (PI * _radius_max * _radius_max)
+	return observed / (0.5 / sqrt(density))
 
 
 func get_positions() -> Array[Vector3]:
