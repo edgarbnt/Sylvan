@@ -71,7 +71,8 @@ def main() -> None:
     ap.add_argument("--outcomes", default="data/forks/s8_k1200_outcomes.txt")
     ap.add_argument("--wm", default="data/checkpoints/wm_objcentric_kin/wm_best.pt")
     ap.add_argument("--critic", default="data/checkpoints/meal_critic/critic_best.pt")
-    ap.add_argument("--critic-type", choices=["token", "latent"], default="token")
+    ap.add_argument("--critic-type", choices=["token", "latent", "td"], default="token")
+    ap.add_argument("--gamma", type=float, default=0.999)
     ap.add_argument("--horizon", type=int, default=80)
     args = ap.parse_args()
 
@@ -95,7 +96,10 @@ def main() -> None:
     wm.eval()
 
     ck = torch.load(args.critic, map_location="cpu", weights_only=False)
-    if args.critic_type == "latent":
+    if args.critic_type == "td":
+        from scripts.train_td_critic import TDValueHead
+        critic = TDValueHead(ck["latent_dim"], ck.get("hidden", 256))
+    elif args.critic_type == "latent":
         from sylvan.models.value_head import ValueHead
         critic = ValueHead(ck["latent_dim"], ck.get("hidden", 256))
     else:
@@ -108,7 +112,11 @@ def main() -> None:
     with torch.no_grad():
         out = wm.rollout_open_loop(obs0.expand(21, -1).contiguous(), seq)
         slot = out["slot"]                                                             # [21, T, 2]
-        if args.critic_type == "latent":
+        if args.critic_type == "td":
+            # FORME TD-MPC : la valeur est TERMINALE (au BOUT du rêve court), jamais moyennée.
+            # C'est elle qui fait entrer l'information de long horizon dans un plan de court horizon.
+            v_critic = (args.gamma ** args.horizon) * critic(out["predicted_latents"][:, -1])
+        elif args.critic_type == "latent":
             # MÊME entrée qu'à l'entraînement : les latents RÊVÉS open-loop.
             v_critic = critic.value(out["predicted_latents"]).mean(dim=1)
         else:
