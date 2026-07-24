@@ -195,6 +195,73 @@ APPRISES — mesurées `[0.876, 0.349, 0.333]` au lieu des primaires exactes —
 Si on ré-entraîne de toute façon, il faut régler les DEUX ensemble, sinon le problème du tronc brun
 **survivra au retrain**.
 
+### 2.8 Faire varier les couleurs dans la COLLECTE — et le piège qui peut le faire rater
+
+C'est le levier qui fait tomber le verrou **A1**. Mais « mettre plusieurs couleurs » ne suffit pas :
+
+⚠️ **JEPA jette délibérément ce qui est IMPRÉVISIBLE.** Si la couleur d'une baie est retirée au hasard
+à chaque repousse, elle est du bruit du point de vue du prédicteur, et l'encodeur a *raison* de
+l'écraser. On reproduirait l'échec en croyant l'avoir corrigé.
+
+**Règle de conception qui en découle** : une couleur doit être **STABLE pour un objet donné**
+(prévisible dans le temps — l'objet garde son apparence) et **VARIER ENTRE objets et entre épisodes**
+(donc informative). C'est cette combinaison — constante par objet, variable dans la population — qui
+force l'encodeur à allouer de la capacité à la dimension « apparence ».
+
+**Et il faut faire varier TOUT, pas seulement la nourriture** : troncs, buissons, rochers, sol. Sinon
+on répare la cécité pour une classe d'objets et on la recrée pour la suivante. C'est la lecture
+correcte du §3 : enrichir le substrat **une fois**.
+
+⚠️ **Le verrou A2 ne tombera PAS tout seul.** Le retrain corrige l'encodeur ; il ne touche pas au
+détecteur codé-main (seuil cosinus 0,55) qui fait qu'un tronc brun EST de la nourriture. Il faut
+promouvoir les **requêtes apprises** (`wm_objcentric_kin_typed`) dans le même mouvement, sinon le
+problème du tronc brun survit au retrain.
+
+### 2.9 Les animaux — codés à la main, et c'est honnête
+
+Ils font partie du **MONDE**, pas de l'agent. Des règles simples suffisent, à condition de ne jamais
+prétendre qu'ils sont intelligents.
+
+- **Proies comestibles** *(construit)* — vaquent, ne fuient pas (la fuite est dégénérée, mesuré).
+- **⭐ Animaux NON comestibles (distracteurs)** *(hypothèse, sous-estimée)* — oiseaux, écureuils : des
+  choses qui BOUGENT et qu'on ne peut PAS manger. Sans eux, « ça bouge donc c'est de la nourriture »
+  est un raccourci gratuit, et l'agent n'a jamais à discriminer. Avec eux, le lien apparence→comestible
+  doit être **appris** — c'est la même famille que les types arbitraires, qui est la seule à avoir
+  passé le filtre. Coût faible, valeur élevée.
+- **Un concurrent** *(hypothèse)* — un autre prédateur qui mange les mêmes proies : la valeur d'une
+  ressource dépend alors du comportement d'un autre, donc de quelque chose qu'il faut modéliser.
+- **Une menace** *(existe déjà)* — `hazard_manager.gd` est en place ; à raccorder plutôt qu'à réécrire.
+
+### 2.10 Ce à quoi on n'avait pas pensé
+
+- **⭐ Un abri / une tanière** *(hypothèse)* — un lieu FIXE qui restaure ou protège. Ça crée le
+  *central place foraging*, concept écologique réel (et la littérature loup le mentionne
+  explicitement) : jusqu'où s'éloigner de son point d'ancrage ? L'arbitrage n'a pas de forme close dès
+  que la qualité des sites est incertaine, et il donne un **sens spatial à la mémoire**.
+- **⭐ Jour / nuit FONCTIONNEL** *(le cycle existe déjà, mais VISUEL seulement)* — la nuit réduit la
+  portée de vision. Couplage direct avec la mémoire : ce qu'on a vu de jour doit être retenu pour la
+  nuit. Très bon rapport valeur/coût, puisque la moitié est déjà écrite.
+- **Fatigue** *(hypothèse)* — courir vite coûte plus et impose de récupérer. Rend la VITESSE une
+  décision au lieu d'un paramètre, et donne au prédicteur une dynamique interne à modéliser.
+- **Météo** — écarté pour l'instant : coût élevé, gain non mesuré.
+
+### 2.11 Le corps — quelles modifications ajoutent une DÉCISION
+
+À distinguer nettement de l'hygiène technique.
+
+**Qui ajoutent une décision :**
+- **Le regard indépendant** (cf. §2.4) — la seule action à valeur purement informationnelle.
+- **⭐ S'abaisser / se tapir** *(hypothèse, excellente)* — réduit la visibilité pour les proies (elles
+  détectent plus tard) mais ralentit. C'est un arbitrage sans forme close, et surtout c'est une action
+  qui **manipule ce que les autres perçoivent**. C'est rare et précieux : ça rend la distance de fuite
+  (§2.7a) actionnable au lieu d'être subie.
+- **Vitesse couplée à la fatigue** — voir §2.10.
+
+**Hygiène technique (pas un levier d'apprentissage, mais nécessaire) :**
+- **Hitbox** — le corps est un assemblage cinématique ; en forêt dense, la qualité de la collision
+  décide de la navigabilité. À traiter comme de l'ingénierie, en le mesurant (pénétrations = 0), sans
+  le compter comme un gain d'apprentissage.
+
 ---
 
 ## 3. LIMITES MESURÉES — non négociables
@@ -252,6 +319,45 @@ Si on ré-entraîne de toute façon, il faut régler les DEUX ensemble, sinon le
 | difficulté non-linéaire | appris > meilleure formule ajustée | à mesurer |
 
 Les deux derniers sont **les gates du problème de l'owner**. Tout le reste n'est qu'un moyen.
+
+---
+
+## 6bis. CONTRAT D'INSTRUMENTATION — sondes et logs partout
+
+Demande explicite de l'owner, et le projet en a déjà payé le prix : *« trois fois un réglage a semblé
+appliqué sans l'être »*. On formalise donc une règle plutôt que de faire au cas par cas.
+
+**Règle : chaque module de monde loggue, une fois par épisode, ce qu'il a RÉELLEMENT servi — mesuré,
+jamais demandé.** Le modèle existe déjà : `[patch]` rapporte l'espacement MESURÉ et non celui
+demandé ; `[prey]` rapporte la vitesse MESURÉE (0,00990 pour 0,00990 demandé) ; `[forest]` rapportera
+le Clark-Evans mesuré.
+
+**Ce que chaque objet du monde doit rapporter :**
+| module | à logger (mesuré) |
+|---|---|
+| forêt | arbres placés / demandés, espacement mini réel, Clark-Evans, clairières, % d'occupation rétine |
+| nourriture | nombre vivant, types servis + leur valeur, âge moyen, distance médiane à l'agent |
+| proies / animaux | vitesse réelle, distance parcourue, fraction du temps visible, captures |
+| corps | vitesse réelle m/tick, pénétrations de collision (doit rester 0), angle de regard |
+| ressources | consommations par type, énergie rendue par consommation |
+| perception | fraction de rayons occupés par classe, distance médiane du slot, hors-portée |
+
+**Trois règles complémentaires :**
+1. **Ne jamais dégrader en silence.** Si un réglage est infaisable (espacement trop grand, densité
+   irréalisable), le DIRE bruyamment — `food_manager` le fait déjà (`push_warning` quand aucun centre
+   n'est plaçable). Un monde qui se rabat sans le dire fabrique de faux négatifs.
+2. **Une ligne de synthèse `[world]`** par épisode, listant les mécaniques ACTIVES et leurs valeurs
+   mesurées. On doit pouvoir lire un log et savoir exactement quel monde a été servi — plusieurs
+   confusions de la journée viennent de là.
+3. **Bannière d'échafaudages actifs** — `diagnostics/guards.py` existe déjà pour ça (constantes
+   MESURÉES vs DÉCLARÉES) ; l'étendre aux nouveaux modules plutôt que d'en écrire un autre.
+
+**Sondes gratuites à écrire en même temps que la mécanique**, jamais après :
+- lecture du type depuis l'encodeur (existe : `diag_latent_carries_type.py`) ;
+- le latent porte-t-il l'objet (existe : `diag_latent_carries_object.py`) ;
+- le prédicteur bat-il « l'objet reste immobile » (à écrire) ;
+- occlusion : fraction de temps où une ressource vue est perdue de vue (à écrire) ;
+- Clark-Evans (écrit, non vérifié).
 
 ---
 
