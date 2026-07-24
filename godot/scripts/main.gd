@@ -131,6 +131,7 @@ func _ready() -> void:
 	hazard_manager.set_seed(seed_value + 555)
 	obstacle_manager.set_seed(seed_value + 999)
 	forest_solid.set_seed(seed_value + 4242)
+	_gaze_rng.seed = seed_value + 7171   # flux DÉDIÉ : le regard ne décale pas celui des commandes
 	if _water_enabled:
 		water_manager.set_seed(seed_value + 777)  # décalage → l'eau ne spawn pas SUR la bouffe
 	add_child(rollout_writer)
@@ -254,6 +255,22 @@ var _action_smooth2_pen := 0.0
 # obs contract is UNTOUCHED (vision still carries the command) — the extra ground truth rides
 # alongside so the command-space world model has targets the obs can't provide.
 var _wm_collect := false
+var _wm_gaze_target := 0.0   # angle de tête VISÉ (normalisé) pendant l'exploration du regard
+var _wm_gaze_in := 0         # décisions restantes avant de retirer une cible de regard
+# 🚨 RNG SÉPARÉ, et c'est une CORRECTION DE BOGUE MESURÉE. Première version : les tirages de regard
+# sortaient de `_wm_rng`, celui des commandes. Effet constaté par la sonde G3 — la trajectoire du
+# CORPS n'était plus la même avec et sans regard, alors que le regard ne déplace rien : consommer
+# des tirages en plus DÉCALE le flux, donc les commandes (vx, omega) tirées ensuite. Un corpus avec
+# regard n'aurait plus été comparable à un corpus sans, et le rejeu bit-identique serait tombé —
+# exactement l'angle mort §6quater F (« beaucoup plus d'objets = beaucoup plus de consommateurs de
+# RNG ⇒ re-vérifier le rejeu »). Un consommateur de hasard NOUVEAU doit avoir son PROPRE flux.
+var _gaze_rng := RandomNumberGenerator.new()
+# Statistiques de COUVERTURE du regard, remises à zéro à chaque épisode (§6bis).
+var _gaze_min := 0.0
+var _gaze_max := 0.0
+var _gaze_abs_sum := 0.0
+var _gaze_at_limit := 0
+var _gaze_n := 0
 var _wm_rng := RandomNumberGenerator.new()
 var _wm_resample_in := 0      # decision steps until the next (vx, omega) draw
 var _wm_straight_ep := false  # ~15% of episodes hold omega=0 (clean straight-line data)
@@ -331,6 +348,21 @@ func _update_heading() -> void:
 				var _kt := OS.get_environment("SYLVAN_KIN_TURN").to_float()
 				agent_instance.enable_kinematic(true, _ks, _kt)
 				print("[Godot] KINEMATIC BODY | (vx,omega) glide, legs cosmetic | speed=%.2f turn=%.2f" % [agent_instance.kin_speed, agent_instance.kin_turn])
+			# REGARD INDÉPENDANT (design_foret_complete.md §2.4) — OPT-IN, défaut OFF bit-identique.
+			# La rétine suit la TÊTE, le déplacement suit le CORPS : la seule action dont la valeur
+			# soit purement informationnelle. Ajoute une 133ᵉ dimension de proprioception.
+			if OS.get_environment("SYLVAN_GAZE") == "1":
+				agent_instance.gaze_enabled = true
+				var _gr := OS.get_environment("SYLVAN_GAZE_RATE")
+				if _gr != "": agent_instance.gaze_rate = _gr.to_float()
+				var _gl := OS.get_environment("SYLVAN_GAZE_LIMIT_DEG")
+				if _gl != "": agent_instance.gaze_limit = deg_to_rad(_gl.to_float())
+				# La proprioception a déjà été construite une fois à l'init, AVANT ce drapeau : elle
+				# fait donc encore 132. Sans cette reconstruction, la toute première observation
+				# présente 132 dims là où le contrat en attend 133, et le garde-fou crie à raison.
+				agent_instance._rebuild_proprioception()
+				print("[Godot] GAZE ON | tete mobile, retine decouplee du cap | rate=%.2f rad/s butee=+-%.0f deg | proprio 132->133"
+					% [agent_instance.gaze_rate, rad_to_deg(agent_instance.gaze_limit)])
 			# FULLY-LEARNED mode (2026-06-14): bypass the CPG motor (policy outputs the 12 targets
 			# directly), but KEEP cpg_enabled=true so the command plumbing (sampling, obs, reward cmd)
 			# all keeps working. Only step_agent's motor application changes.
@@ -473,6 +505,40 @@ func _physics_process(delta: float) -> void:
 	# Phase 4 WM collection: redraw the command on a 40-80 decision cadence, at decision boundaries
 	# ONLY — so the command the vision obs carries always matches what the CPG executes this window.
 	if _wm_collect and agent_instance.cpg_enabled and current_action_repeat_step == 0:
+		# Asservissement du regard vers sa cible, RÉÉVALUÉ à chaque pas de décision (et pas seulement
+		# au ré-échantillonnage) : sinon la tête part à vitesse constante, percute la butée et y
+		# reste, ce qui sur-représente les extrêmes au lieu de balayer uniformément l'amplitude.
+		if agent_instance.gaze_enabled:
+			# CADENCE PROPRE au regard, plus rapide que celle des commandes (40-80). La tête tourne
+			# vite et ne coûte aucun déplacement : la faire suivre le rythme du corps ne tirait qu'une
+			# dizaine de cibles par vie, et la couverture d'un épisode tombait à 74 %. Rien n'oblige
+			# les deux à partager une cadence — ce sont deux actionneurs indépendants.
+			_wm_gaze_in -= 1
+			if _wm_gaze_in <= 0:
+				_wm_gaze_in = _gaze_rng.randi_range(20, 40)
+				_wm_gaze_target = _gaze_rng.randf_range(-1.0, 1.0)
+				# Une fois sur quatre on vise EXACTEMENT une butée : ce sont les positions extrêmes
+				# qu'aucune politique sensée n'utiliserait, donc celles qu'aucun corpus ne
+				# contiendrait spontanément — et sans elles le WM ignorerait la fin de course.
+				if _gaze_rng.randf() < 0.25:
+					_wm_gaze_target = 1.0 if _gaze_rng.randf() < 0.5 else -1.0
+			# Types EXPLICITES : agent_instance est un Variant, donc `:=` ne peut rien inférer et le
+			# script entier refuse de se charger — Godot tourne alors une boucle vide, sans rien dire.
+			var _gerr: float = _wm_gaze_target - agent_instance.kin_gaze / agent_instance.gaze_limit
+			# Gain FORT et saturant, volontairement : un asservissement doux approche la butée sans
+			# jamais l'atteindre (mesuré : butée touchée 0,0 % des ticks), donc la fin de course
+			# n'apparaîtrait JAMAIS dans les données.
+			agent_instance.set_gaze_command(clampf(_gerr * 30.0, -1.0, 1.0))
+			var _g: float = agent_instance.kin_gaze
+			_gaze_min = minf(_gaze_min, _g)
+			_gaze_max = maxf(_gaze_max, _g)
+			_gaze_abs_sum += absf(_g)
+			# Tolérance PHYSIQUE (1°), pas numérique. Avec 1e-4 rad (0,006°) on ne mesurait pas
+			# « la fin de course est-elle visitée » mais « l'asservissement converge-t-il au bit
+			# près » : la tête atteignait bien -90°, et le compteur affichait 0,0 %.
+			if absf(_g) >= agent_instance.gaze_limit - deg_to_rad(1.0):
+				_gaze_at_limit += 1
+			_gaze_n += 1
 		_wm_resample_in -= 1
 		if _wm_resample_in <= 0:
 			if _wm_turn_script:
@@ -491,6 +557,15 @@ func _physics_process(delta: float) -> void:
 				var _wvx := _wm_rng.randf_range(_WM_VX_MIN, _WM_VX_MAX)
 				var _wom := 0.0 if _wm_straight_ep else _wm_rng.randf_range(-_WM_WMAX, _WM_WMAX)
 				agent_instance.set_cpg_command(_wvx, _wom)
+				# REGARD : on tire un ANGLE CIBLE, pas un bruit de commande (§6quinquies E — toute
+				# nouvelle dimension d'action doit être EXPLORÉE, sinon le WM n'apprend pas sa
+				# dynamique et la capacité reste inerte). ⚠️ L'exploration doit être LARGE : un bruit
+				# centré sur zéro n'atteindrait JAMAIS les butées, et le WM ne connaîtrait la
+				# dynamique que sur une plage étroite. On tire donc uniformément sur TOUTE
+				# l'amplitude, et une fois sur cinq on vise EXACTEMENT une butée — les positions
+				# extrêmes qu'aucune politique sensée n'utiliserait sont précisément celles qu'aucune
+				# politique ne produirait spontanément dans le corpus.
+				pass
 
 	if current_action_repeat_step == 0:
 		latest_obs = observation_builder.build_observation(agent_instance, homeostasis.energy, homeostasis.health, _compute_vision())
@@ -523,7 +598,8 @@ func _physics_process(delta: float) -> void:
 				# RÉTINE étage 1 : rayons couleur BRUTS live → le serveur localise via la tête APPRISE
 				# (remplace l'oracle food_xz). Envoyé seulement quand demandé (SYLVAN_RETINA_PLANNER=1).
 				if _retina_planner:
-					latest_obs["retina"] = PERCEPTION_SCRIPT.retina(agent_instance.get_world_3d().direct_space_state, _ptorso2.global_position, _ptorso2.global_transform.basis.z)
+					# gaze_forward = l'avant du CORPS sans regard (bit-identique), l'avant de la TÊTE avec.
+					latest_obs["retina"] = PERCEPTION_SCRIPT.retina(agent_instance.get_world_3d().direct_space_state, _ptorso2.global_position, agent_instance.gaze_forward(_ptorso2.global_transform.basis.z))
 				# 2ᵉ pulsion: radar EAU 36-secteurs (planner-only) + niveau de soif. Hors WM (étage 1).
 				if _water_enabled:
 					latest_obs["vision_water"] = PERCEPTION_SCRIPT.food_radar(_ptorso2.global_position, _ptorso2.global_transform.basis.z, water_manager.get_positions(), 36)
@@ -687,6 +763,17 @@ func _physics_process(delta: float) -> void:
 
 
 func _start_episode() -> void:
+	# Le regard repart DROIT DEVANT et ses statistiques de couverture à zéro : sans ça la couverture
+	# du 2ᵉ épisode hériterait des extrêmes du 1ᵉʳ et le log surestimerait ce qui a été exploré.
+	agent_instance.kin_gaze = 0.0
+	agent_instance.gaze_command = 0.0
+	_wm_gaze_target = 0.0
+	_wm_gaze_in = 0
+	_gaze_min = 0.0
+	_gaze_max = 0.0
+	_gaze_abs_sum = 0.0
+	_gaze_at_limit = 0
+	_gaze_n = 0
 	var episode_index: int = episode_manager.episode_index
 	spawn_manager.begin_episode(episode_index)
 	world_manager.reset_world(episode_index)
@@ -755,6 +842,17 @@ func _finish_episode(reason: String) -> void:
 	# Mémorise la raison pour le serveur Mode-1 (reason ∈ {"done","truncated"} ; "done" = mort via
 	# is_critical/chute). Lue au 1er tick du nouvel épisode par predict_planner (voir _prev_term).
 	_prev_term = "death" if reason == "done" else "truncated"
+	# §6bis — chaque module rapporte ce qu'il a RÉELLEMENT servi, MESURÉ et non demandé. Pour le
+	# regard la grandeur qui compte n'est pas « le regard est activé » mais la COUVERTURE réellement
+	# atteinte : si la collecte n'a balayé que ±20°, le WM n'apprendra la dynamique que là, et on
+	# croirait avoir donné une capacité qui resterait à moitié inerte. Le log doit permettre de le
+	# CONSTATER avant le retrain, pas après.
+	if agent_instance.gaze_enabled and _gaze_n > 0:
+		print("[gaze] episode : couverture MESUREE %.0f%% de l'amplitude | angle min %.0f deg max %.0f deg | |angle| moyen %.0f deg | butee atteinte %.1f%% des ticks"
+			% [(_gaze_max - _gaze_min) / (2.0 * agent_instance.gaze_limit) * 100.0,
+			   rad_to_deg(_gaze_min), rad_to_deg(_gaze_max),
+			   rad_to_deg(_gaze_abs_sum / float(_gaze_n)),
+			   float(_gaze_at_limit) / float(_gaze_n) * 100.0])
 	episode_manager.finish_episode(reason)
 	rollout_writer.end_episode()
 	completed_episodes += 1
@@ -780,7 +878,8 @@ func _wm_snapshot() -> Dictionary:
 		"cmd": [agent_instance.cpg_command.x, agent_instance.cpg_command.y],
 		"torso": [torso.global_position.x, torso.global_position.z, atan2(f.x, f.z)],
 		"radar": PERCEPTION_SCRIPT.food_radar(torso.global_position, f, food_manager.get_positions()),
-		"retina": PERCEPTION_SCRIPT.retina(_ss, torso.global_position, f),
+		"retina": PERCEPTION_SCRIPT.retina(_ss, torso.global_position, agent_instance.gaze_forward(f)),
+		"gaze": agent_instance.kin_gaze,   # l'angle de tête MESURÉ, pas celui demandé (§6bis)
 		"food_rel": _nearest_rel(food_manager.get_positions(), torso.global_position, f),
 	}
 	if _water_enabled:
