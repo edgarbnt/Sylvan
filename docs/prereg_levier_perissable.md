@@ -100,3 +100,37 @@ précisément ce qu'un critique valorisant l'engagement pourrait corriger. La ma
 fork-DÉPENDANTE (nulle au fork seed 5) — conforme à la leçon « un fork ne suffit pas ».
 
 Contrôles : déterminisme vérifié à chaque fork (A=B), serveur frais par run, mono-thread.
+
+### 3ᵉ fork + contrôle : la marge est-elle juste de l'ENGAGEMENT ?
+
+| fork | ref (planner) | max des 21 candidats | marge |
+|------|---------------|----------------------|-------|
+| seed 5, k=1800 | 2 | 2 (1 seul candidat) | **0** |
+| seed 8, k=1200 | 0 | **1** (16 candidats sur 21) | **+1** |
+| seed 9, k=1200 | 1 | 1 (6 candidats sur 21) | **0** |
+
+Marge à **1 fork sur 3** conséquents. Réelle mais pas systématique.
+
+Au fork 8, ce qui gagne est « n'importe quel engagement TENU » contre un planner qui hésite →
+HYPOTHÈSE CONCURRENTE bien moins chère : allonger l'engagement (replan) capturerait la marge sans
+rien apprendre. **RÉFUTÉ** (A/B `bosquets_v3_perish`, 8 vies, seed 1, mémoire ON) :
+
+| replan | survie méd. | repas (8 vies) | vies pleines |
+|--------|-------------|----------------|--------------|
+| **60** | **2900** | **11** | **4/8** |
+| 120 | 2600 | 8 | 2/8 |
+| 240 | 2000 | 4 | 1/8 |
+
+Dégradation MONOTONE. L'engagement aveugle n'est pas la réponse : ce qui gagnait au fork 8 ne se
+généralise pas. Il faut savoir **QUAND** s'engager et **VERS QUOI** — un jugement dépendant de
+l'état, c'est-à-dire précisément un critique. Le négatif du commitment (déjà obtenu dans l'ancien
+monde) TIENT dans le monde périssable.
+
+## Bilan et décision
+1. Le levier périssable rend les décisions conséquentes (33 % vs 17 %), survie intacte.
+2. Il existe une marge de choix (+1 repas) à ~1 fork conséquent sur 3.
+3. Cette marge n'est PAS capturable par un réglage grossier d'engagement (réfuté ci-dessus).
+⇒ Le prochain pas justifié est bien la tête-valeur apprise, jugée INTRA-état (juge = ce probe des
+21 candidats, pas un R² poolé), puis A/B pleine-politique. Réserve honnête : la marge est modeste
+et fork-dépendante (1/3), et le gate poolé ne montre pas de signal au-delà de la géométrie —
+un critique qui la capture devra être jugé sur le BUT (repas/survie), pas sur une AUC.
