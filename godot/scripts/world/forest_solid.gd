@@ -69,11 +69,23 @@ var _clearing_r := 4.0                             # rayon d'une clairière
 var _stand_centers: Array[Vector3] = []
 var _clearing_centers: Array[Vector3] = []
 var _color := TREE_COLOR
+# APPARENCE VARIABLE DU NON-NOURRITURE (§2.8) — OPT-IN SYLVAN_FOREST_APPEARANCE_VAR, défaut 0 = OFF.
+# §2.8 : « faire varier TOUT, pas seulement la nourriture ». Un encodeur entraîné sur des troncs TOUS
+# identiques n'alloue aucune capacité à l'apparence des troncs. En variant la teinte PAR ARBRE (stable
+# dans une vie, re-tirée PAR ÉPISODE → variable entre objets ET entre épisodes, la règle §2.8), on
+# force l'encodeur à représenter aussi l'apparence du non-nourriture. 🚨 GARDE §3 (tronc-brun) : la
+# teinte jitterée est CLAMPÉE hors des cônes ressource (cos-rouge/cos-bleu < seuil) — un tronc qui
+# dériverait vers le rouge serait lu comme de la NOURRITURE. Défaut 0 → couleur unique, bit-identique.
+var _appearance_var := 0.0
 var _rng := RandomNumberGenerator.new()
 
 var _material: StandardMaterial3D
+var _mats: Array[StandardMaterial3D] = []     # un matériau PAR arbre (apparence variable, §2.8)
 var _bodies: Array[StaticBody3D] = []
 var _centers: Array[Vector3] = []
+# §6bis : étendue d'apparence RÉELLEMENT servie, mesurée sur les arbres placés cet épisode.
+var _app_cosred_lo := 1.0
+var _app_cosred_hi := 0.0
 
 
 func _init() -> void:
@@ -103,6 +115,7 @@ func _init() -> void:
 		var p := hue.split(",")
 		if p.size() == 3:
 			_color = Color(float(p[0]), float(p[1]), float(p[2]))
+	_appearance_var = _envf("SYLVAN_FOREST_APPEARANCE_VAR", 0.0)
 
 
 # Rayon EFFECTIF de l'occulteur. ⚠️ Le keep-out doit en dépendre : avec des massifs, un centre à
@@ -133,6 +146,16 @@ func _ensure_built() -> void:
 		body.collision_layer = OBSTACLE_LAYER | RETINA_LAYER
 		body.collision_mask = 0                              # statique : ne détecte rien lui-même
 		body.set_meta("retina_color", _color)                # RGB lu par le raycast couleur de la rétine
+		# Matériau PAR ARBRE (apparence variable §2.8). Défaut = _color → OFF strictement bit-identique
+		# (même couleur pour tous, comme le matériau partagé historique). La teinte par-arbre est
+		# posée par _apply_tree_appearance() dans begin_episode quand _appearance_var > 0.
+		var body_mat := _material
+		if _appearance_var > 0.0:
+			body_mat = StandardMaterial3D.new()
+			body_mat.albedo_color = _color
+			body_mat.emission_enabled = true
+			body_mat.emission = _color * 0.25
+		_mats.append(body_mat)
 		# MASSIF : `_clump` troncs sous un MÊME corps. clump=1 → un arbre isolé (historique).
 		# Les troncs sont disposés en couronne + un au centre : occulteur LARGE et sans trou,
 		# tout en restant du low-poly (des cylindres, pas un mesh importé).
@@ -154,7 +177,7 @@ func _ensure_built() -> void:
 			cm.bottom_radius = _trunk_r
 			cm.height = _height
 			mesh.mesh = cm
-			mesh.material_override = _material
+			mesh.material_override = body_mat
 			mesh.position = off
 			body.add_child(mesh)
 			# HOUPPIER (cosmétique). ⚠️ Il ne change RIEN à la perception : la rétine lit le meta
@@ -167,7 +190,7 @@ func _ensure_built() -> void:
 			cone.bottom_radius = _trunk_r * 1.25   # discret : un houppier large masque la SCENE a
 			cone.height = _height * 0.45           # l'observateur, or ce visuel sert a JUGER
 			can.mesh = cone
-			can.material_override = _material
+			can.material_override = body_mat
 			can.position = off + Vector3(0.0, _height * 0.55, 0.0)
 			body.add_child(can)
 		body.visible = false
@@ -236,6 +259,12 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		% [_stand_centers.size(), _stand_sigma, _clearing_centers.size(), _clearing_r]
 		+ "n=%d ppv_moyen MESURE %.3f m | aire %.1f m2 | Clark-Evans MESURE %.3f (<1 = groupe, 1 = aleatoire)"
 		% [_centers.size(), _mean_nn(), _support_area(), _clark_evans()])
+	_apply_tree_appearance()
+	if _appearance_var > 0.0:
+		# §6bis : prouver l'étendue d'apparence RÉELLEMENT servie. cos-rouge lo..hi > 0 = ça VARIE ;
+		# hi < 0.55 = tous les arbres restent HORS du cône bouffe (garde §3, aucun tronc lu comme bouffe).
+		print("[forest] apparence : var %.2f | cos-rouge des arbres MESURE %.3f..%.3f (hi < 0.55 = tous hors cone bouffe)"
+			% [_appearance_var, _app_cosred_lo, _app_cosred_hi])
 
 
 func _sample_structure() -> void:
@@ -315,6 +344,48 @@ func _clark_evans() -> float:
 
 func get_positions() -> Array[Vector3]:
 	return _centers
+
+
+# Cosinus de la couleur `c` avec la requête (r,g,b) — même mesure que le slot (perception normalisée).
+func _cos_to(c: Color, r: float, g: float, b: float) -> float:
+	var n := sqrt(c.r * c.r + c.g * c.g + c.b * c.b)
+	var m := sqrt(r * r + g * g + b * b)
+	if n <= 0.0 or m <= 0.0:
+		return 0.0
+	return (c.r * r + c.g * g + c.b * b) / (n * m)
+
+
+# Teinte perturbée autour de `base` (HSV), PUIS ramenée hors des cônes ressource si le jitter l'y a
+# poussée (garde §3 : un tronc lu comme rouge/bleu serait de la nourriture/eau). Déterministe (_rng).
+func _jitter_out_of_cone(base: Color) -> Color:
+	var h := fposmod(base.h + _rng.randf_range(-_appearance_var, _appearance_var), 1.0)
+	var s := clampf(base.s + _rng.randf_range(-_appearance_var, _appearance_var), 0.2, 1.0)
+	var v := clampf(base.v + _rng.randf_range(-0.5 * _appearance_var, 0.5 * _appearance_var), 0.15, 1.0)
+	var c := Color.from_hsv(h, s, v)
+	for _k in range(8):   # au plus 8 rappels vers le vert de base : converge bien avant
+		if _cos_to(c, 1.0, 0.0, 0.0) < 0.5 and _cos_to(c, 0.0, 0.0, 1.0) < 0.5:
+			break
+		c = c.lerp(base, 0.3)
+	return c
+
+
+# Pose une teinte PAR ARBRE (visible) au nouvel épisode : matériau + meta retina_color. Stable dans la
+# vie (posée une fois par épisode), variable entre arbres ET entre épisodes (§2.8). OFF → ne fait rien.
+func _apply_tree_appearance() -> void:
+	if _appearance_var <= 0.0:
+		return
+	_app_cosred_lo = 1.0
+	_app_cosred_hi = 0.0
+	for i in range(_bodies.size()):
+		if not _bodies[i].visible:
+			continue
+		var c := _jitter_out_of_cone(_color)
+		_bodies[i].set_meta("retina_color", c)
+		_mats[i].albedo_color = c
+		_mats[i].emission = c * 0.25
+		var cr := _cos_to(c, 1.0, 0.0, 0.0)
+		_app_cosred_lo = minf(_app_cosred_lo, cr)
+		_app_cosred_hi = maxf(_app_cosred_hi, cr)
 
 
 # FACTEUR DE VITESSE DU TERRAIN à la position `pos` (docs/design_foret_complete.md §2.3).
