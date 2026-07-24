@@ -81,7 +81,7 @@ def main() -> None:
     ap.add_argument("--gamma", type=float, default=0.999)   # horizon effectif ~1/(1-γ) = 1000 ticks
     ap.add_argument("--horizon", type=int, default=80)      # MÊME rêve court qu'en déploiement
     ap.add_argument("--start-stride", type=int, default=8)
-    ap.add_argument("--epochs", type=int, default=400)
+    ap.add_argument("--steps", type=int, default=8000)   # PAS de gradient (etait 400 = 2 ordres trop peu)
     ap.add_argument("--tau", type=float, default=0.01)      # EMA du réseau-cible (retard)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
@@ -145,17 +145,36 @@ def main() -> None:
     ltr, rtr = lat[tr], rew[tr]
     lte, rte = lat[~tr], rew[~tr]
 
-    def td_loss(z: torch.Tensor, r: torch.Tensor) -> torch.Tensor:
-        """MSE( V(z_d) , r_d + γ·V_cible(z_{d+1}) ) sur d = 0..H-2. La cible est DÉTACHÉE et vient
-        du réseau retardé : sans ça, la valeur poursuit sa propre sortie et diverge."""
-        v = model(z[:, :-1])
-        with torch.no_grad():
-            y = r[:, :-1] + args.gamma * target(z[:, 1:])
-        return ((v - y) ** 2).mean()
+    # ANCRE ANALYTIQUE : en régime stationnaire, E[V] = (taux de repas)/(1−γ). Elle permet de MESURER
+    # si la valeur a fini de se propager, au lieu de le supposer. Défaut mesuré le 2026-07-24 :
+    # V=0,015 pour une ancre de 0,472, soit 31× trop petit -> valeur PLATE -> argmax = bruit ->
+    # l'agent errait et mourait de faim (A/B closed-loop : 0 repas).
+    anchor = float(ate.sum()) / len(energy) / (1.0 - args.gamma)
 
-    for ep in range(args.epochs):
+    def n_step_targets(z: torch.Tensor, r: torch.Tensor) -> torch.Tensor:
+        """Retours n-PAS sur toute la fenêtre du rêve, par récurrence arrière :
+              G_{H-1} = V_cible(z_{H-1})            (bootstrap TERMINAL)
+              G_d     = r_d + γ · G_{d+1}
+        En TD 1-pas la valeur ne remonte QUE d'un tick par mise à jour — avec γ=0.999 il faut ~1000
+        remontées, d'où la sous-propagation mesurée. Ici toute la fenêtre de H pas remonte en UNE
+        mise à jour. Cible détachée + réseau-cible retardé (sinon la valeur poursuit sa propre sortie).
+        """
+        with torch.no_grad():
+            g = target(z[:, -1])
+            outs = []
+            for d in range(z.shape[1] - 2, -1, -1):
+                g = r[:, d] + args.gamma * g
+                outs.append(g)
+            return torch.stack(outs[::-1], dim=1)
+
+    def td_loss(z: torch.Tensor, r: torch.Tensor) -> torch.Tensor:
+        return ((model(z[:, :-1]) - n_step_targets(z, r)) ** 2).mean()
+
+    print(f"  ancre E[V] = taux/(1-γ) = {anchor:.3f} | retours {args.horizon}-pas | "
+          f"{args.steps} pas de gradient")
+    for step in range(args.steps):
         model.train()
-        idx = torch.randperm(len(ltr))[:512]
+        idx = torch.randperm(len(ltr))[:256]
         opt.zero_grad()
         loss = td_loss(ltr[idx], rtr[idx])
         loss.backward()
@@ -163,13 +182,13 @@ def main() -> None:
         with torch.no_grad():                                # EMA : cible = copie lente de V
             for p, pt in zip(model.parameters(), target.parameters()):
                 pt.mul_(1 - args.tau).add_(args.tau * p)
-        if (ep + 1) % 50 == 0:
+        if (step + 1) % max(1, args.steps // 10) == 0:
             model.eval()
             with torch.no_grad():
                 vte = model(lte)
-                held = float(td_loss(lte[:2048], rte[:2048]))
-            print(f"  ep {ep + 1:4d} | TD loss train {float(loss):.5f} | held-out {held:.5f} "
-                  f"| V held-out moy {float(vte.mean()):.3f} écart-type {float(vte.std()):.3f}")
+            m = float(vte.mean())
+            print(f"  pas {step + 1:6d} | loss {float(loss):.5f} | V held-out moy {m:.3f} "
+                  f"écart-type {float(vte.std()):.3f} | {m / anchor * 100:5.1f} % de l'ancre")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -181,7 +200,8 @@ def main() -> None:
             "form": "TD-MPC : valeur TERMINALE, entraînée par bootstrapping (réseau-cible EMA)",
             "reward": "1 au tick d'un repas -> V = repas futurs actualisés",
             "usage": "score du candidat = γ^H · V(latent rêvé FINAL), jamais une moyenne",
-            "warning": "rien ici ne juge le critique — juge = diag_critic_intra_state.py --critic-type td",
+            "warning": "rien ici ne juge le critique — juge = A/B PLEINE-POLITIQUE ; l'intra-etat ne peut que DISQUALIFIER",
+            "anchor": anchor,
         },
     }, out / "critic_best.pt")
     print(f"\n  -> {out / 'critic_best.pt'}")

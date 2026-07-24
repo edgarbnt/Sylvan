@@ -338,3 +338,53 @@ rien : il ne peut que DISQUALIFIER.
 - **Le gros corpus `bosquets_v4_ripe`** (~150 vies, maturité visible) : 25 repas ne pouvaient rien
   entraîner ; il apporte le volume ET un signal non-géométrique.
 - Balayer le poids du mélange plutôt que le deviner (w=20 était un choix arbitraire de ma part).
+
+---
+
+# RÉPARATION DE V + GROS CORPUS → et le VRAI verrou, structurel (2026-07-24)
+
+## 1. La sous-propagation était réelle et grossière — réparée
+Cause : la boucle faisait **UN pas de gradient par époque**, soit **400 pas au total**, alors qu'en
+TD 1-pas la valeur ne remonte que d'UN tick par mise à jour et que γ=0,999 demande ~1000 remontées.
+Deux ordres de grandeur manquants. Corrigé par des **retours n-PAS** (récurrence arrière sur toute la
+fenêtre du rêve : 80 ticks remontent en UNE mise à jour) et **8000 pas de gradient**.
+Effet : écart-type de V ×3 (0,072 → 0,224) = la valeur est devenue discriminante.
+
+## 2. Mon ancre était fausse (corrigé)
+`E[V] = taux/(1−γ)` suppose un processus INFINI. Or les épisodes se terminent (mort ou plafond) :
+près de la fin l'avenir est tronqué. Vraie ancre Monte-Carlo bornée à l'épisode = **0,228** et non
+0,361 (surestimation 1,6×). Détail parlant : la **médiane du vrai retour est 0** — la plupart des
+états n'ont réellement aucun repas futur dans l'horizon actualisé.
+
+## 3. Gros corpus : 149 vies, 137 repas (5,5× plus)
+`bosquets_v4_ripe` (maturité visible), 3 tranches gzippées.
+
+## 4. ⛔ LE VERROU EST STRUCTUREL : le LATENT NE PORTE PAS L'OBJET
+Malgré la réparation ET le gros corpus, corr(V, vrai retour actualisé) held-out = **+0,047**
+(contre −0,125 avant) : toujours rien.
+
+Sonde GRATUITE et décisive — peut-on lire la position de la bouffe DEPUIS le latent rêvé ?
+(régression ridge, held-out, 6000 latents à profondeur 80)
+
+| cible lue depuis le latent | R² held-out |
+|----------------------------|-------------|
+| slot x (droite) | **−0,011** |
+| slot z (avant) | **+0,042** |
+| **distance à la bouffe** | **−0,884** (pire que prédire la moyenne) |
+
+**L'information n'est pas dans le latent.** C'est la confirmation directe d'un acquis déjà écrit du
+projet (« le pur-latent-valeur `plan_latent` était lossy, perdait l'objet » — la raison d'être même
+du slot), auquel je n'avais pas donné assez de poids. ⇒ **tout critique LATENT est condamné**, ce qui
+explique d'un coup le −0,325 (latent MC) et le +0,047 (latent TD).
+
+## 5. La conséquence, dure, à assumer
+Avec CE WM, le critique n'a aucune entrée qui soit à la fois FIABLE et PLUS RICHE que la géométrie :
+- **slot** (transporté, fiable) = exactement ce que `-min_dist` calcule → rien à gagner (corr. de
+  rang +0,93 mesurée) ;
+- **latent** (riche en principe) = ne porte pas l'objet → inutilisable.
+Dans le rêve, la SEULE information d'objet fiable est le slot TRANSPORTÉ, et c'est de la géométrie.
+
+**Piste qui reste ouverte** (non testée, à gater) : donner au critique le slot transporté ET un
+readout APPRIS de la rétine RÉELLE à t=0 (elle, non rêvée, porte prouvablement l'indice de maturité —
+invariance mesurée à 0,00000000 m sur les slots). La partie dépendante du candidat reste géométrique,
+mais la VALEUR de la baie visée serait modulée par une information que `-min_dist` ne voit pas.
