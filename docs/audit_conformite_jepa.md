@@ -179,3 +179,48 @@ n'est appris**.
 4. **A5** — la hiérarchie, chantier de fond, après.
 
 **Ne rien empiler avant A1** : c'est le maillon dont tout le reste dépend.
+
+---
+
+# RÉPARATION D'A1 — exécutée, et ce qu'elle a vraiment montré (2026-07-24)
+
+## Ce qui a été fait
+Forme **Q(s, a) = V(latent à t=0, slot TRANSPORTÉ à l'horizon)** — l'état FIABLE du WM (le latent à
+t0, non dégradé) combiné à ce que le candidat obtient géométriquement. Architecturalement pur : on ne
+lit NI la rétine brute (ce qui donnerait au coût sa propre perception), NI le latent terminal
+(dégradé). Cible = le **vrai retour actualisé, calculé exactement** (épisodes complets → aucun
+bootstrap, donc aucune erreur de propagation — le défaut mesuré de la version TD). Corpus : 149 vies,
+137 repas. `python/scripts/train_q_critic.py`.
+
+## Résultat, avec CONTRÔLE D'ABLATION (posé d'avance)
+| prédicteur du vrai retour | R² held-out |
+|---------------------------|-------------|
+| **token géométrique SEUL** | **+0,179** |
+| latent + token | +0,149 |
+| **apport du latent** | **−0,030** |
+
+Le latent **n'apporte rien**, il nuit légèrement. Corrélation ~+0,32 dans les deux cas.
+
+## Et pourtant l'indice de maturité EST bien dans le latent (mesuré)
+| | R² held-out |
+|--|-------------|
+| lire la MATURITÉ (luminosité du buisson) depuis le latent | lin **+0,476** / MLP **+0,650** |
+(indice servi et variable : buisson visible 80 % des ticks, luminosité moy 0,443 sd 0,276)
+
+⇒ **Le changement de monde a fonctionné** : l'indice est rendu, il varie, il traverse la perception et
+il est lisible dans la représentation. **Mais il ne prédit pas l'issue.**
+
+## CONCLUSION HONNÊTE, et elle clôt la chaîne
+Dans ce monde, **les repas futurs sont prédits par la GÉOMÉTRIE, point**. Ce n'est pas que le latent
+soit vide (il porte la scène à 0,80, la présence à 0,59, la maturité à 0,65) : c'est que tout ce
+qu'il porte en plus est **REDONDANT avec la distance** ou **sans effet sur l'issue**.
+
+Cela révise A3 : `-min_dist` n'est pas une béquille qu'un critique devrait battre — c'est, dans ce
+monde, **proche du meilleur prédicteur disponible**. Les 5 échecs du critique ne sont donc pas 5
+erreurs d'ingénierie : ils mesurent une propriété du MONDE.
+
+Ce qui rendrait un critique utile n'est donc PAS une meilleure tête ni une meilleure entrée, mais un
+monde où **quelque chose de perceptible et de non-géométrique change l'issue**. Le levier périssable
+crée bien de la conséquence (33 %), mais son mécanisme (relocalisation aléatoire) est
+(a) imprévisible par construction et (b) invisible au rêve (A4, transport ego-only). C'est cohérent
+avec tout ce qui précède : **A4 est maintenant le maillon critique, pas A1.**
