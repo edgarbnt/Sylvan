@@ -63,6 +63,7 @@ class WorldPreset:
     regrow_ticks: int = 2500
     perish_ticks: int = 0        # 0 = OFF ; >0 = une baie non mangee perit apres ce delai
     ripe_cue: bool = False       # True = la LUMINOSITE du buisson encode l'age de sa baie (invisible aux slots)
+    ripe_decay: float = 0.0      # 0 = OFF ; 0.75 = une baie mure ne rend plus que 25 % de son energie
     spawn_annulus_m: tuple[float, float] = (3.0, 11.0)
     eat_radius_m: float = 1.0
 
@@ -116,6 +117,7 @@ class WorldPreset:
             "SYLVAN_FOOD_REGROW": f"{self.regrow_ticks}",
             "SYLVAN_FOOD_PERISH": f"{self.perish_ticks}",
             "SYLVAN_FOOD_RIPE_CUE": "1" if self.ripe_cue else "0",
+            "SYLVAN_FOOD_RIPE_DECAY": f"{self.ripe_decay}",
             "SYLVAN_FOOD_MIN_RADIUS": f"{self.spawn_annulus_m[0]}",
             "SYLVAN_FOOD_SPAWN_RADIUS": f"{self.spawn_annulus_m[1]}",
         }
@@ -198,6 +200,16 @@ BOSQUETS_V3_PERISH = dataclasses.replace(BOSQUETS_V2, name="bosquets_v3_perish",
 #: critique sans câbler la réponse dans la perception (§2/§3).
 BOSQUETS_V4_RIPE = dataclasses.replace(BOSQUETS_V3_PERISH, name="bosquets_v4_ripe", ripe_cue=True)
 
+#: MATURITÉ QUI COMPTE (2026-07-24) : v4 + la maturité BAISSE la valeur nutritive (une baie sur le
+#: point de se relocaliser ne rend plus que 25 % de son énergie). C'est le premier signal du monde
+#: qui soit à la fois PERCEPTIBLE (luminosité du buisson, lisible dans le latent à R² 0,65),
+#: NON-GÉOMÉTRIQUE (indépendant de la distance) et PRÉDICTIBLE (fonction déterministe de l'âge —
+#: contrairement au saut de relocalisation, aléatoire ET invisible au rêve).
+#: MESURE qui motive ce preset : sur v4, la géométrie SEULE prédit le retour mieux que
+#: géométrie+latent (R² 0,179 vs 0,149) -> tout ce que le latent portait en plus était redondant ou
+#: sans effet. Ici la maturité change l'ISSUE, donc elle devient apprenable par un critique.
+BOSQUETS_V5_VALUE = dataclasses.replace(BOSQUETS_V4_RIPE, name="bosquets_v5_value", ripe_decay=0.75)
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -256,7 +268,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():

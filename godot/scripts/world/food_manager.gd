@@ -107,6 +107,8 @@ var _regrow_at: Array[int] = []   # tick de vie auquel elle réapparaît (-1 = v
 # reste perçue par la rétine comme avant tant qu'elle est là).
 var _perish_ticks := 0
 var _ripe_cue := false          # indice de MATURITÉ VISIBLE (luminosité du buisson) — opt-in, OFF = bit-identique
+var _ripe_decay := 0.0          # la maturité BAISSE la valeur nutritive : 0 = OFF ; 0.75 = une baie
+                                # sur le point de se relocaliser ne rend plus que 25 % de son énergie.
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -289,6 +291,9 @@ func _read_patch_env() -> void:
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
+	var rd2 := OS.get_environment("SYLVAN_%s_RIPE_DECAY" % _prefix)
+	if rd2 != "":
+		_ripe_decay = clampf(float(rd2), 0.0, 1.0)
 	var rc := OS.get_environment("SYLVAN_%s_RIPE_CUE" % _prefix)
 	if rc != "":
 		_ripe_cue = rc != "0"
@@ -558,7 +563,16 @@ func try_consume(agent_pos: Vector3, energy_frac: float = 1.0) -> float:
 		if _patch_count > 0 and not _alive[i]:
 			continue                     # baie déjà cueillie : elle repoussera SUR PLACE
 		if ground.distance_to(_positions[i]) <= eat_radius:
-			restored += energy_per_food
+			# MATURITÉ -> VALEUR NUTRITIVE (2026-07-24). Le seul signal du monde qui soit à la fois
+			# PERCEPTIBLE (la luminosité du buisson l'annonce), NON-GÉOMÉTRIQUE (indépendant de la
+			# distance) et PRÉDICTIBLE (fonction déterministe de l'âge, contrairement au saut
+			# aléatoire de la relocalisation, que le rêve ne peut pas anticiper).
+			# ⚠️ L'indice VU et la valeur OBTENUE dérivent du MÊME âge : le monde ne ment pas.
+			# OFF (_ripe_decay = 0) -> facteur 1.0 exactement, bit-identique.
+			var _age := 0.0
+			if _perish_ticks > 0:
+				_age = clampf(float(_life_tick - _born_at[i]) / float(_perish_ticks), 0.0, 1.0)
+			restored += energy_per_food * (1.0 - _ripe_decay * _age)
 			consumed_this_episode += 1
 			if _patch_count > 0:
 				# MODE BOSQUETS : la baie disparaît LÀ OÙ ELLE ÉTAIT et repousse sur une horloge.
