@@ -253,3 +253,45 @@ est fait ci-dessus.
 Collecter UN gros corpus sur `bosquets_v4_ripe` (~150-200 vies) : il sert les DEUX besoins d'un coup
 — le volume qui manquait, et le signal que seule la scène porte. Puis ré-entraîner le critique-latent
 et le repasser au juge intra-état. Ne PAS ajouter d'autre levier avant ce verdict (§4).
+
+---
+
+# CRITIQUE TD (valeur TERMINALE + bootstrap) — il BAT `-min_dist` (2026-07-24)
+
+## La réécriture, et pourquoi les deux versions précédentes ne POUVAIENT pas marcher
+Recherche : **TD-MPC** (Hansen et al., ICML 2022) traite exactement notre problème — un rollout
+COURT dans un WM appris qui doit décider en fonction d'un avenir LOINTAIN. Son objectif :
+
+    max_a  Σ_{i=0}^{H-1} γ^i R(z_{t+i}, a_{t+i})  +  γ^H · Q(z_{t+H}, a_{t+H})
+
+soit un rêve court + une valeur **TERMINALE**, « qui fait entrer l'information de long horizon dans
+un plan de court horizon ». Deux erreurs corrigées :
+1. **agrégat `mean` → TERMINAL** : moyenner V sur le rêve le traite comme une récompense par pas et
+   re-note ce qui est DÉJÀ dans l'horizon, au lieu de résumer ce qui vient APRÈS ;
+2. **cible Monte-Carlo à fenêtre fixe → BOOTSTRAP TD** : « repas dans K=200 ticks » est
+   structurellement aveugle au-delà de K ; `V(z_t) ← r_t + γ·V(z_{t+1})` (réseau-cible retardé)
+   propage la valeur depuis arbitrairement loin.
+Et surtout **PAS** un rollout plus long : mesuré (H=300 → survie au plancher) et prédit par la
+littérature (l'erreur du modèle se compose, le planner optimise une fantaisie).
+
+Alignement TD propre : on rêve sous les commandes RÉELLEMENT exécutées, donc le rêve suit la
+trajectoire vécue et la récompense du tick t+d s'aligne sur la profondeur d — le bootstrap tourne
+sur la DISTRIBUTION DE DÉPLOIEMENT. WM gelé ; récompense = 1 au tick d'un repas.
+
+## Juge intra-état — 2 forks sur 2
+
+| fork | taux de base | CRITIQUE TD | ANALYTIQUE `-min_dist` |
+|------|--------------|-------------|------------------------|
+| seed 8, k=1200 | 76 % | top-1 **1 repas**, AUC **0,688** | top-1 0 repas, AUC 0,587 |
+| seed 5, k=1800 | **5 %** | top-1 **2 repas**, AUC **1,000** | top-1 0 repas, AUC 0,950 |
+
+Le second fork est le test FORT : un seul candidat sur 21 atteint le max, donc le hasard ne gagne le
+top-1 que 5 % du temps — et le critique TD désigne exactement ce candidat, avec un classement
+parfait. Rappel des formes précédentes au fork 1 : token 0,562, latent 0,325 (sous le hasard).
+
+## Ce que ça ne prouve pas encore
+2 forks, pas une distribution. Le juge final reste un **A/B pleine-politique** (repas/survie sur
+plusieurs vies) avec `SYLVAN_PLANNER_COST=critic`. À noter aussi : V est SOUS-PROPAGÉE (moyenne
+held-out 0,015 là où le taux de repas implique ~0,16) — plus d'itérations TD laisseraient peut-être
+encore du signal. Le gros corpus `bosquets_v4_ripe` (maturité visible) est en cours et n'a PAS servi
+ici : ce gain vient de la FORME (terminale + TD), pas du volume.
