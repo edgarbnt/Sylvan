@@ -64,6 +64,7 @@ class WorldPreset:
     perish_ticks: int = 0        # 0 = OFF ; >0 = une baie non mangee perit apres ce delai
     ripe_cue: bool = False       # True = la LUMINOSITE du buisson encode l'age de sa baie (invisible aux slots)
     ripe_decay: float = 0.0      # 0 = OFF ; 0.75 = une baie mure ne rend plus que 25 % de son energie
+    prey_speed: float = 0.0      # m/tick ; la nourriture SE DEPLACE (0 = OFF). Agent = 0.011 m/tick mesure
     spawn_annulus_m: tuple[float, float] = (3.0, 11.0)
     eat_radius_m: float = 1.0
 
@@ -118,6 +119,7 @@ class WorldPreset:
             "SYLVAN_FOOD_PERISH": f"{self.perish_ticks}",
             "SYLVAN_FOOD_RIPE_CUE": "1" if self.ripe_cue else "0",
             "SYLVAN_FOOD_RIPE_DECAY": f"{self.ripe_decay}",
+            "SYLVAN_FOOD_PREY_SPEED": f"{self.prey_speed}",
             "SYLVAN_FOOD_MIN_RADIUS": f"{self.spawn_annulus_m[0]}",
             "SYLVAN_FOOD_SPAWN_RADIUS": f"{self.spawn_annulus_m[1]}",
         }
@@ -210,6 +212,18 @@ BOSQUETS_V4_RIPE = dataclasses.replace(BOSQUETS_V3_PERISH, name="bosquets_v4_rip
 #: sans effet. Ici la maturité change l'ISSUE, donc elle devient apprenable par un critique.
 BOSQUETS_V5_VALUE = dataclasses.replace(BOSQUETS_V4_RIPE, name="bosquets_v5_value", ripe_decay=0.75)
 
+#: PROIE (2026-07-24) — la nourriture SE DÉPLACE au lieu d'attendre. Premier changement qui sort de
+#: « décorer un point fixe » : viser où la proie EST devient DÉMONTRABLEMENT sous-optimal, donc le
+#: prédicteur du WM devient enfin porteur (il faut simuler la trajectoire de l'autre).
+#: SPÉC. issue du test GRATUIT `diagnostics/diag_prey_interception.py`, mesurée avant tout code :
+#:   - la proie doit avoir du mouvement TRANSVERSAL et NE PAS FUIR (une fuite converge vers une
+#:     trajectoire radiale, contre laquelle poursuite et interception coïncident -> gain NUL) ;
+#:   - elle doit être RAPIDE : à 0,9x la vitesse de l'agent, interception 67,5 % vs poursuite 56,2 %
+#:     de capture ; à 1,2x, 33,0 % vs 18,7 %. En dessous de 0,6x le gain est nul.
+#: Base = bosquets_v2 (monde figé calibré), SANS périssable (le saut aléatoire confondrait la mesure).
+#: Les buissons restent des repères FIXES pendant que la nourriture bouge.
+BOSQUETS_V6_PREY = dataclasses.replace(BOSQUETS_V2, name="bosquets_v6_prey", prey_speed=0.0099)
+
 
 def selfcheck() -> int:
     """Check the presets against constants MEASURED on corpora, not against their declarations."""
@@ -268,7 +282,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
-    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE,
+    p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE, "bosquets_v6_prey": BOSQUETS_V6_PREY,
      "perpetual_v0": PERPETUAL_V0}[a.preset]
     if a.env:
         for k, v in p.to_env().items():

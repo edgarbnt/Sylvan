@@ -109,6 +109,16 @@ var _perish_ticks := 0
 var _ripe_cue := false          # indice de MATURITÉ VISIBLE (luminosité du buisson) — opt-in, OFF = bit-identique
 var _ripe_decay := 0.0          # la maturité BAISSE la valeur nutritive : 0 = OFF ; 0.75 = une baie
                                 # sur le point de se relocaliser ne rend plus que 25 % de son énergie.
+# PROIE (2026-07-24) : la nourriture SE DÉPLACE au lieu d'attendre. Spéc. issue du test gratuit
+# `diagnostics/diag_prey_interception.py` : le levier n'existe QUE si la proie (a) a du mouvement
+# TRANSVERSAL et (b) va à >= 0,9x la vitesse de l'agent (0,011 m/tick mesuré).
+# ⚠️ ELLE NE FUIT PAS. Une proie qui fuit converge vers une trajectoire RADIALE, contre laquelle
+# l'angle d'avance est nul PAR CONSTRUCTION : poursuite et interception coïncident, gain nul (mesuré).
+# Elle VAQUE : direction quasi constante + dérive lente, réflexion aux bords de l'arène.
+var _prey_speed := 0.0          # m/tick ; 0 = OFF, bit-identique
+var _prey_dir: Array[Vector3] = []
+var _prey_turn := 0.01          # rad/tick de dérive (persistance : garde le transversal)
+var _prey_travel := 0.0         # distance cumulée parcourue par la proie (PREUVE de ce qui est servi)
 var _born_at: Array[int] = []     # tick de vie où la baie (re)devient vivante
 var _patch_meshes: Array[MeshInstance3D] = []
 var _patch_areas: Array = []
@@ -291,6 +301,12 @@ func _read_patch_env() -> void:
 	var rg := OS.get_environment("SYLVAN_%s_REGROW" % _prefix)
 	if rg != "":
 		_regrow_ticks = maxi(1, int(rg))
+	var pspd := OS.get_environment("SYLVAN_%s_PREY_SPEED" % _prefix)
+	if pspd != "":
+		_prey_speed = maxf(0.0, float(pspd))
+	var pt := OS.get_environment("SYLVAN_%s_PREY_TURN" % _prefix)
+	if pt != "":
+		_prey_turn = maxf(0.0, float(pt))
 	var rd2 := OS.get_environment("SYLVAN_%s_RIPE_DECAY" % _prefix)
 	if rd2 != "":
 		_ripe_decay = clampf(float(rd2), 0.0, 1.0)
@@ -405,6 +421,7 @@ func reset(_episode_index: int = 0) -> void:
 	_alive.clear()
 	_regrow_at.clear()
 	_born_at.clear()
+	_prey_dir.clear()
 	if _patch_count > 0:
 		_sample_patch_centres()
 	for i in range(food_count):
@@ -415,6 +432,8 @@ func reset(_episode_index: int = 0) -> void:
 		# Périssable : stagger les naissances sur [-perish, 0] pour que les baies ne périssent PAS
 		# toutes au même tick (sinon relocalisation synchronisée). OFF -> 0, bit-identique.
 		_born_at.append(-(_rng.randi() % _perish_ticks) if _perish_ticks > 0 else 0)
+		var _pa := _rng.randf_range(0.0, TAU)
+		_prey_dir.append(Vector3(cos(_pa), 0.0, sin(_pa)))
 		_meshes[i].global_position = p
 		_meshes[i].visible = true
 		_apply_appearance(i)
@@ -651,7 +670,43 @@ func _tick_regrowth() -> void:
 			_meshes[i].global_position = _positions[i]
 		_meshes[i].visible = true
 		_apply_appearance(i)
+	_move_prey()
 	_update_ripeness_cue()
+
+
+func _move_prey() -> void:
+	# La nourriture VAQUE : direction quasi constante (persistance -> mouvement TRANSVERSAL conservé,
+	# ce qui est la condition mesurée du levier) + dérive lente, et réflexion aux bords de l'arène
+	# pour qu'elle ne parte pas à l'infini. Elle IGNORE l'agent : ne pas fuir est délibéré (une fuite
+	# rend la poursuite et l'interception mathématiquement identiques -> gain nul).
+	if _prey_speed <= 0.0:
+		return
+	for i in range(_positions.size()):
+		if i >= _prey_dir.size() or not _alive_or_field(i):
+			continue
+		var a := _rng.randf_range(-_prey_turn, _prey_turn)
+		var d: Vector3 = _prey_dir[i]
+		var nd := Vector3(cos(a) * d.x - sin(a) * d.z, 0.0, sin(a) * d.x + cos(a) * d.z)
+		var p: Vector3 = _positions[i] + nd * _prey_speed
+		var r := Vector2(p.x, p.z).length()
+		if r > spawn_radius or r < min_radius:            # réflexion : rebrousse vers l'arène
+			nd = -nd
+			p = _positions[i] + nd * _prey_speed
+		_prey_travel += _positions[i].distance_to(p)
+		_prey_dir[i] = nd
+		_positions[i] = p
+		_meshes[i].global_position = p
+	# PREUVE (règle de méthode : trois fois un réglage a semblé appliqué sans l'être). On rapporte la
+	# vitesse RÉELLEMENT parcourue par la proie, pas celle demandée.
+	if _life_tick == 500 and _positions.size() > 0:
+		print("[prey] vitesse MESURÉE %.5f m/tick (demandée %.5f) sur %d baies, %d ticks" % [
+			_prey_travel / float(_life_tick * _positions.size()), _prey_speed, _positions.size(), _life_tick])
+
+
+func _alive_or_field(i: int) -> bool:
+	# En mode bosquets une baie cueillie est invisible (elle ne doit pas bouger) ; en champ perpétuel
+	# _alive n'est pas utilisé et toutes les pastilles sont vivantes.
+	return _alive[i] if _patch_count > 0 else true
 
 
 func alive_count() -> int:
