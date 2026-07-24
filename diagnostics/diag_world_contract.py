@@ -53,6 +53,9 @@ class Served:
     health: torch.Tensor           # [N]
     bounds: list[int]
     ate: torch.Tensor              # [N] 1 au tick d'un repas
+    cmd: torch.Tensor              # [N, 2] commandes (vx, ω) RÉELLEMENT exécutées
+    proprio_dim: int               # 132, ou 133 quand le regard était actif
+    moving: torch.Tensor           # [N] booléen : le corps AVANCE vraiment à ce tick
 
 
 @dataclass(frozen=True)
@@ -73,8 +76,57 @@ class Clause:
 # Mesures — chacune lit le corpus, aucune ne lit un réglage.
 # --------------------------------------------------------------------------------------------- #
 
+def _fit_drain(s: Served) -> tuple[float, float]:
+    """Sépare le drain PASSIF du coût de LOCOMOTION par régression : conso/tick = D + k·vx².
+
+    🚨 POURQUOI ON NE PEUT PLUS PRENDRE LA MÉDIANE. Depuis l'éventail de vitesse (§2.13), la baisse
+    d'énergie par tick vaut D + k·vx² : la médiane des baisses mesure donc la SOMME. Opposée au
+    drain DEMANDÉ (le passif seul), elle criait « servi sans être demandé » sur un monde parfaitement
+    conforme — un faux positif qui aurait discrédité l'outil au moment précis où on lui demande de
+    valider une collecte. La régression rend les DEUX termes, chacun comparable à son propre réglage.
+
+    Renvoie (D, k), ou (médiane, nan) quand le corpus ne fait pas varier vx assez pour identifier k —
+    on préfère dire « non mesurable » (verdict ⚠️) que rendre une pente ajustée sur du bruit.
+    """
+    d = (s.energy[:-1] - s.energy[1:])
+    vx2 = s.cmd[:len(d), 0] ** 2
+    garde = torch.ones(len(d), dtype=torch.bool)
+    for b in s.bounds[1:-1]:                       # frontières d'épisode : la jauge y est remise à plein
+        if 0 < b <= len(d):
+            garde[b - 1] = False
+    # 🚨 ET LES TICKS IMMOBILES, qui ne sont PAS un détail. Après un respawn le corps a une fenêtre de
+    # stabilisation : la commande est déjà tirée et écrite dans le corpus, mais le corps ne bouge pas
+    # encore, donc le drain passif est prélevé SANS coût de locomotion. Les garder mélange deux
+    # régimes : mesuré ici, k tombait à 0,387 pour 0,556 servi (R² 0,48) — une conclusion « le réglage
+    # n'a pas pris » sur un monde parfaitement conforme. Filtrés, D=0,1000 et k=0,5556 à R²=1,0000.
+    garde &= s.moving[:len(d)]
+    m = garde & (d > 0) & (d < 1.0)                # baisses seules : un repas est une HAUSSE
+    if int(m.sum()) < 30:
+        return float("nan"), float("nan")
+    y, x = d[m].double(), vx2[m].double()
+    if float(x.var()) < 1e-4:                      # vx quasi constant → k et D ne sont pas séparables
+        return float(y.median()), float("nan")
+    a = torch.stack([x, torch.ones_like(x)], dim=1)
+    coef = torch.linalg.lstsq(a, y.unsqueeze(1)).solution.flatten()
+    return float(coef[1]), float(coef[0])          # (intercept = D, pente = k)
+
+
 def _m_drain_e(s: Served) -> float:
-    return s.const["drain_e"]
+    return _fit_drain(s)[0]
+
+
+def _m_speed_cost(s: Served) -> float:
+    return _fit_drain(s)[1]
+
+
+def _m_gaze(s: Served) -> float:
+    """Le regard est SERVI ssi la proprioception porte sa dimension supplémentaire.
+
+    C'est la preuve la plus dure disponible sur un corpus : l'angle de tête n'existe dans les données
+    que si le drapeau était actif à la collecte. Un corpus à 132 avec SYLVAN_GAZE=1 demandé signifie
+    que le drapeau n'a pas pris — et tout ce qui en dépend serait mesuré sur un monde sans regard.
+    """
+    return 1.0 if s.proprio_dim == 133 else 0.0
 
 
 def _m_drain_t(s: Served) -> float:
@@ -176,6 +228,14 @@ CONTRACT: list[Clause] = [
     Clause("SYLVAN_HEALTH_REGEN", "régénération de santé", 0.0, "homeostasis.gd health_regen",
            _m_health_regen, "approx", "/tick",
            why="rend la santé cyclique ; à 0 c'est un budget à sens unique"),
+    Clause("SYLVAN_SPEED_COST", "coût de locomotion (k de k·vx²)", 0.0, "sylvan_agent.gd speed_cost_k",
+           _m_speed_cost, "approx", "énergie/tick à vx=1", tol=0.20,
+           why="sans lui la vitesse maximale domine toujours ; demandé mais non servi = un éventail "
+               "de vitesse qui ne porte aucune décision, et rien ne le signalerait"),
+    Clause("SYLVAN_GAZE", "regard indépendant (133ᵉ dim)", 0.0, "sylvan_agent.gd gaze_enabled",
+           _m_gaze, "presence", "dim proprio",
+           why="l'angle de tête n'existe dans les données que si le drapeau a pris ; un corpus à 132 "
+               "collecté en croyant le regard actif est un corpus sans perception active"),
     Clause("SYLVAN_HAZARD_COUNT", "danger actif (dégâts subis)", 0.0, "hazard_manager.gd (opt-in)",
            _m_damage, "presence", "pts cumulés",
            why="un danger demandé mais jamais rencontré ne prouve RIEN sur l'évitement"),
@@ -189,13 +249,19 @@ def load_served(run: str) -> Served:
     la duplique pas), `critic_corpus` pour la rétine. Le troisième champ (santé) n'est exposé par
     aucune des deux : lu ici, sans re-coder leur logique."""
     obs, energy, _cmds, bounds = load_bc_corpus(run)
-    plain, gz = os.path.join(run, "ep_0000.jsonl"), os.path.join(run, "ep_0000.jsonl.gz")
-    opener = (lambda: open(plain)) if os.path.exists(plain) else (lambda: gzip.open(gz, "rt"))
-    with opener() as fh:
-        health = [json.loads(line)["obs"].get("health", float("nan")) for line in fh]
+    fichiers = [f for f in (os.path.join(run, "ep_0000.jsonl"), os.path.join(run, "ep_0000.jsonl.gz"))
+                if os.path.exists(f)] or sorted(glob.glob(os.path.join(run, "episode_*.jsonl*")))
+    health = []
+    for f in fichiers:
+        with (gzip.open(f, "rt") if f.endswith(".gz") else open(f)) as fh:
+            health += [json.loads(line)["obs"].get("health", float("nan")) for line in fh if line.strip()]
     # La tranche rétine commence après la proprio ; obs = proprio ++ rétine ++ énergie (277).
     p = obs.shape[1] - RETINA_DIM - 1
+    # Le corps avance-t-il ? Vitesse RÉALISÉE = norme horizontale de la vitesse du torse (proprio
+    # dims 1 et 3) — la grandeur sans lag que G4 a établie comme fiable.
+    moving = (obs[:, 1] ** 2 + obs[:, 3] ** 2).sqrt() > 1e-3
     return Served(const=measured_constants(run), retina=obs[:, p:p + RETINA_DIM], energy=energy,
+                  cmd=_cmds, proprio_dim=p, moving=moving,
                   health=torch.tensor(health, dtype=torch.float32), bounds=bounds,
                   ate=meal_flags(energy, bounds))
 
@@ -251,7 +317,9 @@ def main() -> int:
         k, v = kv.split("=", 1)
         asked_env[k] = v
 
-    if not glob.glob(os.path.join(args.corpus, "ep_*.jsonl*")):
+    # Les DEUX dispositions : un fichier BC unique, ou un fichier par épisode (collecte WM).
+    if not (glob.glob(os.path.join(args.corpus, "ep_*.jsonl*"))
+            or glob.glob(os.path.join(args.corpus, "episode_*.jsonl*"))):
         raise SystemExit(f"corpus introuvable : {args.corpus}")
     print(scaffold_banner())
     served = load_served(args.corpus)

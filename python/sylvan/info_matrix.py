@@ -44,7 +44,17 @@ from sylvan.models.command_wm import CommandWorldModel
 N_RAYS = 36                      # perception.gd : RETINA_RAYS
 RAY_CHANNELS = 4                 # [depth_norm, R, G, B]
 FOOD_CONE = 0.55                 # MÊME seuil que le slot (slot_head) — on ne juge pas avec un autre œil
-BUSH_COS = 0.99                  # le buisson-marqueur n'est jamais que la couleur de base ÉCHELONNÉE
+BUSH_COS = 0.999                 # le buisson-marqueur n'est jamais que la couleur de base ÉCHELONNÉE
+# 🚨 RESSERRÉ DE 0,99 À 0,999 (2026-07-25), sur mesure et pas par précaution. Le critère est un
+# COSINUS, donc invariant d'échelle : un tronc vert foncé est « la couleur du buisson en plus
+# sombre ». Mesuré sur le premier corpus forestier : cos(buisson, écorce de base) = 0,9855, et
+# 14 100 rayons d'ARBRES passaient pour des buissons — la luminosité « de maturité » lisait en fait
+# la teinte des troncs (31 verts distincts, écart-type 0,124 sur un monde où l'indice de maturité est
+# ÉTEINT). C'est le problème du tronc-brun (§2bis) transposé au vert.
+# Le buisson étant PAR CONSTRUCTION la couleur de base exactement échelonnée, son cosinus vaut 1,0 :
+# 0,999 est la lecture fidèle de cette construction, pas un durcissement arbitraire. NON-RÉGRESSION
+# VÉRIFIÉE sur deux corpus sans forêt (bosquets_v2 sans indice, bosquets_v4 AVEC indice) : nombre de
+# ticks buisson-en-vue et écart-type de luminosité IDENTIQUES à 0,99 et 0,999.
 
 # Couleur DÉCLARÉE du buisson-marqueur (food_manager.gd PATCH_BUSH_COLOR). Sa LUMINOSITÉ encode la
 # maturité de sa baie (x1,0 fraîche -> x0,2 imminente) : la teinte est invariante, l'échelle porte
@@ -61,6 +71,14 @@ PALETTES: dict[str, torch.Tensor] = {
                             [0.90, 0.10, 0.45], [0.85, 0.55, 0.35]]),
     "luminosite": torch.tensor([[0.900, 0.300, 0.200], [0.648, 0.216, 0.144],
                                 [0.450, 0.150, 0.100], [0.288, 0.096, 0.064]]),
+    # La palette SERVIE par le monde-forêt (sylvan.world.FORET_V1.food_type_hues), validée séparable
+    # par G5. Sans elle, `pick_palette` retenait la plus proche palette connue (« teinte », qui en
+    # diffère de 0,05 à 0,07 par canal) et rapportait l'écart comme un JITTER PAR INSTANCE : le
+    # contrat accusait alors un « réglage fantôme » d'apparence variable sur un monde qui n'en
+    # demandait aucune. Une palette absente du catalogue ne produit pas une erreur, elle produit une
+    # fausse mesure — le mode de panne que ces outils existent pour supprimer.
+    "foret_v1": torch.tensor([[0.90, 0.12, 0.10], [0.90, 0.55, 0.08],
+                              [0.85, 0.10, 0.45], [0.80, 0.42, 0.42]]),
 }
 
 
@@ -97,9 +115,21 @@ def bush_brightness(retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     BUISSON donne +0,650 » là où elle donne −0,659 sur les rayons bouffe).
     """
     _, rgb = rays(retina)
-    unit = BUSH_COLOR / BUSH_COLOR.norm()
     norm = rgb.norm(dim=-1)
-    is_bush = ((rgb @ unit) / (norm + 1e-6) > BUSH_COS) & (norm > 1e-3)
+    # 🚨 DIRECTION EXACTE, pas un cône. Le marqueur est PAR CONSTRUCTION la couleur de base
+    # ÉCHELONNÉE : la maturité change son AMPLITUDE, jamais sa DIRECTION. Un seuil de cosinus, lui,
+    # est invariant d'échelle et attrape donc tout ce qui est du même vert — mesuré sur le premier
+    # corpus forestier : 14 100 rayons d'ARBRES passaient pour des buissons à 0,99, et 278 tenaient
+    # encore à 0,999 (les teintes jitterées de G8 finissent par tomber dans le cône). La luminosité
+    # « de maturité » lisait alors la teinte des troncs sur un monde où l'indice est ÉTEINT.
+    # Aucun estimateur robuste ne rattrape ça (la médiane empire : les rayons d'arbre sont souvent
+    # majoritaires dans un tick) — il faut le bon critère, pas une moyenne plus maligne.
+    # NON-RÉGRESSION VÉRIFIÉE : sur bosquets_v2 (indice éteint) et bosquets_v4 (indice ACTIF), même
+    # nombre de ticks buisson-en-vue et même écart-type qu'avec l'ancien masque, et l'échelle balaie
+    # toujours 1,00 -> 0,20 quand l'indice est servi. La vraie mesure est préservée, le bruit part.
+    ref = (BUSH_COLOR / BUSH_COLOR.norm() * 1000).round()
+    direction = (rgb / (norm.unsqueeze(-1) + 1e-6) * 1000).round()
+    is_bush = (direction == ref).all(dim=-1) & (norm > 1e-3)
     scale = norm / BUSH_COLOR.norm()                       # x1,0 fraîche -> x0,2 imminente
     n = is_bush.sum(dim=1)
     return (scale * is_bush).sum(dim=1) / n.clamp_min(1), n > 0

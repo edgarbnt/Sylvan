@@ -614,6 +614,14 @@ func _physics_process(delta: float) -> void:
 
 	if current_action_repeat_step == 0:
 		latest_obs = observation_builder.build_observation(agent_instance, homeostasis.energy, homeostasis.health, _compute_vision())
+		# LES DEUX AUTRES JAUGES, dans TOUTE collecte (§6bis). Elles n'étaient écrites que sur le
+		# chemin PLANNER : un corpus de babillage — celui qui alimente le retrain du WM — ne portait
+		# donc ni soif ni santé, et les garde-fous qui les lisent (guards.measured_constants, contrat
+		# de monde) plantaient sur un corpus pourtant valide. Le contrat ne pouvait PAS vérifier le
+		# drain de soif du monde qu'on s'apprête à collecter. Elles ne changent rien à l'observation
+		# du WM (proprio ++ rétine ++ énergie) : ce sont des champs de journal, pas d'entrée.
+		latest_obs["thirst"] = homeostasis.thirst
+		latest_obs["health"] = homeostasis.health
 		if _retina_debug and _retina_dbg_left > 0:
 			_retina_dbg_left -= 1
 			var _rt: Node3D = agent_instance.bodies.get("torso")

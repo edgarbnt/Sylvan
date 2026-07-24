@@ -37,20 +37,47 @@ def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, torch.
     """
     path = Path(path)
     proprio, retina, energy, torso, cmd = [], [], [], [], []
+    # DEUX DISPOSITIONS SUR DISQUE, et il faut lire les deux. La collecte BC écrit UN fichier
+    # `ep_0000.jsonl` (frontières d'épisodes DEVINÉES par détection de téléport) ; la collecte WM,
+    # celle qui alimente le retrain, écrit UN FICHIER PAR ÉPISODE `episode_NNNN.jsonl`. Sans ce
+    # second cas, les outils du dry-run (contrat de monde, matrice) ne peuvent pas lire le corpus
+    # même sur lequel le WM va être entraîné — et l'outil dirait « corpus introuvable » là où il y a
+    # un corpus parfaitement valide.
+    # Bénéfice au passage : quand les fichiers sont par épisode, les frontières sont EXACTES au lieu
+    # d'être inférées. La détection de téléport avait déjà fabriqué 94 fausses frontières (2026-07-24).
     # Le corpus est GZIPPÉ après collecte (un gros corpus tient sinon difficilement sur le disque).
     # On accepte les deux formes : sinon un corpus compressé est illisible ICI et le trainer conclut
     # « rien à apprendre », indiscernable d'un vrai négatif (piège déjà rencontré dans le projet).
-    plain, gz = path / "ep_0000.jsonl", path / "ep_0000.jsonl.gz"
-    opener = (lambda: open(plain)) if plain.exists() else (lambda: gzip.open(gz, "rt"))
-    with opener() as fh:
-        for line in fh:
-            r = json.loads(line)
-            proprio.append(r["obs"]["proprio"])
-            retina.append(r["wm"]["retina0"])
-            energy.append(r["obs"]["energy"])
-            torso.append(r["wm"]["torso0"])
-            cmd.append((r["wm"].get("cmd") or [0.0, 0.0])[:2])
+    def _open(p: Path):
+        return gzip.open(p, "rt") if p.suffix == ".gz" else open(p)
+
+    fichiers = [p for p in (path / "ep_0000.jsonl", path / "ep_0000.jsonl.gz") if p.exists()]
+    par_episode = not fichiers
+    if par_episode:
+        fichiers = sorted([*path.glob("episode_*.jsonl"), *path.glob("episode_*.jsonl.gz")])
+    if not fichiers:
+        raise FileNotFoundError(f"aucun ep_0000.jsonl ni episode_*.jsonl dans {path}")
+
+    frontieres_exactes = [0]
+    for f in fichiers:
+        with _open(f) as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                r = json.loads(line)
+                proprio.append(r["obs"]["proprio"])
+                retina.append(r["wm"]["retina0"])
+                energy.append(r["obs"]["energy"])
+                torso.append(r["wm"]["torso0"])
+                cmd.append((r["wm"].get("cmd") or [0.0, 0.0])[:2])
+        frontieres_exactes.append(len(energy))
     e = torch.tensor(energy, dtype=torch.float32)
+    if par_episode:
+        return (torch.cat([
+            torch.tensor(proprio, dtype=torch.float32),
+            torch.tensor(retina, dtype=torch.float32),
+            (e / 100.0).unsqueeze(1),
+        ], dim=1), e, torch.tensor(cmd, dtype=torch.float32), frontieres_exactes)
     obs = torch.cat([
         torch.tensor(proprio, dtype=torch.float32),
         torch.tensor(retina, dtype=torch.float32),

@@ -63,8 +63,17 @@ def _open(p: str):
 
 
 def _ticks(run: str) -> list[dict]:
+    """Tous les ticks d'un corpus, quelle que soit sa disposition sur disque.
+
+    DEUX conventions coexistent et les deux sont légitimes : la collecte BC écrit `ep_NNNN.jsonl`,
+    la collecte WM — celle qui alimente le retrain — écrit `episode_NNNN.jsonl`. Ne lire que la
+    première faisait dire « corpus vide » sur un corpus WM parfaitement valide : le garde-fou se
+    taisait exactement là où il devait parler.
+    """
     out = []
-    for ep in sorted(glob.glob(os.path.join(run, "ep_*.jsonl*"))):
+    fichiers = sorted(glob.glob(os.path.join(run, "ep_*.jsonl*"))) \
+        or sorted(glob.glob(os.path.join(run, "episode_*.jsonl*")))
+    for ep in fichiers:
         with _open(ep) as f:
             for line in f:
                 line = line.strip()

@@ -19,7 +19,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-RUN_DIR="${1:-data/replay_buffer/foret_v1_smoke}"
+# CHEMIN ABSOLU OBLIGATOIRE. Godot tourne avec --path godot : un SYLVAN_RUN_DIR RELATIF se résout
+# depuis le dossier du projet Godot, pas depuis la racine du dépôt. Mesuré : le corpus atterrissait
+# dans godot/data/replay_buffer/ pendant que tout l'aval le cherchait dans data/replay_buffer/ —
+# aucune erreur, juste un corpus introuvable et un dossier vide à l'endroit attendu.
+RUN_DIR="$(realpath -m "${1:-data/replay_buffer/foret_v1_smoke}")"
 EPS="${2:-4}"
 SEED="${3:-7}"
 STEPS="${4:-3000}"
