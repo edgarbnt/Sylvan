@@ -134,3 +134,54 @@ monde) TIENT dans le monde périssable.
 21 candidats, pas un R² poolé), puis A/B pleine-politique. Réserve honnête : la marge est modeste
 et fork-dépendante (1/3), et le gate poolé ne montre pas de signal au-delà de la géométrie —
 un critique qui la capture devra être jugé sur le BUT (repas/survie), pas sur une AUC.
+
+---
+
+# La tête est bâtie — et le JUGE INTRA-ÉTAT la REFUSE (2026-07-24)
+
+## Ce qui a été construit
+`python/sylvan/critic_corpus.py` (corpus/cible/token en UN seul endroit, pour que entraîneur, juge
+et diagnostic ne divergent pas) + `python/scripts/train_meal_critic.py` (tête V(token) → P(repas
+dans K ticks), WM GELÉ, split par ÉPISODE, stats calées sur le train seul, |sin| pour imposer la
+symétrie miroir) + `diagnostics/diag_critic_intra_state.py` (LE juge).
+
+Entraînement : AUC POOLÉE held-out **0,786** (convergée, plateau). Ce chiffre ne juge rien.
+
+## Juge intra-état, fork seed 8 k=1200 (celui QUI A de la marge)
+Vérité-terrain sauvegardée : `data/forks/s8_k1200_outcomes.txt` (16/21 candidats → 1 repas).
+
+|  | top-1 choisi | repas obtenus | AUC intra-état |
+|--|--------------|---------------|----------------|
+| CRITIQUE | (0,75 ; +0,6) | **0** | 0,562 |
+| ANALYTIQUE `-min_dist` | (0,75 ; +0,6) | **0** | 0,587 |
+
+**ÉCHEC des deux**, au niveau du hasard. Deux causes MESURÉES, pas supposées :
+
+1. **Le critique est `-min_dist` déguisé** : corrélation de RANG entre V et −min_dist = **+0,930**.
+   Il a ré-appris la géométrie — cohérent avec le gate poolé (aucun signal au-delà de la géométrie).
+2. **Le rêve est MYOPE** : horizon 80 ticks = **0,88 m** parcourus, pour une baie à **7,61 m**. Les
+   21 candidats finissent étalés sur **0,62 m** → états quasi indiscernables. Aucune fonction de cet
+   état ne peut les classer, critique ou pas.
+
+## Balayage d'horizon (gratuit) — la myopie est-elle LA cause ?
+| horizon | parcouru | écart min-max des candidats | AUC intra-état de −min_dist |
+|---------|----------|------------------------------|------------------------------|
+| 80 (actuel) | 0,88 m | 0,62 m | 0,587 |
+| 200 | 2,20 m | 2,51 m | 0,613 |
+| 400 | 4,40 m | 4,95 m | 0,637 |
+| **700** | **7,70 m** | **5,72 m** | **0,663** |
+| 1000 | 11,00 m | 3,52 m | 0,637 |
+
+L'optimum tombe là où le rêve ATTEINT enfin la baie (7,70 m parcourus vs 7,61 m de distance).
+Allonger l'horizon aide donc réellement, mais modestement (0,587 → 0,663) : la myopie est UNE cause,
+pas toute la cause (les issues mesurées sont en partie dispersées — 16/21 à 1 repas avec des trous
+isolés, ce qui plafonne ce que TOUT classement peut atteindre).
+
+## Décision honnête
+Le critique tel que conçu (token à 5 dims, noté sur un rollout de 0,88 m) **n'a rien à apporter** :
+il ne voit que ce que `-min_dist` voit, appliqué à des états que le rollout ne sépare pas. Négatif
+BANKÉ. Deux pistes distinctes en sortent, à gater séparément (§4) :
+  (a) **HORIZON** — designed, cheap, testable en closed-loop tout de suite (80 → ~700).
+  (b) **ENTRÉE PLUS RICHE** — le token jette la scène (autres bosquets, buissons) que le latent
+      porte ; un critique sur le LATENT verrait ce que `-min_dist` ne voit pas. C'est la seule
+      forme qui puisse battre la géométrie, puisque sur la géométrie seule il n'y a rien à gagner.
