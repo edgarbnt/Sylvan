@@ -298,6 +298,23 @@ class CommandPlanner:
         _cm = os.environ.get("SYLVAN_PLANNER_COST")  # "survival" = coût pas-vécus simulés (gate B0)
         if _cm not in (None, ""):
             self.cfg.cost_mode = _cm
+        # CRITIQUE TD (valeur terminale, forme TD-MPC). Opt-in par chemin de checkpoint ; non fourni
+        # → self._td_critic reste None et le scoring est bit-identique à l'historique.
+        #   SYLVAN_PLANNER_TD_CRITIC=<ckpt>  SYLVAN_PLANNER_TD_ONLY=1  SYLVAN_PLANNER_TD_W=<poids>
+        self._td_critic = None
+        self._td_gamma = 0.999
+        self._td_only = os.environ.get("SYLVAN_PLANNER_TD_ONLY", "0") != "0"
+        self._td_w = float(os.environ.get("SYLVAN_PLANNER_TD_W", "1.0"))
+        _tdc = os.environ.get("SYLVAN_PLANNER_TD_CRITIC")
+        if _tdc not in (None, ""):
+            from scripts.train_td_critic import TDValueHead
+            _ck = torch.load(_tdc, map_location="cpu", weights_only=False)
+            self._td_critic = TDValueHead(_ck["latent_dim"], _ck["meta"].get("hidden", 256))
+            self._td_critic.load_state_dict(_ck["model"])
+            self._td_critic.eval()
+            self._td_gamma = float(_ck["meta"].get("gamma", 0.999))
+            print(f"[planner-cmd] CRITIQUE TD (valeur TERMINALE) = {_tdc} | γ={self._td_gamma} | "
+                  f"{'DÉCIDE SEUL (remplace -min_dist)' if self._td_only else f'ajouté, poids {self._td_w}'}")
         _dr = os.environ.get("SYLVAN_PLANNER_DRAIN")  # drain normalisé/pas — caler sur le régime réel
         if _dr not in (None, ""):                     # (éco de vie 0.05 → 0.0005 ; défaut historique 0.0016)
             self.cfg.resource_drain = float(_dr)
@@ -581,6 +598,16 @@ class CommandPlanner:
                 + cfg.energy_weight * energy_pred[:, -1]
                 - cfg.done_penalty * survival_pen
             )
+            # CRITIQUE TD — VALEUR TERMINALE (forme TD-MPC, opt-in ; absent = bit-identique).
+            # score = Σ γ^i R(z_i) + γ^H · V(z_H) : c'est la valeur AU BOUT du rêve court qui fait
+            # entrer l'information de long horizon dans un plan de court horizon. Elle n'est JAMAIS
+            # moyennée sur la trajectoire (ça la traiterait comme une récompense par pas et re-noterait
+            # ce qui est DÉJÀ dans l'horizon). Juge intra-état : 3 forks sur 3 mieux classés que
+            # -min_dist (AUC moyenne 0,822 vs 0,668). `td_only` = le critique décide SEUL (le but du
+            # projet : remplacer le coût codé-main) ; sinon il s'ajoute au façonnage analytique.
+            if getattr(self, "_td_critic", None) is not None:
+                v_term = (self._td_gamma ** h) * self._td_critic(out["predicted_latents"][:, -1])
+                score = v_term if self._td_only else score + self._td_w * v_term
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
             fx, fz = float(slot[best, 0, 0]), float(slot[best, 0, 1])

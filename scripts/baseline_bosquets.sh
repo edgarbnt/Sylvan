@@ -41,7 +41,7 @@ MEM=${MEM:-off}                # on = memoire spatiale (--egomotion-head + --slo
    # voisin entre 9 et 11 m -> traversee 41-50 pts d energie, comme concu
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT" || exit 1
 WM=${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}
-TAG="bosq_${PRESET:-bosquets_v1}_rp${REPLAN}_m${MEM}_s${SEED}"
+TAG="bosq_${PRESET:-bosquets_v1}_rp${REPLAN}_m${MEM}_s${SEED}${TD_CRITIC:+_td}"
 
 echo "=== BOSQUETS (preset ${PRESET:-bosquets_v1}) ==="
 echo "=== WM=$WM  ep=$NEP  seed=$SEED  port=$PORT ==="
@@ -66,6 +66,7 @@ SYLVAN_RETINA_FOV_DEG=$FOV_FROM_PRESET SYLVAN_PLANNER_HEADING_W=$HW SYLVAN_PLANN
 SYLVAN_PLANNER_URGENCY_W=6.0 \
 SYLVAN_BC_LOG=data/replay_buffer/${TAG} SYLVAN_PLANNER_COST=survival \
 SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
+SYLVAN_PLANNER_TD_CRITIC=${TD_CRITIC:-} SYLVAN_PLANNER_TD_ONLY=${TD_ONLY:-0} SYLVAN_PLANNER_TD_W=${TD_W:-1.0} \
 PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
   --host 127.0.0.1 --port $PORT --horizon ${HORIZON:-80} --replan-every $REPLAN $MEM_FLAGS > /tmp/${TAG}_srv.log 2>&1 &

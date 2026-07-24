@@ -301,3 +301,40 @@ plusieurs vies) avec `SYLVAN_PLANNER_COST=critic`. À noter aussi : V est SOUS-P
 held-out 0,015 là où le taux de repas implique ~0,16) — plus d'itérations TD laisseraient peut-être
 encore du signal. Le gros corpus `bosquets_v4_ripe` (maturité visible) est en cours et n'a PAS servi
 ici : ce gain vient de la FORME (terminale + TD), pas du volume.
+
+## ⚠️ A/B PLEINE-POLITIQUE — le gain offline NE TRANSFÈRE PAS (négatif, il prime)
+
+`bosquets_v3_perish`, 8 vies, seed 1, replan 60, mémoire ON :
+
+| bras | survie méd. | repas (8 vies) | vies pleines |
+|------|-------------|----------------|--------------|
+| **ANALYTIQUE `-min_dist`** | **2900** | **11** | **4/8** |
+| CRITIQUE TD SEUL (remplace) | 2000 (plancher) | **0** | 0/8 |
+| ANALYTIQUE + V terminale (w=20) | 2615 | 6 | 0/8 |
+
+Le critique DÉGRADE, en remplacement comme en complément. **Le verdict closed-loop PRIME sur les
+3 forks offline** : la conclusion « le critique bat -min_dist » est RÉFUTÉE.
+
+### Pourquoi — deux causes, dont une erreur de méthode que je dois nommer
+1. **ÉCHANTILLON BIAISÉ (ma faute).** Les 3 forks jugés ont été CHOISIS parce qu'ils sont
+   conséquents — c'est-à-dire précisément ceux où l'analytique se plante. Ils représentent 17-33 %
+   des décisions. Mieux classer LÀ ne dit rien des 70-80 % de décisions ORDINAIRES, où `-min_dist`
+   fait le travail essentiel : fournir une pente DENSE et toujours valide vers la nourriture.
+2. **V est SOUS-PROPAGÉE et donc quasi plate** (moyenne held-out 0,015 là où le taux de repas
+   implique ~0,16). Dans un état ordinaire elle ne distingue rien → son argmax est du bruit → l'agent
+   erre et meurt de faim (0 repas, 8/8 au plancher).
+
+### LEÇON DE MÉTHODE (3ᵉ fois dans la même session)
+Un gain de CLASSEMENT OFFLINE, mesuré à des points de décision choisis, NE PRÉDIT PAS le
+comportement en vie. Ça a raté pour l'horizon (AUC↗ offline, effondrement closed-loop) puis deux
+fois pour le critique. ⇒ **Le juge d'un critique est l'A/B pleine-politique, point.** L'intra-état
+reste utile comme filtre PAS-CHER (il a bien tué les formes token et latent), mais il ne promeut
+rien : il ne peut que DISQUALIFIER.
+
+### Ce qui reste actionnable (ne PAS empiler avant de l'avoir testé)
+- **Réparer la sous-propagation de V** : c'est un défaut CONCRET et mesuré (0,015 vs ~0,16 attendu),
+  pas une conjecture — plus d'itérations TD / meilleure propagation. Une valeur plate ne peut rien
+  porter, quelle que soit sa forme.
+- **Le gros corpus `bosquets_v4_ripe`** (~150 vies, maturité visible) : 25 repas ne pouvaient rien
+  entraîner ; il apporte le volume ET un signal non-géométrique.
+- Balayer le poids du mélange plutôt que le deviner (w=20 était un choix arbitraire de ma part).
