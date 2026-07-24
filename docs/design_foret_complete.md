@@ -137,6 +137,64 @@ couvert, elle produit la traque : s'approcher lentement, à couvert, plutôt que
 ⚠️ Attention au piège mesuré : la fuite doit être **déclenchée par la détection**, pas permanente,
 sinon on retombe sur la trajectoire radiale dégénérée.
 
+### 2.7 Interactions issues de la recherche — candidates classées par le filtre §1
+
+**(a) Distance de fuite (*flight initiation distance*)** — concept MESURÉ en éthologie : la distance à
+laquelle une proie s'enfuit varie avec le couvert, la vitesse d'approche, son état. Donne une base
+empirique à l'affût au lieu d'un réglage arbitraire. La valeur d'une position dépend de ce que
+**l'autre** perçoit ⇒ non-dérivable d'une distance. *(hypothèse à gater)*
+
+**(b) Effet « many-eyes » / taille de groupe** — un groupe plus grand détecte le prédateur PLUS TÔT
+mais offre PLUS de nourriture. La littérature est explicitement **contradictoire** (dilution contre
+vigilance collective, méta-analyses divergentes) : un arbitrage que les écologues ne réduisent pas à
+une formule est un bon candidat pour nous. *(hypothèse à gater)*
+
+**(c) ⭐ QUALITÉ D'UN SITE INCONNUE — la meilleure trouvaille.** Le théorème de la valeur marginale
+(Charnov) donne quand quitter un site : c'est une FORMULE, donc mort-né selon notre filtre. **MAIS**
+la littérature 2024 est explicite : *« le MVT n'est valide que dans des environnements déterministes
+dont les statistiques sont CONNUES du fourrageur ; les environnements naturels remplissent rarement
+ces conditions »*. Sous incertitude il faut **estimer la qualité depuis sa propre expérience récente**
+(mise à jour bayésienne).
+Coche les quatre cases : perceptible, **non-dérivable** (aucune formule — il faut un estimé construit
+sur le vécu), change l'issue (partir trop tôt/tard coûte des repas). **Et exige de la MÉMOIRE** ⇒
+débloquerait le chantier mémoire, gelé faute de raison mesurée d'exister.
+C'est une saveur d'arbitraire DIFFÉRENTE des types : intégrer dans le TEMPS, pas reconnaître une
+apparence. *(hypothèse, la plus prometteuse)*
+
+**(d) Le mouvement de la proie comme INDICE** — en écologie du mouvement, un animal qui trouve un bon
+site ralentit et tourne davantage (*area-restricted search*). Le comportement de la proie **révèle
+une information cachée sur le monde** : une proie qui s'attarde signale un site riche. C'est de la
+perception-par-conséquence appliquée à un AUTRE AGENT, et ça rend le mouvement des proies informatif
+au lieu d'être un bruit à intercepter. *(hypothèse à gater)*
+
+⇒ **Les deux plus prometteuses : (c) qualité inconnue** — elle amène la mémoire — **et (a) distance de
+fuite avec couvert** — elle amène l'affût et la perception active. Complémentaires : l'une pousse à
+intégrer dans le temps, l'autre à raisonner sur ce que l'autre voit.
+
+---
+
+## 2bis. POURQUOI L'AGENT CONFOND UN TRONC BRUN ET UNE BAIE (question owner, 2026-07-24)
+
+Ce n'est PAS une limite de l'œil : la rétine reçoit bien des RGB distincts. **C'est le détecteur qui
+est grossier, et il est codé à la main.** Le slot normalise la couleur du rayon, calcule son cosinus
+avec la requête `(1,0,0)` et déclenche au-dessus de **0,55**. Or un brun `(0.36,0.25,0.15)` normalisé
+donne un cosinus de **0,776** — largement au-dessus. Le tronc EST de la nourriture, pour le slot.
+
+**Et pourquoi il n'apprend pas de sa déception ?** Parce qu'il n'existe **aucun chemin d'apprentissage
+entre l'expérience et la perception** : sur la config servie, le slot a **zéro paramètre appris** (le
+scoreur, 2498 paramètres, est calculé puis intégralement écrasé par la branche géométrique). L'agent
+peut mordre mille troncs, ça ne changera jamais ce qu'il considère comme de la nourriture. Sa
+perception est **gelée par construction**.
+
+Deux verrous INDÉPENDANTS, donc :
+- **A2** — détecteur codé-main à seuil trop large (le tronc brun) ;
+- **A1** — encodeur aveugle aux variations d'apparence de la nourriture (29,5 % contre 44,2 %).
+
+⇒ **Conséquence pour le chantier** : le WM « typé » (`wm_objcentric_kin_typed`) a des requêtes
+APPRISES — mesurées `[0.876, 0.349, 0.333]` au lieu des primaires exactes — mais **n'est pas promu**.
+Si on ré-entraîne de toute façon, il faut régler les DEUX ensemble, sinon le problème du tronc brun
+**survivra au retrain**.
+
 ---
 
 ## 3. LIMITES MESURÉES — non négociables
@@ -202,6 +260,10 @@ Les deux derniers sont **les gates du problème de l'owner**. Tout le reste n'es
 **Écologie spatiale** : processus de Neyman-Scott/Thomas (semis groupés) ; indice de Clark-Evans
 (distance au plus proche voisin vs Poisson).
 **Éthologie** : [choix des sites d'embuscade selon les capacités sensorielles des proies](https://academic.oup.com/beheco/article/32/2/339/6125068) ·
+[distance de fuite et taille de groupe (méta-analyse)](https://www.sciencedirect.com/science/article/abs/pii/S0003347224000277) ·
+[many-eyes / vigilance et taille de groupe](https://academic.oup.com/beheco/article/32/5/919/6307443) ·
+[fourrageage sous incertitude : MVT + mise à jour bayésienne](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10996644/) ·
+[théorie normative des décisions de quitter un site](https://arxiv.org/pdf/2004.10671) ·
 [tactiques de chasse en forêt](https://www.sciencedaily.com/releases/2021/02/210209151819.htm) ·
 [modélisation d'écosystème par RL profond](https://www.sciencedirect.com/science/article/pii/S1574954126002256)
 **Architecture** : [TD-MPC, valeur terminale + bootstrap](https://proceedings.mlr.press/v162/hansen22a/hansen22a.pdf) ·
