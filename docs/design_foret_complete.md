@@ -647,6 +647,58 @@ au même titre que faire varier les couleurs.**
 
 ---
 
+## 6sexies. LA COLLECTE — comment faire entrer les données dans le WM
+
+### La distinction qui tranche : le WM et le critique n'ont PAS les mêmes besoins
+
+Point jamais explicité jusqu'ici, et il change la réponse :
+
+- **Le WM a besoin de COUVERTURE** de l'espace état-action. Des données diverses, même **hors-politique**,
+  sont *bonnes* — c'est la pratique standard. Un WM entraîné sur une distribution étroite ne sait
+  modéliser qu'un couloir.
+- **Le critique a besoin de la distribution QU'IL RENCONTRERA** — c'est exactement là que le projet
+  s'est fait avoir (« train ≠ déploiement », un chantier entier perdu).
+
+⇒ Explorer largement est **légitime pour le WM**, et **dangereux pour le critique**. Les deux ne se
+collectent donc pas forcément de la même façon.
+
+### ✅ DÉCISION 1 — COLLECTE MIXTE (et non un pilotage manuel)
+
+**Pourquoi pas « tout piloter »** — deux raisons pratiques, pas doctrinales :
+1. **Ça ne passe pas à l'échelle** : des centaines de vies, des millions de ticks. Le travail humain
+   serait proportionnel au volume, alors que le bruit d'exploration est gratuit et infini.
+2. **Le mécanisme existe déjà** : `SYLVAN_CMD_EXPLORE_STD` (exploration dans l'espace des commandes) et
+   le mode `scripted`. Le vrai travail n'est pas de bâtir un protocole de pilotage, c'est **d'étendre
+   l'exploration existante aux nouvelles dimensions** — regard, posture, éventail de vitesse. Quelques
+   lignes, pas un système. (Et c'est la mise en œuvre de la règle §6quinquies E : *toute nouvelle
+   dimension d'action doit être EXPLORÉE, sinon le WM n'apprend pas sa dynamique*.)
+
+**La composition** : une part d'épisodes **sous le planner** (relevance — on visite les états qui
+comptent), une part avec **bruit d'exploration** étendu aux nouvelles actions (couverture), et une part
+**très exploratoire**.
+
+⚠️ **Pourquoi le bruit seul ne suffit PAS** : une politique purement aléatoire **n'attrape jamais rien**,
+donc ne montre jamais au WM ce qui se passe **au contact** — précisément le moment intéressant. La
+couverture sans relevance produit un WM qui connaît le vide et ignore l'événement.
+
+### ✅ DÉCISION 2 — CONTRÔLE SCRIPTÉ DES ENTITÉS, comme outil de TEST (pas de collecte)
+
+Pouvoir **placer** une proie à une position et une vitesse connues, figer une flaque, forcer un arbre à
+un endroit précis. **Pas pour collecter : pour MESURER.**
+
+C'est ce qui manque aujourd'hui aux sondes gratuites et aux juges contrefactuels : pour mesurer quoi que
+ce soit il faut relancer une vie entière et *espérer* que la situation intéressante se produise — ce qui
+a coûté des heures le 2026-07-24. Avec des scénarios déterministes (« une proie à 5 m, vitesse 0,9×,
+derrière un tronc »), une sonde devient **instantanée et reproductible**.
+
+C'est l'extension naturelle d'un mécanisme qui existe déjà : le hook `SYLVAN_CF_TICK` force **une
+commande de l'agent** à un tick donné ; ici on ferait le même principe, appliqué au **monde**.
+Bénéfice secondaire : ça alimente directement la *matrice de survie de l'information*
+(`design_outil_matrice_information.md`), qui a besoin de situations contrôlées pour être comparable
+d'un retrain à l'autre.
+
+---
+
 ## 7. RÉFÉRENCES
 
 **Écologie spatiale** : processus de Neyman-Scott/Thomas (semis groupés) ; indice de Clark-Evans
