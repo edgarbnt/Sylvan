@@ -26,6 +26,12 @@
 set +e
 ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1-foret; cd "$ROOT" || exit 1
 
+# PRESET = le monde GELÉ à servir (python/sylvan/world.py). Défaut bosquets_v7_types : la nourriture
+# SE DÉPLACE (proies, 0,0099 m/tick ≈ 0,9x l'agent) et porte 4 TYPES de teintes différentes dont la
+# valeur nutritive est ARBITRAIRE. Ces deux briques existaient et n'étaient pas servies ici.
+# Mettre PRESET=bosquets_v2 pour revoir le monde plat (billes rouges immobiles + eau).
+PRESET=${PRESET:-bosquets_v7_types}
+
 TREES=${TREES:-45}          # 45 = plafond de navigabilité MESURÉ (54 → immobile 85 % du temps)
 STANDS=${STANDS:-6}
 CLEARINGS=${CLEARINGS:-3}
@@ -38,8 +44,16 @@ pkill -9 -f "$ROOT/tools/godot" 2>/dev/null
 sleep 1
 export GODOT_BIN="$ROOT/tools/godot/godot"
 
+# Le monde vient du PRESET GELÉ, pas de variables recopiées à la main dans ce script : c'est la
+# raison d'être de sylvan/world.py (une seule source de vérité, sinon un harnais dérive en silence).
+WORLD_ENV=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset "$PRESET" --env \
+            | sed 's/^export //' | tr '\n' ' ')
+if [ -z "$WORLD_ENV" ]; then echo "[voir-foret] preset '$PRESET' inconnu"; exit 1; fi
+echo "[voir-foret] monde = $PRESET"
+
+FOV=$(echo "$WORLD_ENV" | tr ' ' '\n' | grep '^SYLVAN_RETINA_FOV_DEG=' | cut -d= -f2)
 env SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
-    SYLVAN_PLANNER_HEADING_W=0.0 \
+    SYLVAN_PLANNER_HEADING_W=0.0 SYLVAN_RETINA_FOV_DEG=${FOV:-360} \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
     --host 127.0.0.1 --port $PORT --horizon 80 --replan-every 10 \
@@ -63,12 +77,9 @@ env SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRICTIO
   SYLVAN_FOREST_DECOR=${SYLVAN_FOREST_DECOR:-0} \
   SYLVAN_FOREST_COUNT=$TREES SYLVAN_FOREST_STANDS=$STANDS SYLVAN_FOREST_CLEARINGS=$CLEARINGS \
   SYLVAN_FOREST_CLEARING_R=${CLEARING_R:-4.0} SYLVAN_FOREST_STAND_SIGMA=${STAND_SIGMA:-3.0} \
-  SYLVAN_EAT_RADIUS=1.0 SYLVAN_DRINK_RADIUS=1.0 \
-  SYLVAN_FOOD_COUNT=3 SYLVAN_WATER_COUNT=3 SYLVAN_ENERGY_DRAIN=0.05 SYLVAN_THIRST_DRAIN=0.05 \
-  SYLVAN_INIT_ENERGY=70 SYLVAN_INIT_THIRST=70 \
-  SYLVAN_FOOD_MIN_RADIUS=2.0 SYLVAN_FOOD_SPAWN_RADIUS=6.0 \
-  SYLVAN_WATER_MIN_RADIUS=2.0 SYLVAN_WATER_SPAWN_RADIUS=6.0 \
-  SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=10 SYLVAN_MAX_EPISODE_STEPS=3000 SYLVAN_SEED=${SEED:-1} \
+  $WORLD_ENV SYLVAN_FOOD_BUSH=${SYLVAN_FOOD_BUSH:-1} \
+  SYLVAN_INIT_ENERGY=70 \
+  SYLVAN_COLLECT=1 SYLVAN_NUM_EPISODES=10 SYLVAN_SEED=${SEED:-1} \
   SYLVAN_COLLECTOR_MODE=policy_server SYLVAN_POLICY_HOST=127.0.0.1 SYLVAN_POLICY_PORT=$PORT \
   SYLVAN_POLICY_EXPLORATION_STD_INITIAL=0 SYLVAN_POLICY_EXPLORATION_STD_FINAL=0 \
   SYLVAN_REFLEX_STRENGTH=0 SYLVAN_ASSIST_RATIO=0 SYLVAN_RUN_DIR=/tmp/voir_foret_run \
