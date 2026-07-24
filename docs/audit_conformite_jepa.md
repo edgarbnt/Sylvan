@@ -224,3 +224,46 @@ monde où **quelque chose de perceptible et de non-géométrique change l'issue*
 crée bien de la conséquence (33 %), mais son mécanisme (relocalisation aléatoire) est
 (a) imprévisible par construction et (b) invisible au rêve (A4, transport ego-only). C'est cohérent
 avec tout ce qui précède : **A4 est maintenant le maillon critique, pas A1.**
+
+---
+
+# A1, TROISIÈME MESURE — l'encodeur ne perçoit PAS l'apparence de la NOURRITURE (2026-07-24)
+
+Contexte : le monde v7 donne aux proies des TYPES dont la valeur est arbitraire — la seule condition
+mesurée où un critique est NÉCESSAIRE. Précondition évidente avant d'entraîner : le critique doit
+PERCEVOIR le type. Mesuré, et c'est non.
+
+| où l'on lit le TYPE de la proie visée | teinte | luminosité |
+|---------------------------------------|--------|------------|
+| RÉTINE brute | **82,9 %** | **67,0 %** |
+| sortie de l'ENCODEUR | 29,5 % | 35,6 % |
+| LATENT | 27,3 % | 31,2 % |
+| (majorité = hasard à battre) | 44,2 % | 32,3 % |
+
+**L'information est dans l'observation et l'ENCODEUR la détruit** — dès la première couche, pas le
+prédicteur.
+
+Trois explications testées et TOUTES RÉFUTÉES :
+1. « c'est le canal » (teinte vs luminosité) → non, les deux sont détruits ;
+2. « l'objet est trop petit » → non, mesuré : baie 3,44 rayons, buisson 3,17 — quasi identiques ;
+3. « ma sonde demande trop » (attribut de la plus proche, par argmin) → non : même la LUMINOSITÉ
+   MOYENNE des rayons bouffe est illisible (**R² −0,659**), alors que la MÊME mesure sur le BUISSON
+   donne **+0,650**.
+
+**CAUSE RETENUE** : pendant l'entraînement du WM, la couleur de la NOURRITURE était CONSTANTE, tandis
+que l'environnement/les buissons variaient. L'encodeur n'a donc alloué aucune capacité à représenter
+l'apparence de la nourriture — c'est une constante pour lui. C'est le cas « hors-distribution » qui
+avait été listé comme le seul justifiant un ré-entraînement.
+
+## Conséquence : DEUX voies, et pour la première fois un retrain est FONDÉ
+- **(a) CHEAP — porter le signal par le BUISSON** : mesuré à 0,650, donc ça marche tout de suite.
+  Le buisson annonce le type de SA baie. Limite : incompatible avec la proie MOBILE (une baie qui
+  vagabonde quitte son buisson), donc il faudrait choisir entre les deux leviers.
+- **(b) FONDÉ — ré-entraîner le WM avec une couleur de nourriture VARIABLE dans la collecte.**
+  Ce n'est PAS câbler une ressource dans le WM (§3) : on donne au substrat perceptif l'exposition à
+  une variation qu'il n'a jamais vue, et ce qu'il apprendrait est GÉNÉRAL (discriminer des apparences),
+  pas « la bouffe vaut tant ». C'est aussi exactement ce qu'exige le critère JEPA : la représentation
+  doit porter l'information disponible et pertinente. Coût : une recollecte + un entraînement WM.
+
+C'est le premier ré-entraînement du substrat que la mesure JUSTIFIE dans tout ce chantier — les
+précédents auraient été des raccourcis.

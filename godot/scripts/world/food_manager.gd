@@ -124,12 +124,17 @@ var _prey_travel := 0.0         # distance cumulée parcourue par la proie (PREU
 # C'est la seule condition MESURÉE (diag_arbitrary_headroom.py) où un critique devient NÉCESSAIRE :
 # formule ajustée 49,5 % de la marge oracle contre 69,7 % pour un appris — aucune formule ne peut
 # contenir une table de correspondance arbitraire.
-# ⚠️ PALETTE CHOISIE PAR MESURE contre les requêtes RÉELLES du WM (leçon du buisson) : toutes les
-# teintes restent dans le cône « nourriture » (cos rouge 0,79-0,99 > seuil 0,55) et hors du cône
-# « eau » (cos bleu < 0,45), donc le slot les localise TOUTES de la même façon — le type ne change
-# QUE l'apparence, jamais la perception de position. Écart RGB minimal mesuré 0,187 = distinguables.
-const TYPE_COLORS := [Color(0.90, 0.10, 0.10), Color(0.80, 0.60, 0.15),
-					  Color(0.90, 0.10, 0.45), Color(0.85, 0.55, 0.35)]
+# ⚠️ TYPES CODÉS EN LUMINOSITÉ, PAS EN TEINTE — décidé sur MESURE (2026-07-24). Une première palette
+# variait la TEINTE dans le cône bouffe : le type y était lisible à 82,9 % depuis la RÉTINE mais
+# seulement 29,5 % après l'ENCODEUR du WM et 27,3 % dans le latent, contre 44,2 % de majorité — donc
+# l'encodeur DÉTRUIT la teinte (il a été entraîné sur un monde à une seule couleur de nourriture,
+# cette variation lui est hors-distribution). La LUMINOSITÉ, elle, SURVIT : l'indice de maturité est
+# lisible à R² 0,65. On encode donc le type dans l'amplitude, à direction RGB CONSTANTE.
+# Conséquence prouvée : cos(rouge)=0,928 et cos(bleu)=0,206 sont IDENTIQUES pour les 4 types, et
+# l'affinité du slot est un cosinus -> localisation rigoureusement inchangée (invariance déjà mesurée
+# à 0,00000000 m). Écart RGB minimal 0,175 = distinguables dans la rétine.
+const TYPE_COLORS := [Color(0.900, 0.300, 0.200), Color(0.648, 0.216, 0.144),
+					  Color(0.450, 0.150, 0.100), Color(0.288, 0.096, 0.064)]
 var _n_types := 0               # 0 = OFF, bit-identique
 var _type_values: Array[float] = []   # multiplicateur de valeur nutritive PAR TYPE (arbitraire)
 var _type_of: Array[int] = []
