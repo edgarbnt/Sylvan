@@ -573,6 +573,80 @@ petit système à part entière, et il n'est spécifié nulle part.
 
 ---
 
+## 6quinquies. DÉCISIONS SUR LES ANGLES MORTS (2026-07-24)
+
+### A. Persistance entre les vies — **TRANCHÉ**
+
+| élément | décision | pourquoi c'est PUR |
+|---|---|---|
+| **table type → valeur** | **FIXE sur toute la campagne** | c'est une **loi du monde**, au même titre que « manger restaure l'énergie ». L'agent ne la reçoit pas : il doit la découvrir en goûtant. Si elle changeait à chaque vie elle serait *structurellement inapprenable*, et c'est le SEUL levier qui ait passé le filtre. |
+| **géographie** (forêt, flaques) | **VARIABLE à chaque vie** | empêche de **mémoriser la carte** au lieu d'apprendre à percevoir. Sans ça on fabriquerait du sur-apprentissage qu'on prendrait pour de l'intelligence. |
+| **tout, DANS une vie** | **STABLE** | c'est ce qui rend la mémoire utile à l'échelle où on la vise (retrouver une flaque vue il y a 500 ticks). |
+
+Conséquence assumée : la mémoire spatiale ne sert **qu'à l'intérieur d'une vie**. C'est cohérent avec
+la cible du chantier mémoire (le « vu-puis-perdu » par occlusion), et ça évite un agent qui triche.
+
+### B. Danger — **TRANCHÉ, en deux temps**
+
+- ✅ **Zones dangereuses FIXES** (ravin, marécage) : **incluses**, mais déclarées comme **STRUCTURE
+  SPATIALE**, pas comme levier d'apprentissage. Elles contraignent les trajets comme les arbres.
+  Honnêteté : « évite la zone marquée » est probablement **dérivable**, donc on n'en attend aucun gain
+  côté critique — on la prend pour la géographie qu'elle crée.
+- ⏸️ **Risque de BLESSURE à la chasse** : **DIFFÉRÉ**. C'est la forme intéressante (attaquer devient un
+  pari), mais le projet a **déjà échoué** dessus : P2-bis a mesuré qu'un risque *pricé en espérance
+  sans ancre d'aversion* dégrade tout, et le G3 arbitrage a exporté ses dégâts (danger 5→13).
+  Le §1 interdit de relancer un échec sans **hypothèse neuve falsifiable**. Réouverture pré-inscrite :
+  seulement avec une ancre d'aversion explicite, et après lecture de `design_purete_hjepa.md` §P2.
+- ❌ **Prédateur qui chasse le loup** : **écarté** — coûteux (un second agent mobile) et redondant avec
+  le risque de blessure pour ce qu'on cherche.
+
+### C. Re-calibration métabolique — **TRANCHÉ : étape MESURÉE, pas effet de bord**
+
+Ouvrir l'éventail de vitesse invalide drain, rayon de capture, portée rétine, durée d'épisode et
+densité de ressources — tous calés sur 0,011 m/tick. On re-calibre **explicitement**, avec une cible
+chiffrée : **10 à 30 événements par vie** (§2.13) et une survie qui n'est **ni saturée ni effondrée**.
+⚠️ Le projet a déjà appris que la survie SATURÉE (9 vies sur 10 au plafond) rend la métrique aveugle :
+la bande cible est un critère, pas un détail.
+
+### D. Coût de calcul — **TRANCHÉ : c'est un GATE, mesuré AVANT de construire**
+
+Grande forêt + proies + distracteurs + flaques = beaucoup plus de raycasts par tick, sur des millions
+de ticks. **Mesurer les ticks/seconde sur le monde cible avant de s'engager.** Si une collecte de 25
+vies dépasse ~45 min, on réduit la densité ou le nombre d'objets. Aucun gate ne couvrait ça.
+
+### E. ⭐ Perception des proies — et l'ANGLE MORT DANS L'ANGLE MORT
+
+Se tapir et la distance de fuite supposent que **la proie voit** : il faut lui donner ligne de vue,
+portée, et un seuil de détection dépendant du couvert et de la posture. C'est un petit système, à
+construire **avec** l'affût — donc **PAS dans la première collecte**.
+
+**MAIS en écrivant ça, un problème plus grave apparaît, qui vaut pour TOUTES les nouvelles actions :**
+
+> 🚨 **RÈGLE : toute nouvelle dimension d'ACTION doit être EXPLORÉE pendant la collecte, sinon le WM
+> n'apprend pas sa dynamique.**
+
+Si on ajoute le tapi mais que la politique de collecte ne se tapit jamais (parce qu'il n'y a encore
+aucune raison de le faire), alors la posture **n'apparaît pas dans les données** et le WM ne saura
+jamais ce qu'elle change. On croirait avoir donné la capacité ; elle serait inerte.
+⇒ La collecte doit **explorer** le regard, l'éventail de vitesse et la posture — de la même façon que
+`SYLVAN_CMD_EXPLORE_STD` explore déjà les commandes. **C'est une condition de validité de la collecte,
+au même titre que faire varier les couleurs.**
+
+### F. Les plus petits — **TRANCHÉS**
+
+- **Relief / hauteur** : ⏸️ **différé**. Le corps est planaire ; passer en 3D navigable est un chantier
+  à part. Noté comme extension naturelle une fois le regard en place.
+- **Bord du monde** : ✅ **frontière NATURELLE et perceptible** (fourré infranchissable, densité
+  croissante), jamais un mur invisible — un mur invisible est un artefact que l'agent apprendrait à
+  exploiter, et qui ne serait visible dans aucun log.
+- **Déterminisme** : ✅ **GATE** — re-vérifier le rejeu **bit-identique** après construction. Beaucoup
+  plus d'objets = beaucoup plus de consommateurs de RNG ; si le déterminisme tombe, **tous** les juges
+  contrefactuels tombent avec lui.
+- **Cycle de vie (têtes ré-entraînées la nuit)** : ⏸️ hors périmètre du monde. Interface à définir
+  quand les têtes existeront ; le monde n'a rien à faire de spécial pour l'instant.
+
+---
+
 ## 7. RÉFÉRENCES
 
 **Écologie spatiale** : processus de Neyman-Scott/Thomas (semis groupés) ; indice de Clark-Evans
