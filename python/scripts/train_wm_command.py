@@ -26,6 +26,14 @@ from sylvan.buffer.wm_dataset import (
     list_wm_episodes,
 )
 from sylvan.constants import DEFAULT_PROPRIO_DIM
+
+# PROPRIOCEPTION SERVIE — 132 par défaut, 133 quand le REGARD est actif (l'angle de tête est une
+# dimension de plus, cf. §2.4). Ce n'était pas paramétrable : la constante était lue à SEPT endroits,
+# dont le calcul du nombre de rayons rétine `(obs - proprio - 1)/4` et l'offset du miroir. Sur un
+# corpus à 133 la constante aurait décalé la rétine d'UN CRAN sans rien casser visiblement —
+# l'augmentation miroir aurait mélangé des canaux au hasard, et l'entraînement aurait « marché ».
+# On la résout donc UNE fois, depuis --proprio-dim, et on la lit partout ailleurs.
+PROPRIO_DIM = DEFAULT_PROPRIO_DIM
 from sylvan.models.command_wm import (
     DEFAULT_LOSS_WEIGHTS,
     CommandWorldModel,
@@ -99,7 +107,7 @@ def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5
             done=done,
             eat_weight=eatw,
             model=model,
-            proprio_dim=DEFAULT_PROPRIO_DIM,
+            proprio_dim=PROPRIO_DIM,
             weights=weights,
             latent_loss_mode=latent_loss_mode,
             vicreg_var=vicreg[0],
@@ -114,7 +122,7 @@ def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5
         # 3a′ : presse la REPRÉSENTATION — bearing du plus proche objet lu sur les latents TEACHER-FORCED
         # (outputs["latents"]) → force l'encodeur/to_latent à garder le bearing-fin (plafond mesuré REPR ~+0.2).
         if w_bearing_tf > 0.0 and getattr(model, "bearing_head", None) is not None:
-            btgt, bmask = _nearest_hit_bearing(obs, DEFAULT_PROPRIO_DIM)
+            btgt, bmask = _nearest_hit_bearing(obs, PROPRIO_DIM)
             bpred = model.bearing_head(outputs["latents"])
             bpred = bpred / (bpred.norm(dim=-1, keepdim=True) + 1e-6)
             bearing_tf_loss = (((bpred - btgt) ** 2).sum(-1) * bmask).sum() / (bmask.sum() + 1e-6)
@@ -146,7 +154,7 @@ def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5
                         food_labels.append(es.flatten())
                 if w_bearing > 0.0 and getattr(model, "bearing_head", None) is not None:
                     # CLÉ DE VOÛTE : force le rêve à transporter le bearing du plus proche objet perçu (§3-pur).
-                    btgt, bmask = _nearest_hit_bearing(obs, DEFAULT_PROPRIO_DIM)
+                    btgt, bmask = _nearest_hit_bearing(obs, PROPRIO_DIM)
                     bpred = model.bearing_head(dream)
                     bpred = bpred / (bpred.norm(dim=-1, keepdim=True) + 1e-6)
                     bearing_loss = (((bpred - btgt) ** 2).sum(-1) * bmask).sum() / (bmask.sum() + 1e-6)
@@ -217,7 +225,16 @@ def main() -> None:
     ap.add_argument("--mirror-augment", action="store_true", help="AUGMENTATION MIROIR gauche↔droite : double "
                     "chaque batch avec sa version miroitée → le WM apprend la symétrie sagittale du corps (fix "
                     "PROPRE de l'asymétrie du rêve, supprime le besoin de la béquille d'inférence). WM-rétine 277.")
+    ap.add_argument("--proprio-dim", type=int, default=DEFAULT_PROPRIO_DIM,
+                    help="Dimension de proprioception du CORPUS : 132, ou 133 quand le REGARD était "
+                         "actif à la collecte (SYLVAN_GAZE=1). Se trompe ici et la rétine est lue "
+                         "décalée d'un cran, sans erreur visible.")
     args = ap.parse_args()
+    global PROPRIO_DIM
+    PROPRIO_DIM = args.proprio_dim
+    if PROPRIO_DIM != DEFAULT_PROPRIO_DIM:
+        print(f"[train_wm_command] PROPRIOCEPTION {PROPRIO_DIM} (défaut {DEFAULT_PROPRIO_DIM}) — "
+              "corpus avec regard")
     vicreg = (args.vicreg_var, args.vicreg_cov, args.vicreg_gamma)
     if args.vicreg_var or args.vicreg_cov:
         print(f"[train_wm_command] VICReg actif: var={args.vicreg_var} cov={args.vicreg_cov} gamma={args.vicreg_gamma}")
@@ -254,7 +271,7 @@ def main() -> None:
 
     obs_dim = train_ds.episodes[0]["obs"].shape[-1]
     model = CommandWorldModel(
-        obs_dim=obs_dim, proprio_dim=DEFAULT_PROPRIO_DIM, predictor_arch=args.predictor_arch,
+        obs_dim=obs_dim, proprio_dim=PROPRIO_DIM, predictor_arch=args.predictor_arch,
         with_food_head=args.w_food > 0.0,
         with_bearing_head=args.w_bearing > 0.0 or args.w_bearing_tf > 0.0,
     ).to(device)
@@ -273,15 +290,15 @@ def main() -> None:
     mirror = None
     if args.mirror_augment:
         from sylvan.control.ppo.symmetry import _build_proprio_maps
-        pperm, psign = _build_proprio_maps()
+        pperm, psign = _build_proprio_maps(PROPRIO_DIM)
         perm = list(range(obs_dim)); sign = [1.0] * obs_dim
-        for i in range(min(DEFAULT_PROPRIO_DIM, len(pperm))):
+        for i in range(min(PROPRIO_DIM, len(pperm))):
             perm[i] = pperm[i]; sign[i] = psign[i]
-        n_ray = (obs_dim - DEFAULT_PROPRIO_DIM - 1) // 4          # rétine = (obs-proprio-énergie)/4 rayons
+        n_ray = (obs_dim - PROPRIO_DIM - 1) // 4          # rétine = (obs-proprio-énergie)/4 rayons
         for k in range(n_ray):
             src = (n_ray - k) % n_ray                              # miroir azimutal G↔D (validé à l'inférence)
             for j in range(4):
-                perm[DEFAULT_PROPRIO_DIM + 4 * k + j] = DEFAULT_PROPRIO_DIM + 4 * src + j
+                perm[PROPRIO_DIM + 4 * k + j] = PROPRIO_DIM + 4 * src + j
         mirror = (torch.tensor(perm, device=device),
                   torch.tensor(sign, dtype=torch.float32, device=device))
         print(f"[train_wm_command] AUGMENTATION MIROIR active ({n_ray} rayons rétine miroités) → WM symétrique")
@@ -290,7 +307,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     meta = {
         "obs_dim": obs_dim,
-        "proprio_dim": DEFAULT_PROPRIO_DIM,
+        "proprio_dim": PROPRIO_DIM,
         "seq_len": args.seq_len,
         "val_episodes": [str(p) for p in val_eps],
         "loss_weights": weights,

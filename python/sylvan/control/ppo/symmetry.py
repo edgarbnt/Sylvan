@@ -28,6 +28,7 @@ from __future__ import annotations
 import torch
 
 _PROPRIO = 132
+_PROPRIO_GAZE = 133   # avec le REGARD actif : +1 dim = l'angle de tête (SYLVAN_GAZE=1)
 _VISION = 12
 _OBS = _PROPRIO + _VISION  # 144
 _ACT = 18
@@ -37,9 +38,18 @@ _ACT_PERM = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8, 15, 16, 17, 12, 13, 14]
 _ACT_SIGN = [1., -1., 1.] * 6
 
 
-def _build_proprio_maps() -> tuple[list[int], list[float]]:
-    perm = list(range(_PROPRIO))
-    sign = [1.0] * _PROPRIO
+def _build_proprio_maps(proprio_dim: int = _PROPRIO) -> tuple[list[int], list[float]]:
+    """Carte miroir de la proprioception. 132, ou 133 quand le REGARD est actif.
+
+    L'angle de tête (index 132) est un angle SIGNÉ autour de l'axe vertical, exactement comme le
+    cap : son reflet gauche↔droite le NÉGATIVE. Le laisser à +1 ferait apprendre au modèle qu'un
+    monde miroité se regarde du même côté — une équivariance FAUSSE, et silencieuse : rien ne
+    planterait, le modèle apprendrait juste une symétrie qui n'existe pas.
+    """
+    if proprio_dim not in (_PROPRIO, _PROPRIO_GAZE):
+        raise ValueError(f"proprio_dim {proprio_dim} inconnu (attendu {_PROPRIO} ou {_PROPRIO_GAZE})")
+    perm = list(range(proprio_dim))
+    sign = [1.0] * proprio_dim
 
     def setp(i: int, src: int, s: float) -> None:
         perm[i] = src
@@ -74,6 +84,11 @@ def _build_proprio_maps() -> tuple[list[int], list[float]]:
     # gait clock [sin,cos]: the tripod is chiral vs the clock — its L-R mirror is the SAME gait half a
     # cycle later (tripod A <-> tripod B), i.e. phi->phi+0.5 => sin->-sin, cos->-cos. Involutive.
     setp(130, 130, -1); setp(131, 131, -1)
+
+    # REGARD (§2.4) : 133ᵉ dimension = l'angle de tête, signé, dans le plan horizontal. Miroir ⇒ il
+    # change de signe (regarder à gauche devient regarder à droite). Involutif : (-1)² = +1.
+    if proprio_dim == _PROPRIO_GAZE:
+        setp(132, 132, -1)
     return perm, sign
 
 
@@ -125,3 +140,15 @@ def self_check() -> None:
         turnL[0, tri] = -0.5
         turnR[0, tri] = 0.5
     assert torch.allclose(mirror_action(turnL), turnR), "action mirror != expected turnL<->turnR"
+
+    # REGARD : la carte 133 doit être involutive, NÉGATIVER l'angle de tête, et laisser les 132
+    # premières dimensions strictement inchangées (sinon activer le regard changerait la symétrie
+    # du CORPS — un couplage que rien n'a décidé).
+    p132, s132 = _build_proprio_maps(_PROPRIO)
+    p133, s133 = _build_proprio_maps(_PROPRIO_GAZE)
+    assert p133[:_PROPRIO] == p132 and s133[:_PROPRIO] == s132, "la carte 133 a bougé le corps"
+    assert p133[132] == 132 and s133[132] == -1.0, "l'angle de tête doit changer de signe sous miroir"
+    x = torch.randn(4, _PROPRIO_GAZE)
+    perm = torch.tensor(p133); sgn = torch.tensor(s133, dtype=torch.float32)
+    once = x[..., perm] * sgn
+    assert torch.allclose(once[..., perm] * sgn, x, atol=1e-6), "carte 133 non involutive"

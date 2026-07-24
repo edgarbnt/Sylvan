@@ -492,10 +492,14 @@ def main() -> int:
     if a.selfcheck:
         return selfcheck()
     p = {"bosquets_v1": BOSQUETS_V1, "bosquets_v1_slowturn": BOSQUETS_V1_SLOWTURN, "bosquets_v2": BOSQUETS_V2, "bosquets_v3_perish": BOSQUETS_V3_PERISH, "bosquets_v4_ripe": BOSQUETS_V4_RIPE, "bosquets_v5_value": BOSQUETS_V5_VALUE, "bosquets_v6_prey": BOSQUETS_V6_PREY, "bosquets_v7_types": BOSQUETS_V7_TYPES,
-     "perpetual_v0": PERPETUAL_V0}[a.preset]
+     "perpetual_v0": PERPETUAL_V0, "foret_v1": FORET_V1}[a.preset]
     if a.env:
         for k, v in p.to_env().items():
-            print(f"export {k}={v}")
+            # Guillemets OBLIGATOIRES : la palette de teintes contient des « ; », que le shell lit
+            # comme un séparateur de commandes. Sans eux, `eval "$(... --env)"` coupe la ligne en
+            # deux et la palette est servie TRONQUÉE — un réglage silencieusement faux, exactement
+            # le mode de panne que ce fichier existe pour supprimer.
+            print(f'export {k}="{v}"')
     else:
         print(f"{p.name}: floor={p.starvation_floor_ticks:.0f} ticks, "
               f"meals needed={p.meals_needed:.2f}, ray step={p.ray_step_deg:.2f} deg")
