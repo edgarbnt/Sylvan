@@ -7,7 +7,9 @@ impressions. Chaque anomalie ci-dessous est vérifiée sur le checkpoint vivant.
 
 ---
 
-## A1. Le latent est EFFONDRÉ et NE PORTE PAS L'OBJET ⛔ (mesuré)
+## A1. ⚠️ CORRIGÉ LE 2026-07-24 — voir l'encadré en fin de section
+
+## A1 (énoncé initial, TROP FORT). Le latent est EFFONDRÉ et NE PORTE PAS L'OBJET (mesuré)
 
 | mesure | valeur |
 |--------|--------|
@@ -22,8 +24,37 @@ perdant l'information discriminante** — VICReg existe exactement pour l'empêc
 (« JEPA jette délibérément l'imprévisible ») : **rejetée**, la position de la nourriture est la chose
 la plus prédictible et la plus centrale de la tâche. C'est un vrai effondrement partiel.
 
-**Conséquence** : tout module lisant le latent est condamné. Cela explique d'un coup le critique
-latent MC (corr −0,325) et le critique latent TD (+0,047).
+### ⚠️ CORRECTION MESURÉE (2026-07-24) — l'énoncé ci-dessus était TROP FORT
+
+La sonde initiale visait la **position précise du slot**, et seulement à la profondeur 80. En
+décomposant proprement (sondes linéaire ET MLP, à plusieurs profondeurs) :
+
+| lu dans le latent, à la profondeur 0 | R² held-out |
+|--------------------------------------|-------------|
+| rétine entière | **+0,798** |
+| rétine SANS les rayons bouffe | +0,737 |
+| **rayons bouffe seulement** | **+0,572** (MLP +0,595) |
+| **« y a-t-il de la bouffe en vue »** | **+0,593** (MLP +0,630) |
+| position PRÉCISE du slot | +0,046 |
+
+Et la dégradation le long du rêve (« bouffe en vue ») :
+profondeur 0 → **0,556** ; 20 → 0,304 ; 40 → 0,254 ; **79 → 0,160**.
+
+**Énoncé CORRIGÉ de A1** : le latent porte la **PRÉSENCE et l'APPARENCE** de l'objet (R² ≈ 0,6 à la
+profondeur 0 — donc potentiellement l'indice de maturité), mais **PAS ses coordonnées précises**
+(R² ≈ 0,05) ; et cette information **se dégrade d'un facteur 3,5 le long du rollout open-loop**
+(0,556 → 0,160). Les rayons bouffe pèsent 35 % de la variance de la rétine : l'objet n'est pas un
+détail négligeable que JEPA jetterait légitimement.
+
+**Conséquence RÉVISÉE, et elle est actionnable** : les critiques latents n'ont pas échoué parce que
+l'information est absente, mais parce qu'ils la lisaient **au pire endroit** — le latent TERMINAL
+(profondeur 80), là où il n'en reste que 0,16. C'est aussi le mécanisme de l'effondrement à H=300.
+
+⇒ La forme correcte n'exige NI ré-entraînement du substrat NI lecture de la rétine brute :
+**V(latent à t=0, slot terminal)** — l'état FIABLE du world-model (perception à t0, qui porte la
+scène et l'apparence) combiné à ce que le candidat OBTIENT géométriquement. C'est la forme Q(s,a) de
+TD-MPC, les deux entrées sont l'état du WM (donc architecturalement pur), et le latent y apporte ce
+que `-min_dist` ne voit pas.
 
 ---
 
