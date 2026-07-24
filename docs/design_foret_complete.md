@@ -262,6 +262,87 @@ prétendre qu'ils sont intelligents.
   décide de la navigabilité. À traiter comme de l'ingénierie, en le mesurant (pénétrations = 0), sans
   le compter comme un gain d'apprentissage.
 
+### 2.12 L'EAU — état réel, et à quelle condition elle vaut le coup
+
+**Constat honnête : on n'avait RIEN décidé.** Les presets bosquets n'ont **aucune clé** eau/soif, et
+la soif est mesurée **constante à 0** dans le corpus. L'eau a disparu quand le projet est passé aux
+bosquets. La machinerie existe pourtant et dort : slot-2 (requête bleue), coût multi-drive,
+`wm_objcentric_s2` promu.
+
+⚠️ **La remettre TELLE QUELLE serait « linéaire »** : l'arbitrage faim/soif est déjà tranché par un
+coût analytique pondéré par l'urgence, et le **critique d'arbitrage appris a ÉCHOUÉ au G3** — exactement
+comme les quatre leviers du 2026-07-24. Une deuxième pulsion n'ajoute pas de difficulté non-dérivable,
+elle ajoute une dimension à une formule qui la gère déjà. (Historique : le multi-drive était « LE MUR »,
+l'agent mourait de faim campé sur l'eau.)
+
+**Décision (owner, 2026-07-24)** : remettre l'eau sous forme de **FLAQUES** — plusieurs points d'eau
+dispersés, à **retenir** (donc utiles à la mémoire), et dont la disponibilité **varie**. C'est la
+variabilité, pas la deuxième pulsion, qui porte la valeur d'apprentissage : on retombe alors sur la
+famille « qualité inconnue » (§2.7c), la seule avec l'arbitraire à avoir passé le filtre.
+
+### 2.12bis ⭐ RÈGLE GÉNÉRALE SUR L'INCERTITUDE (vaut pour TOUT ce qu'on ajoutera)
+
+> **L'incertitude doit être OBSERVABLE et GRADUELLE, jamais instantanée et cachée.**
+
+Preuve déjà payée : la **relocalisation aléatoire** des baies crée bien de la conséquence (33 %) mais
+le WM **ne peut pas la représenter** — le transport du slot suppose l'objet immobile, et un WM
+déterministe prédit une *espérance* là où il faudrait des futurs énumérables (MoP-JEPA, anomalie A4).
+On a donc fabriqué une difficulté que le modèle est structurellement incapable d'anticiper.
+
+- ✅ **BON format** : une flaque qui **rétrécit visiblement**, une baie qui **se ternit** en vieillissant.
+  Le WM peut l'encoder (progressif, perceptible) et l'agent doit quand même se souvenir et anticiper.
+- ❌ **MAUVAIS format** : un saut aléatoire, une disparition instantanée, une valeur retirée au hasard.
+
+⚠️ Même piège pour les COULEURS (§2.8) : stable par objet, variable dans la population. Le principe
+est le même — **prévisible localement, informatif globalement**.
+
+### 2.13 VITESSE ET DURÉE DE VIE — la calibration (chiffres mesurés)
+
+| grandeur | valeur MESURÉE |
+|---|---|
+| vitesse du corps | **0,011 m/tick = 0,79 km/h** |
+| traverser l'arène (22 m) | 2000 ticks = **67 % d'une vie entière** |
+| éventail de vitesse offert au planner | `vx_grid = (0.55, 0.65, 0.75)` → bande de **±15 %** |
+| événements par vie | **1 à 2 repas** |
+| loup réel, trot / sprint | ~8-10 / ~50-60 km/h → **12× / 70×** notre vitesse |
+
+**Deux problèmes distincts sont visibles là-dedans.**
+
+**(a) Le choix de vitesse est un choix de FAÇADE.** Une bande de ±15 % ne peut pas porter de décision.
+**Décision (owner)** : ouvrir un **éventail LARGE** — marcher / trotter / sprinter, comme un vrai loup.
+Couplé à un **coût énergétique croissant**, sprinter devient un **pari** : dépenser de l'énergie contre
+une chance d'attraper. Quand attaquer dépend alors de la distance, de l'énergie restante, de la vitesse
+de la proie et d'une **probabilité de réussite incertaine** ⇒ encore la famille « qualité inconnue ».
+Bonus : la portée d'imagination devient VARIABLE — au sprint, les mêmes 80 ticks de rêve couvrent bien
+plus de terrain, donc la prévoyance s'étend automatiquement quand l'agent va vite.
+
+**(b) La bonne métrique n'est pas le temps, c'est le nombre d'ÉVÉNEMENTS par vie.** À 1-2 repas, il n'y
+a aucune place pour « j'investis maintenant, ça rapporte plus tard » : ni la mémoire, ni le choix de
+site, ni la tanière n'ont de sens à cette échelle. C'est aussi la cause directe de la famine de données
+(25 repas sur 20 vies). **Cible : 10 à 30 événements par vie.**
+Deux leviers, de coûts très différents : allonger les épisodes coûte du calcul **linéairement**
+(3000 → 12000 ticks = 4× la collecte) ; élargir la vitesse est **gratuit** et règle en plus la portée
+et la taille du monde. ⇒ **priorité à la vitesse**, allonger les épisodes seulement en complément.
+
+**⚠️ Note sur « accélérer la collecte »** : ce n'est PAS la même question. Augmenter le pas de
+simulation dégraderait la résolution physique et changerait ce que le WM apprend. La bonne façon
+d'accélérer une collecte est le **parallélisme** (plusieurs Godot), que le projet sait déjà faire.
+
+---
+
+## 2ter. ⛔ À DÉCIDER AVANT LA COLLECTE (liste bloquante)
+
+Tout ce qui change **ce que le WM apprend** doit entrer dans la MÊME collecte. Décider après = un
+second retrain, c'est-à-dire l'architecture axée-ressource que le §3 interdit.
+
+1. **Le regard indépendant** — ajoute une dimension de proprioception.
+2. **L'éventail de vitesse** — change la dynamique du corps.
+3. **Le tapi** — change la dynamique ET la signature perceptive de l'agent.
+4. **Les couleurs variables** (tout, pas seulement la nourriture) — c'est le fix du verrou A1.
+5. **Les objets mobiles** — pour que le prédicteur apprenne une dynamique externe.
+6. **L'occlusion** — sinon aucune mémoire ne pourra s'y brancher plus tard.
+7. **La taille de l'arène** — elle dépend de (2), donc à trancher ensemble.
+
 ---
 
 ## 3. LIMITES MESURÉES — non négociables
