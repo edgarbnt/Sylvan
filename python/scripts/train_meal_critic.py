@@ -29,7 +29,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from sylvan.critic_corpus import (auc, episode_split, load_bc_corpus, meal_flags,
+from sylvan.critic_corpus import (auc, episode_split, load_bc_corpora, meal_flags,
                                   residual_label, token)
 from sylvan.models.command_wm import CommandWorldModel
 
@@ -62,7 +62,7 @@ class MealCritic(nn.Module):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--corpus", default="data/replay_buffer/critic_bosq_a")
+    ap.add_argument("--corpus", nargs="+", default=["data/replay_buffer/critic_bosq_a"])
     ap.add_argument("--wm", default="data/checkpoints/wm_objcentric_kin/wm_best.pt")
     ap.add_argument("--out", default="data/checkpoints/meal_critic")
     ap.add_argument("--k", type=int, default=200)
@@ -73,7 +73,7 @@ def main() -> None:
     torch.manual_seed(args.seed)                      # A/B non reproductible = A/B inutile
     torch.set_num_threads(1)
 
-    obs, energy, _cmds, bounds = load_bc_corpus(args.corpus)
+    obs, energy, _cmds, bounds = load_bc_corpora(args.corpus)
     n_ep = len(bounds) - 1
     print(f"corpus {args.corpus} : {len(energy)} ticks, {n_ep} épisodes")
 

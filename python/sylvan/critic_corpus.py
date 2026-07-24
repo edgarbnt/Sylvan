@@ -12,6 +12,7 @@ la faim courante).
 """
 from __future__ import annotations
 
+import gzip
 import json
 import math
 from pathlib import Path
@@ -36,7 +37,12 @@ def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, torch.
     """
     path = Path(path)
     proprio, retina, energy, torso, cmd = [], [], [], [], []
-    with open(path / "ep_0000.jsonl") as fh:
+    # Le corpus est GZIPPÉ après collecte (un gros corpus tient sinon difficilement sur le disque).
+    # On accepte les deux formes : sinon un corpus compressé est illisible ICI et le trainer conclut
+    # « rien à apprendre », indiscernable d'un vrai négatif (piège déjà rencontré dans le projet).
+    plain, gz = path / "ep_0000.jsonl", path / "ep_0000.jsonl.gz"
+    opener = (lambda: open(plain)) if plain.exists() else (lambda: gzip.open(gz, "rt"))
+    with opener() as fh:
         for line in fh:
             r = json.loads(line)
             proprio.append(r["obs"]["proprio"])
@@ -54,6 +60,24 @@ def load_bc_corpus(path: Path | str) -> tuple[torch.Tensor, torch.Tensor, torch.
     step = (t[1:, :2] - t[:-1, :2]).norm(dim=1)
     bounds = [0] + [int(i) + 1 for i in torch.nonzero(step > TELEPORT_M).flatten()] + [len(e)]
     return obs, e, torch.tensor(cmd, dtype=torch.float32), bounds
+
+
+def load_bc_corpora(paths: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    """Concatène plusieurs corpus en décalant les bornes d'épisodes.
+
+    La collecte se fait par TRANCHES (pic disque non compressé réduit, gzip entre chaque) ; il faut
+    donc pouvoir entraîner sur l'union. Les bornes sont recalculées avec un offset — sinon les labels
+    « repas dans K ticks » fuiraient d'un corpus à l'autre.
+    """
+    obs_l, e_l, c_l, bounds, off = [], [], [], [0], 0
+    for p in paths:
+        o, e, c, b = load_bc_corpus(p)
+        obs_l.append(o)
+        e_l.append(e)
+        c_l.append(c)
+        bounds += [x + off for x in b[1:]]
+        off += len(e)
+    return torch.cat(obs_l), torch.cat(e_l), torch.cat(c_l), bounds
 
 
 def meal_flags(e: torch.Tensor, bounds: list[int]) -> torch.Tensor:

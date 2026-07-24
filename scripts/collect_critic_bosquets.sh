@@ -9,7 +9,7 @@ ROOT=/home/edgarbrunet/Documents/PERSO/SylvanV1; cd "$ROOT"
 NEP=${1:-20}; SEED=${2:-1}; TAG=${3:-a}; PORT=${4:-6440}
 WM=data/checkpoints/wm_objcentric_kin/wm_best.pt
 OUT="data/replay_buffer/critic_bosq_${TAG}"; rm -rf "$OUT"
-WE=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset bosquets_v3_perish --env | sed 's/^export //' | tr '\n' ' ')
+WE=$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset ${PRESET:-bosquets_v3_perish} --env | sed 's/^export //' | tr '\n' ' ')
 FOV=$(echo "$WE" | tr ' ' '\n' | grep '^SYLVAN_RETINA_FOV_DEG=' | cut -d= -f2)
 export GODOT_BIN="$(pwd)/tools/godot/godot"
 pkill -9 -f "serve_planner_command.*$PORT" 2>/dev/null; sleep 1
@@ -31,6 +31,7 @@ env $WE SYLVAN_CPG=1 SYLVAN_RESIDUAL_GAIN=0.4 SYLVAN_TURN_FADE=0 SYLVAN_FOOT_FRI
 kill -9 $SRV 2>/dev/null; pkill -9 -f "serve_planner_command.*$PORT" 2>/dev/null
 rm -rf /tmp/critbosq_run_${TAG}
 NL=$(wc -l < "$OUT/ep_0000.jsonl" 2>/dev/null || echo 0)
+gzip -f "$OUT/ep_0000.jsonl"   # disque serre : le loader lit .gz aussi bien que le clair
 echo "corpus BC -> $OUT ($NL replans loggés, ep0)"
 du -sh "$OUT" 2>/dev/null
 echo "ALL_DONE_CRITBOSQ" > /tmp/critcol_done.txt

@@ -32,14 +32,14 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from sylvan.critic_corpus import auc, load_bc_corpus, meal_flags, residual_label
+from sylvan.critic_corpus import auc, load_bc_corpora, meal_flags, residual_label
 from sylvan.models.command_wm import CommandWorldModel
 from sylvan.models.value_head import ValueHead
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--corpus", default="data/replay_buffer/critic_bosq_a")
+    ap.add_argument("--corpus", nargs="+", default=["data/replay_buffer/critic_bosq_a"])
     ap.add_argument("--wm", default="data/checkpoints/wm_objcentric_kin/wm_best.pt")
     ap.add_argument("--out", default="data/checkpoints/latent_critic")
     ap.add_argument("--k", type=int, default=200)
@@ -53,7 +53,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     torch.set_num_threads(1)
 
-    obs, energy, cmds, bounds = load_bc_corpus(args.corpus)
+    obs, energy, cmds, bounds = load_bc_corpora(args.corpus)
     ate = meal_flags(energy, bounds)
     y_all = residual_label(ate, bounds, args.k)
     n_ep = len(bounds) - 1
