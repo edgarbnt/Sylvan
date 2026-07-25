@@ -52,6 +52,34 @@ def _auc(score: torch.Tensor, label: torch.Tensor) -> float:
     return float("nan") if np_ == 0 or nn_ == 0 else (rk[l == 1].sum().item() - np_ * (np_ + 1) / 2) / (np_ * nn_)
 
 
+def _nearest_food_hue(obs, proprio_dim, n_ray=36):
+    """Cible de la PRESSION SUR L'ENCODEUR : teinte normalisée du rayon NOURRITURE le plus proche.
+
+    POURQUOI CETTE TÊTE EXISTE (verrou A1, décision owner 2026-07-25 : la perception doit être
+    APPRISE, pas contournée par un détecteur codé-main). Mesuré : l'encodeur ne porte PAS le type
+    (33,3 % contre 27,3 % de majorité) alors que la teinte est 100 % séparable dans la RÉTINE.
+    Cause retenue : l'apparence est prédictivement INERTE — quasi constante par objet, et elle ne
+    compte qu'au contact (313 événements sur 122 215 ticks = 0,26 %). Prédire son propre latent sans
+    apparence est donc une solution PARFAITE du JEPA, et rien ne donne à l'encodeur un gradient qui
+    la valorise. Cette tête fournit ce gradient manquant.
+
+    ⚠️ CE QU'ELLE EST, ET CE QU'ELLE N'EST PAS. La cible est dérivée de la RÉTINE elle-même (rien
+    d'un état caché du monde) : c'est un décodage auto-supervisé, pas un oracle. Mais la GRANDEUR à
+    décoder, elle, est choisie à la main — c'est donc une EXPÉRIENCE qui répond à « l'encodeur PEUT-il
+    porter l'apparence sous pression ? », pas encore le chemin pur. Le chemin pur ferait venir la
+    pression de la CONSÉQUENCE vécue (§6ter). Ne pas confondre les deux : la tête n'est pas sauvée.
+    """
+    ret = obs[..., proprio_dim:proprio_dim + 4 * n_ray].reshape(*obs.shape[:-1], n_ray, 4)
+    depth, rgb = ret[..., 0], ret[..., 1:4]
+    norm = rgb.norm(dim=-1)
+    unit = rgb / (norm.unsqueeze(-1) + 1e-6)
+    is_food = (unit[..., 0] > 0.55) & (norm > 1e-3)          # même critère que le slot (cône rouge)
+    d = torch.where(is_food, depth, torch.full_like(depth, 9e9))
+    nearest = d.argmin(dim=-1)
+    tgt = torch.gather(unit, -2, nearest[..., None, None].expand(*unit.shape[:-2], 1, 3)).squeeze(-2)
+    return tgt, is_food.any(dim=-1).float()
+
+
 def _nearest_hit_bearing(obs, proprio_dim, n_ray=36):
     """Cible COLOR-AGNOSTIC (§3) pour la perte clé-de-voûte : bearing égocentrique du PLUS PROCHE objet perçu,
     dérivé de la rétine de l'obs (36 rayons × [depth,R,G,B] ; miss → depth≈1.0). Convention = food_rel0/atan2 :
@@ -67,10 +95,10 @@ def _nearest_hit_bearing(obs, proprio_dim, n_ray=36):
 
 def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5, weights=None,
               latent_loss_mode="mse", vicreg=(0.0, 0.0, 1.0), w_food=0.0, w_rollout=0.0, w_bearing=0.0,
-              w_bearing_tf=0.0, mirror=None):
+              w_bearing_tf=0.0, mirror=None, w_hue=0.0, hue_head=None):
     training = optimizer is not None
     model.train(training)
-    sums = {k: 0.0 for k in ("loss", *LOSS_KEYS, "food", "rollout", "bearing", "bearing_tf")}
+    sums = {k: 0.0 for k in ("loss", *LOSS_KEYS, "food", "rollout", "bearing", "bearing_tf", "hue")}
     health_sums = {k: 0.0 for k in HEALTH_KEYS}
     food_scores, food_labels = [], []
     count = 0
@@ -115,6 +143,17 @@ def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5
             vicreg_gamma=vicreg[2],
         )
         total = losses["loss"]
+        # PRESSION SUR L'ENCODEUR (A1) : la teinte doit être DÉCODABLE depuis la sortie de l'encodeur.
+        # On attaque l'encodeur DIRECTEMENT (et pas le latent RSSM) parce que la mesure a localisé la
+        # perte là : encodeur 33,3 %, latent 29,7 %, majorité 27,3 %.
+        hue_loss = torch.zeros((), device=device)
+        if w_hue > 0.0 and hue_head is not None:
+            tgt_hue, hue_mask = _nearest_food_hue(obs, PROPRIO_DIM)
+            pred_hue = hue_head(model.encoder(obs))
+            pred_hue = pred_hue / (pred_hue.norm(dim=-1, keepdim=True) + 1e-6)
+            hue_loss = (((pred_hue - tgt_hue) ** 2).sum(-1) * hue_mask).sum() / (hue_mask.sum() + 1e-6)
+            if training:
+                total = total + w_hue * hue_loss
         food_loss = torch.zeros((), device=device)
         rollout_loss = torch.zeros((), device=device)
         bearing_loss = torch.zeros((), device=device)
@@ -172,6 +211,7 @@ def run_epoch(model, loader, device, optimizer=None, scheduled_sampling_prob=0.5
         sums["rollout"] += float(rollout_loss)
         sums["bearing"] += float(bearing_loss)
         sums["bearing_tf"] += float(bearing_tf_loss)
+        sums["hue"] += float(hue_loss)
         if not training:  # repr-health is a val-only diagnostic (no_grad), BLUEPRINT §13
             for k, v in representation_health(outputs["latents"]).items():
                 health_sums[k] += v
@@ -225,6 +265,11 @@ def main() -> None:
     ap.add_argument("--mirror-augment", action="store_true", help="AUGMENTATION MIROIR gauche↔droite : double "
                     "chaque batch avec sa version miroitée → le WM apprend la symétrie sagittale du corps (fix "
                     "PROPRE de l'asymétrie du rêve, supprime le besoin de la béquille d'inférence). WM-rétine 277.")
+    ap.add_argument("--w-hue", type=float, default=0.0,
+                    help="PRESSION SUR L'ENCODEUR (verrou A1) : poids d'une tête auxiliaire qui décode "
+                         "la teinte de la proie visée DEPUIS LA SORTIE DE L'ENCODEUR. Cible dérivée de "
+                         "la rétine (auto-supervisé, aucun état caché). Tête NON sauvée : c'est une "
+                         "pression d'entraînement, pas un composant du WM.")
     ap.add_argument("--proprio-dim", type=int, default=DEFAULT_PROPRIO_DIM,
                     help="Dimension de proprioception du CORPUS : 132, ou 133 quand le REGARD était "
                          "actif à la collecte (SYLVAN_GAZE=1). Se trompe ici et la rétine est lue "
@@ -285,7 +330,19 @@ def main() -> None:
         miss_non_food = [k for k in missing if not k.startswith(("food_head", "bearing_head"))]
         print(f"[train_wm_command] WARM-START depuis {args.init_from} "
               f"(missing hors food_head={len(miss_non_food)}, unexpected={len(unexpected)})")
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # La tête de teinte vit HORS du modèle (comme food_head/bearing_head : une pression, pas un
+    # composant) mais ses paramètres doivent être optimisés AVEC lui, sinon elle reste aléatoire et
+    # la perte ne dit rien de l'encodeur.
+    hue_head = None
+    params = list(model.parameters())
+    if args.w_hue > 0.0:
+        latent_dim = model.encoder.net[-1].out_features if hasattr(model.encoder, "net") else 128
+        hue_head = torch.nn.Sequential(torch.nn.Linear(latent_dim, 128), torch.nn.SiLU(),
+                                       torch.nn.Linear(128, 3)).to(device)
+        params += list(hue_head.parameters())
+        print(f"[train_wm_command] PRESSION ENCODEUR (A1) active : w_hue={args.w_hue} "
+              f"(tête {latent_dim}->128->3, NON sauvée)")
+    optimizer = torch.optim.Adam(params, lr=args.lr)
 
     mirror = None
     if args.mirror_augment:
@@ -322,15 +379,19 @@ def main() -> None:
     best_val = float("inf")
     for epoch in range(args.epochs):
         t0 = time.time()
-        tr = run_epoch(model, train_loader, device, optimizer, weights=weights,
+        tr = run_epoch(model, train_loader, device, optimizer, weights=weights, w_hue=args.w_hue, hue_head=hue_head,
                        latent_loss_mode=args.latent_loss, vicreg=vicreg, w_food=args.w_food,
                        w_rollout=args.w_rollout, w_bearing=args.w_bearing, w_bearing_tf=args.w_bearing_tf, mirror=mirror)
-        va = run_epoch(model, val_loader, device, weights=weights,
+        va = run_epoch(model, val_loader, device, weights=weights, w_hue=args.w_hue, hue_head=hue_head,
                        latent_loss_mode=args.latent_loss, vicreg=vicreg, w_food=args.w_food,
                        w_rollout=args.w_rollout, w_bearing=args.w_bearing, w_bearing_tf=args.w_bearing_tf)
         line = " ".join(f"{k}={va[k]:.4f}" for k in ("loss", *LOSS_KEYS))
         if args.w_rollout > 0.0:
             line += f" rollout={va['rollout']:.4f}"
+        # La perte de teinte DOIT être visible : sans elle on ne peut pas distinguer « l'encodeur
+        # résiste » de « la tête n'a pas convergé », et on lirait un A1 plat sans savoir pourquoi.
+        if args.w_hue > 0.0:
+            line += f" hue={va['hue']:.4f}"
         if args.w_food > 0.0:
             line += f" food={va['food']:.4f} food_auc={va.get('food_auc', float('nan')):.3f}"
         if args.w_bearing > 0.0:
