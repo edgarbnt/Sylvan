@@ -433,6 +433,23 @@ class _PlannerService:
         proprio = payload.get("proprio")
         if not isinstance(proprio, list):
             raise TypeError("request must contain proprio")
+        # REGARD : le corps peut envoyer une proprioception PLUS LONGUE que celle du WM servi (133
+        # avec SYLVAN_GAZE=1, contre 132 pour tout WM entraîné avant le regard). On TRONQUE ici, à
+        # l'unique point d'entrée, plutôt que dans chacun des trois consommateurs en aval (obs du WM,
+        # entrée du résidu, mise à jour de la mémoire) — un seul endroit à ne pas oublier.
+        #
+        # POURQUOI C'EST CORRECT ET NON UNE MUTILATION : l'angle de tête est APPENDÉ EN DERNIER par
+        # _rebuild_proprioception, précisément pour que les 132 premières dimensions gardent leur
+        # indice historique (des lecteurs pointent des indices en dur). La troncature rend donc
+        # exactement la proprioception d'avant le regard, bit pour bit.
+        # POURQUOI ÇA NE COÛTE RIEN AU PLAN : le planner choisit (vx, ω) — il ne commande pas la
+        # tête, et le WM servi n'a de toute façon jamais appris la dynamique du regard. Pendant une
+        # COLLECTE, le regard est exploré par son propre flux de bruit dédié (G3), indépendamment du
+        # planner : la capacité est donc bien dans les données même si le planificateur l'ignore.
+        # C'est ce qui débloque la part-planner d'une collecte à regard actif, sans laquelle le
+        # corpus serait du babillage pur — mesuré DÉGÉNÉRÉ (0 repas, la matrice refuse le corpus).
+        if len(proprio) > self.proprio_dim:
+            proprio = proprio[:self.proprio_dim]
         radar = list(payload.get("vision") or [])
         fine = list(payload.get("vision_fine") or [])
         retina = list(payload.get("retina") or [])  # RÉTINE étage 1 : rayons couleur bruts (144)

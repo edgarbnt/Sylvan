@@ -207,7 +207,13 @@ CONTRACT: list[Clause] = [
     Clause("SYLVAN_THIRST_DRAIN", "drain de soif", 0.15, "homeostasis.gd passive_thirst_drain",
            _m_drain_t, "approx", "/tick",
            why="la symétrie des deux drains est la condition d'un arbitrage propre"),
-    Clause("SYLVAN_FOOD_ENERGY", "restore d'un repas (absorbé)", 40.0, "food_manager.gd energy_per_food",
+    # 🚨 NOM CORRIGÉ (2026-07-25) : la clause interrogeait `SYLVAN_FOOD_ENERGY`, or Godot lit
+    # `SYLVAN_<PREFIX>_ENERGY_PER` (food_manager.gd:259) et le preset émet `SYLVAN_FOOD_ENERGY_PER`.
+    # La clause opposait donc TOUJOURS le défaut du code (40) à la mesure, quelle que soit la valeur
+    # demandée : elle ne pouvait structurellement PAS vérifier ce réglage, et criait « au-dessus du
+    # plafond » dès qu'on servait un repas plus gros. Un vérificateur qui lit la mauvaise variable est
+    # exactement le mensonge que cet outil existe pour supprimer.
+    Clause("SYLVAN_FOOD_ENERGY_PER", "restore d'un repas (absorbé)", 40.0, "food_manager.gd energy_per_food",
            _m_restore_e, "plafond", "pts", tol=0.02,
            why="l'absorbé est écrêté par le plafond 100 : il DOIT rester sous le nominal"),
     Clause("SYLVAN_KIN_SPEED", "vitesse du corps", 0.8, "sylvan_agent.gd kin_speed",
