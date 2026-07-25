@@ -46,16 +46,54 @@ quand les dégâts durent les ~110 ticks passés dans la zone — si bien que *t
 Deux voies possibles, à trancher par l'owner : autoriser **plusieurs clusters par drive**, ou compter
 les **événements** de dégât au lieu des ticks.
 
+## 3bis. Verrou A1 — étapes 1 et 2 du chemin owner, FAITES (2026-07-25)
+
+**Étape 1 — le risque « sonder au mauvais endroit » était RÉEL, deux fois.** La sonde lisait
+`predicted_latents[:,0]`, qui n'est pas la sortie de l'encodeur mais `to_latent(GRU(encoder(obs)))`
+— déjà passé par le goulot récurrent ; et elle étiquetait avec la palette **v7** au lieu de celle
+servie. Corrigé : deux sites rendus, palette choisie sur le corpus (foret_v1, cos 1,0000).
+
+| site | LINÉAIRE | MLP | majorité |
+|---|---|---|---|
+| **ENCODEUR** | 30,4 % | **33,3 %** | 27,3 % |
+| LATENT RSSM | 27,2 % | 29,7 % | 27,3 % |
+
+⇒ C'est la **perception** qui jette l'apparence ; le récurrent finit le travail.
+
+**Étape 2 — l'expérience gratuite répond NON.** Tête auxiliaire décodant la teinte depuis la sortie
+de l'encodeur (cible dérivée de la rétine, `--w-hue`, tête non sauvée) :
+
+| pression | encodeur (MLP) |
+|---|---|
+| w_hue = 0 | 33,3 % |
+| w_hue = 5 | 35,7 % |
+| w_hue = 50 | **37,3 %** |
+
+Une pression **10× plus forte n'achète que +1,6 pt**. Ça sature très loin des 70 %.
+
+**Trois alternatives écartées par la mesure** (pas par l'argument) :
+1. le gradient atteint bien l'encodeur (`total.backward()` inclut le terme, tête dans l'optimiseur) ;
+2. ce n'est **pas** la SÉLECTION (mon argmin sur les rayons) : la sonde sans sélection
+   « le type k est-il PRÉSENT ? » est aussi au hasard (62-64 % pour des bases 59-73 %) ;
+3. ce n'est **pas** un effondrement : rang effectif **38,0/128** (encodeur), **45,3/128** (latent) —
+   mieux que le 34/128 cité dans les notes du projet.
+
+⇒ **L'encodeur a la capacité, reçoit le gradient, et n'alloue rien à l'apparence.** Le levier n'est
+donc pas une tête de décodage. Restent les pistes nommées par l'owner : pression venant de la
+**VALEUR/CONSÉQUENCE** (value-aware model learning, représentations reward-predictive), ou un
+encodeur à **ATTENTION** — le slot y arrive, lui, parce qu'il lit la rétine par attention
+géométrique explicite au lieu d'un MLP dense.
+
 ## 4. Ce que je recommande
 
-1. **Ne pas relancer un cycle collecte+retrain sur une intuition** (§1). Le prochain pas utile est un
-   test *gratuit* de l'hypothèse « absence de pression » : entraîner une tête auxiliaire type→latent,
-   ou un run long avec reconstruction rétine, et re-mesurer A1. Si le latent peut porter le type sous
-   pression, c'est l'objectif qu'il faut changer, pas le monde.
-2. **Décider si le critique a besoin du type DANS le latent.** La perception typée qui marche
-   aujourd'hui (`wm_objcentric_kin_typed`) passe par le **slot**, qui lit la rétine et *contourne*
-   l'encodeur. Si le critique peut lire le slot, A1 cesse d'être bloquant.
-3. Le reste du monde est prêt : si A1 se règle, la collecte et le retrain se rejouent tels quels.
+1. **La tête de décodage est réfutée — ne pas la re-tenter plus fort.** Le sweep 0/5/50 sature.
+2. **Piste ATTENTION (la plus étayée par nos propres données).** Le slot lit la même rétine et y
+   trouve la couleur sans peine ; un MLP dense n'y arrive pas. Un encodeur à attention sur les rayons
+   (au lieu d'un MLP sur 278 dims concaténées) est la différence architecturale exacte entre ce qui
+   marche et ce qui échoue chez nous. Testable sans re-collecte.
+3. **Piste VALEUR/CONSÉQUENCE** (value-aware model learning) : faire dépendre la perte de la valeur,
+   pas seulement de l'état suivant. Plus proche du north-star §6ter, plus coûteux à bâtir.
+4. Le reste du monde est prêt : si A1 se règle, la collecte et le retrain se rejouent tels quels.
 
 ## 5. Outils ajoutés cette session
 
