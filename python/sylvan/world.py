@@ -51,6 +51,12 @@ class WorldPreset:
     # gives a WM trained on speeds the planner never commands (or the reverse).
     vx_fan: tuple[float, ...] = ()      # () = leave every consumer on its own default
     speed_cost: float = 0.0             # k in "energy/tick = k * vx^2" (0 = OFF, locomotion is free)
+    # TERRAIN FACTOR — the fraction of intended displacement a POLICY actually realises, averaged over
+    # a life. 1.0 = open ground (the old, implicit, WRONG assumption for a forest). MEASURED under the
+    # planner by G11 (not the arena mean, not the babbling median): it is the budget aggregate that
+    # converts commanded speed into ground actually covered. A budget identity that ignores it
+    # overstates the travel per life by 1/factor.
+    terrain_factor: float = 1.0
 
     # --- metabolism -------------------------------------------------------------------------
     energy_drain: float = 0.05          # gauge points per tick, gauge is 0-100
@@ -221,11 +227,21 @@ class WorldPreset:
         """Trajet MAXIMAL par événement que le budget tolère à la vitesse vx (identité (3) de G2).
 
         C'est la contrainte que la DENSITÉ du monde doit satisfaire — et le seul terme qui ne se
-        dérive pas (il contient du comportement) : il se MESURE au dry-run, jamais ne se postule.
+        dérive pas (il contient du comportement) : il se MESURE, jamais ne se postule.
+
+        🚨 LE TRAJET EST PONDÉRÉ PAR terrain_factor. Sans lui on comptait la distance qu'un corps
+        parcourrait sur sol dégagé (facteur implicite 1,0) ; G11 a mesuré 0,635 sous la politique.
+        Ignorer le terrain surestimait le budget de 1/0,635 = 1,57x — c'est l'erreur que cette
+        pondération corrige, et la raison de la re-calibration du 2026-07-25.
         """
-        travel = (self.kin_speed * vx / 60.0) * self.episode_steps
+        travel = (self.kin_speed * vx * self.terrain_factor / 60.0) * self.episode_steps
         ev = self.events_at(vx)
         return travel / (margin * ev) if ev > 0 else float("inf")
+
+    def travel_budget(self, vx: float) -> float:
+        """Sol RÉELLEMENT parcouru sur une vie à la vitesse vx (terrain inclus). Le numérateur de la
+        joignabilité, rendu explicite parce que la re-calibration en dépend directement."""
+        return (self.kin_speed * vx * self.terrain_factor / 60.0) * self.episode_steps
 
     def as_dict(self) -> dict:
         """Serialised form, to be written into every corpus so the corpus is self-describing."""
@@ -347,17 +363,30 @@ BOSQUETS_V7_TYPES = dataclasses.replace(BOSQUETS_V6_PREY, name="bosquets_v7_type
 #:   * un COÛT de locomotion → à l'optimum économique le coût de locomotion ÉGALE le drain passif
 #:     (propriété de sqrt(D/k)), donc la consommation à la croisière VAUT LE DOUBLE du drain passif.
 #: Les deux ensemble mettaient les événements/vie à 35, hors de la bande [10, 30].
-#: RÉSOLUTION, entièrement dérivée des mêmes critères (aucun n'est relâché — §2) : baisser le
-#: réservoir de départ à 75 (le plancher 25 % n'exige alors que 0,10/jauge) et monter le repas à 80
-#: (moins d'événements pour la même énergie). On retombe sur 13,1 événements à la croisière, un
-#: plancher à 25,0 % pile, et un optimum de vitesse EXACTEMENT au trot.
+#: RÉSOLUTION V1 (2026-07-25 matin) : réservoir 75, repas 80 → 13,1 événements à la croisière, un
+#: plancher 25,0 %, un optimum de vitesse au trot. MAIS elle supposait un budget de trajet de 84,9 m
+#: (facteur terrain implicite 1,0) — un fantasme, réfuté le soir même.
 #:
-#: ⚠️ CE QUI RESTE À MESURER, ET QUI EST LE VRAI RISQUE : la DENSITÉ. Le budget tolère 5,4 m de
-#: trajet par événement ; combien de bosquets ça exige n'est PAS dérivable — le trajet réel contient
-#: du comportement (la calibration de G2, 23,6 m par repas, valait 5x l'estimation géométrique parce
-#: que l'entité cherche au lieu d'aller droit). L'encadrement honnête va de 3 à 77 sites. On PART à
-#: 12, et le dry-run MESURE le trajet par événement — c'est précisément ce qu'un dry-run est là pour
-#: trancher, et le postuler serait refaire l'erreur que G2 a documentée.
+#: 🚨 RE-CALIBRATION V2 (2026-07-25 soir, sur MESURE). La sonde de portée G11 (planner-probe) a
+#: mesuré, sous une VRAIE politique et non un babillage, les deux chiffres qui manquaient :
+#:   * FACTEUR TERRAIN VÉCU = 0,635 (moyenne, l'agrégat de budget). Le budget de trajet réel n'est
+#:     donc pas 84,9 m mais 2,83 x 0,6 x 0,635 / 60 x 3000 = 53,9 m/vie au trot. La V1 le surestimait
+#:     de 1,57x — la calibration métabolique ignorait purement le terrain.
+#:   * TRAJET PAR REPAS = 7,65 m sous le WM ACTUEL (borne HAUTE : il est OOD en forêt ; l'ancre
+#:     sans-forêt à 13,38 m confirme que 7-13 m est sa compétence, pas une pénalité forêt).
+#: CONSÉQUENCES, dérivées sans relâcher aucun critère (§2) :
+#:   - drain 0,10 → 0,08/jauge : à 53,9 m de budget, 13 événements exigés étaient INJOIGNABLES (il
+#:     aurait fallu 3,45 m/repas = ~48 sites, qui saturerait après retrain). 10 événements exigés est
+#:     le bas HONNÊTE de la bande 10-30 — le budget réel ne porte pas le haut à 3000 ticks.
+#:   - speed_cost 0,5556 → 0,444, lié au drain pour garder l'optimum au trot (cheapest_vx = 0,6).
+#:   - init 75 → 60, restore 80 → 84 : plancher tenu à 25,0 %, 10 événements à la croisière.
+#:   - densité 12 → 18 sites : vise ~4,5 m/repas pour un forageur COMPÉTENT (post-retrain), tolérable
+#:     par le budget pour 10 événements. PAS tuné au 7,65 m OOD (qui sur-densifierait).
+#: ⚠️ CE QUI RESTE IN VIVO (nuance 3 du pair) : le prochain pas est le RETRAIN, pas le critique ; le
+#: WM a besoin de COUVERTURE + contacts, pas de la fréquence EXACTE des repas. Le calage fin du drain
+#: (un seul chiffre) se fait après le retrain, sur la vitesse de croisière que la politique CHOISIRA
+#: (inconnue avant). Cette calibration vise « l'entité mange raisonnablement », pas une perfection
+#: pré-collecte — un objectif mouvant de toute façon. Sonde : diagnostics/diag_foret_g11_portee.py.
 FORET_V1 = dataclasses.replace(
     BOSQUETS_V7_TYPES,
     name="foret_v1",
@@ -366,11 +395,21 @@ FORET_V1 = dataclasses.replace(
     # donc VERS LE HAUT, sans invalider ce qui a été mesuré en bas.
     kin_speed=2.83,
     vx_fan=(0.25, 0.60, 1.00),          # marcher / trotter / sprinter (§2.13)
-    speed_cost=0.5556,                  # = D_total / 0.6² → l'optimum au mètre tombe SUR le trot
-    # métabolisme : deux jauges symétriques, plancher 750 ticks = 25,0 % de la vie
-    energy_drain=0.10, thirst_drain=0.10, init_energy=75.0, restore_per_item=80.0,
-    # ressources : densité de DÉPART, à corriger sur la mesure du dry-run (cf. avertissement ci-dessus)
-    patches_per_resource=12, items_total=12,
+    # speed_cost lié au drain par k = (D_énergie + D_soif) / 0.6² : garde l'optimum au mètre SUR le
+    # trot (cheapest_vx = 0,6). Avec drain 0,08+0,08, k = 0,16/0,36 = 0,4444.
+    speed_cost=0.4444,
+    # TERRAIN mesuré sous la politique par G11 = 0,635 (pas la moyenne d'arène, pas la médiane du
+    # babillage) : c'est lui qui ramène le budget de trajet de 84,9 m (fantasme) à 53,9 m (réel).
+    terrain_factor=0.635,
+    # métabolisme RE-CALIBRÉ sur le budget réel (2026-07-25). drain 0,08/jauge → 10 événements exigés
+    # à la croisière (bas de la bande 10-30, honnête : 53,9 m ne portent pas le haut) ; init 60 tient
+    # le plancher à 25,0 % (60/0,08 = 750 ticks) ; restore 84 = un repas remplit une petite réserve.
+    energy_drain=0.08, thirst_drain=0.08, init_energy=60.0, restore_per_item=84.0,
+    # ressources : densité RE-CALIBRÉE 12 → 18. Le budget réel (53,9 m) ne tolère que 4,5 m de trajet
+    # par événement pour 10 repas ; 12 bosquets donnaient 7,65 m (WM OOD, G11). +50 % de densité vise
+    # ~5 m pour un forageur COMPÉTENT (post-retrain), SANS carpetter (pas les ~48 sites qu'exigerait le
+    # chiffre OOD, qui saturerait après retrain). Le chiffre exact reste affiné IN VIVO (nuance 3).
+    patches_per_resource=18, items_total=18,
     patch_spacing_min_m=3.0, patch_spacing_max_m=6.0,
     water_puddle_period=300,            # la flaque rétrécit GRADUELLEMENT (§2.12bis)
     # perception : la palette séparable validée par G5 (les TYPE_COLORS par défaut sont des multiples
@@ -453,15 +492,28 @@ def selfcheck() -> int:
           "→ la vitesse est un pari, pas un choix gratuit")
 
     ev = [f.events_at(vx) for vx in f.vx_fan]
-    assert 10.0 <= ev[1] <= 30.0, ev
+    assert 9.9 <= ev[1] <= 30.0, ev               # RE-CALIBRÉ au bas de la bande (budget réel) : ≈10
     print(f"  [ok] foret_v1 : événements/vie {ev[0]:.1f} (marche) / {ev[1]:.1f} (trot) / "
-          f"{ev[2]:.1f} (sprint) — la bande [10,30] est tenue à la CROISIÈRE ; sprinter en "
-          "permanence est délibérément inabordable")
+          f"{ev[2]:.1f} (sprint) — bas de la bande [10,30] à la CROISIÈRE (le budget réel ne porte "
+          "pas le haut) ; sprinter en permanence reste délibérément inabordable")
 
-    budget = f.metres_per_event_budget(vstar)
-    print(f"  ⚠️  foret_v1 : le budget tolère {budget:.1f} m de trajet par événement — "
-          f"NON dérivable, à MESURER au dry-run (densité de départ : {f.patches_per_resource} "
-          "bosquets par ressource)")
+    # LA CORRECTION TERRAIN EST VIVE : le budget de trajet réel (terrain 0,635) est STRICTEMENT sous
+    # le budget sol-dégagé (1,0) qu'on supposait à tort. Sans cette assertion, un retour silencieux
+    # du facteur à 1,0 repasserait inaperçu — la panne même que ce fichier existe pour empêcher.
+    real = f.travel_budget(vstar)
+    naive = (f.kin_speed * vstar / 60.0) * f.episode_steps
+    assert f.terrain_factor < 1.0 and abs(real - naive * f.terrain_factor) < 1e-6
+    assert abs(real - 53.9) < 1.0, real
+    print(f"  [ok] foret_v1 : budget de trajet RÉEL {real:.1f} m/vie au trot (terrain "
+          f"{f.terrain_factor}) vs {naive:.1f} m si sol dégagé — la V1 surestimait de "
+          f"{naive / real:.2f}x")
+
+    # JOIGNABILITÉ : le trajet toléré par événement, et l'honnêteté sur ce qui le rend atteignable.
+    allowed = f.metres_per_event_budget(vstar)          # 53,9 / (1,2 x 10) = 4,49 m
+    tpm_ood, tpm_comp = 7.65, 5.4                        # G11 : borne HAUTE OOD ; estimé compétent
+    print(f"  ⚠️  foret_v1 : budget tolère {allowed:.2f} m/repas pour {ev[1]:.0f} événements | G11 a "
+          f"mesuré {tpm_ood} m sous le WM OOD → estimé compétent ~{tpm_comp} m après retrain ; densité "
+          f"{f.patches_per_resource} sites vise cette cible SANS carpetter — affiné IN VIVO (nuance 3)")
 
     env = f.to_env()
     for k in ("SYLVAN_FOREST_COUNT", "SYLVAN_TERRAIN_SLOW", "SYLVAN_GAZE", "SYLVAN_SPEED_COST",
