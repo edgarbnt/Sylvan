@@ -88,6 +88,9 @@ def main() -> None:
     wm = CommandWorldModel(
         obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
         predictor_arch=meta.get("predictor_arch", "shallow"),
+        # L'architecture d'encodeur se LIT dans la meta : la reconstruire au défaut ferait échouer le
+        # chargement sur un WM à attention, ou pire, sonderait un modèle différent de celui entraîné.
+        retina_attention=meta.get("retina_attention", False),
         with_slot=True, slot_resources=meta.get("slot_resources", 1),
     )
     wm.load_state_dict(pl["model"])

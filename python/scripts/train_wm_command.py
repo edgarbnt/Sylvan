@@ -265,6 +265,10 @@ def main() -> None:
     ap.add_argument("--mirror-augment", action="store_true", help="AUGMENTATION MIROIR gauche↔droite : double "
                     "chaque batch avec sa version miroitée → le WM apprend la symétrie sagittale du corps (fix "
                     "PROPRE de l'asymétrie du rêve, supprime le besoin de la béquille d'inférence). WM-rétine 277.")
+    ap.add_argument("--retina-attention", action="store_true",
+                    help="ENCODEUR À ATTENTION PAR RAYON (verrou A1). Le MLP dense servi jusqu'ici "
+                         "ne peut PAS lire une couleur par rayon : mesuré 41,5 %% contre 99,0 %% pour "
+                         "l'attention, à tâche isolée et avec MOINS de paramètres. Défaut OFF.")
     ap.add_argument("--w-hue", type=float, default=0.0,
                     help="PRESSION SUR L'ENCODEUR (verrou A1) : poids d'une tête auxiliaire qui décode "
                          "la teinte de la proie visée DEPUIS LA SORTIE DE L'ENCODEUR. Cible dérivée de "
@@ -317,6 +321,7 @@ def main() -> None:
     obs_dim = train_ds.episodes[0]["obs"].shape[-1]
     model = CommandWorldModel(
         obs_dim=obs_dim, proprio_dim=PROPRIO_DIM, predictor_arch=args.predictor_arch,
+        retina_attention=args.retina_attention,
         with_food_head=args.w_food > 0.0,
         with_bearing_head=args.w_bearing > 0.0 or args.w_bearing_tf > 0.0,
     ).to(device)
@@ -365,6 +370,7 @@ def main() -> None:
     meta = {
         "obs_dim": obs_dim,
         "proprio_dim": PROPRIO_DIM,
+        "retina_attention": args.retina_attention,
         "seq_len": args.seq_len,
         "val_episodes": [str(p) for p in val_eps],
         "loss_weights": weights,

@@ -18,7 +18,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from .encoders import ProprioEncoder
+from .encoders import ProprioEncoder, RetinaAttentionEncoder
 from .heads import DoneHead, MetricsPredictionHead, ProprioPredictionHead
 from .perception_head import RETINA_DIM
 from .rssm import SimpleRSSM
@@ -56,6 +56,7 @@ class CommandWorldModel(nn.Module):
         predictor_arch: str = "shallow",
         with_food_head: bool = False,
         with_bearing_head: bool = False,
+        retina_attention: bool = False,
         with_slot: bool = False,
         slot_resources: int = 1,
     ) -> None:
@@ -65,7 +66,15 @@ class CommandWorldModel(nn.Module):
         self.obs_dim = obs_dim
         self.proprio_dim = proprio_dim
         self.predictor_arch = predictor_arch
-        self.encoder = ProprioEncoder(obs_dim, hidden_dim, latent_dim)
+        # ENCODEUR : dense (historique) ou ATTENTION PAR RAYON (verrou A1). Opt-in — le défaut
+        # reste STRICTEMENT l'ancien, pour que tous les checkpoints et chiffres existants tiennent.
+        # Mesure qui motive l'option, à tâche isolée : dense 41,5 % contre attention 99,0 % de
+        # lecture du type, l'attention ayant MOINS de paramètres (cf. RetinaAttentionEncoder).
+        if retina_attention:
+            self.encoder = RetinaAttentionEncoder(obs_dim, hidden_dim, latent_dim,
+                                                  retina_at=proprio_dim)
+        else:
+            self.encoder = ProprioEncoder(obs_dim, hidden_dim, latent_dim)
         self.rssm = SimpleRSSM(latent_dim, COMMAND_DIM, hidden_dim)
         # Phase B (BLUEPRINT §13): the latent predictor is the JEPA path. "deep" muscles it
         # (extra layer + LayerNorm) — the asymmetric predictor that, with the stop-grad target,
@@ -112,6 +121,7 @@ class CommandWorldModel(nn.Module):
         # l'ego-motion que le WM prédit (displacement-head) — équivariant par construction (cf plan §1). Composant du WM
         # → out["slot"], object-permanence possédée par le WM (plus la boucle trigo du planner). Optionnel → checkpoint
         # inchangé quand absent. slot_calib = (kfwd, klat, kyaw) : aligne la convention displacement↔repère slot.
+        self.retina_attention = retina_attention
         self.with_slot = with_slot
         self.slot_resources = slot_resources
         if with_slot:

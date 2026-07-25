@@ -84,6 +84,45 @@ donc pas une tête de décodage. Restent les pistes nommées par l'owner : press
 encodeur à **ATTENTION** — le slot y arrive, lui, parce qu'il lit la rétine par attention
 géométrique explicite au lieu d'un MLP dense.
 
+## 3ter. Piste ATTENTION testée — nécessaire, mais PAS suffisante (2026-07-25 nuit)
+
+**À tâche isolée, l'architecture EST le mur** (aucune perte WM en concurrence ; même corpus,
+découpe, largeur, graine, budget) :
+
+| lecture de la rétine | précision type | params |
+|---|---|---|
+| MLP dense (copie de l'encodeur du WM) | **41,5 %** | 104 320 |
+| **attention par rayon** | **99,0 %** | 92 545 |
+
+Moins de paramètres ⇒ ce n'est pas la capacité, c'est la **structure**.
+
+**Mais dans le WM, l'attention seule ne suffit pas.** Ré-entraîné avec `RetinaAttentionEncoder`
+sous l'objectif JEPA habituel : **30,4 %** à l'encodeur — pas mieux que le dense (33,3 %).
+
+⇒ **Conclusion corrigée** : l'architecture est **nécessaire** (le dense ne peut pas, même seul) mais
+**pas suffisante** (l'attention peut, et ne le fait pas si rien ne le lui demande). Les deux causes
+ne s'excluent pas.
+
+**L'expérience manquante est précisément identifiée** — les trois autres cases sont remplies :
+
+| | sans pression | avec pression (w_hue=50) |
+|---|---|---|
+| encodeur dense | 33,3 % | 37,3 % |
+| encodeur attention | 30,4 % | **← JAMAIS FAIT** |
+
+Commande, telle quelle (~35 min, aucune re-collecte) :
+
+```
+PYTHONPATH=python SYLVAN_WM_USE_RETINA=1 env_pytorch_3.12/bin/python -m scripts.train_wm_command \
+  --runs data/replay_buffer/foret_v1{,b,c}_{planner,babble,explore} \
+  --out data/checkpoints/wm_foret_attn_hue --proprio-dim 133 \
+  --retina-attention --w-hue 50 --epochs 20 --seq-len 64 --lr 1e-4 \
+  --w-latent 1.0 --w-proprio 0.0 --w-radar 0.0 --w-energy 20.0 --w-displacement 10.0 --w-done 1.0 \
+  --latent-loss cosine --vicreg-var 1.0 --vicreg-cov 1.0 --vicreg-gamma 1.0 \
+  --w-rollout 3.0 --predictor-arch shallow --mirror-augment
+```
+puis greffer le canal-slot et relancer `diag_latent_carries_type.py`.
+
 ## 4. Ce que je recommande
 
 1. **La tête de décodage est réfutée — ne pas la re-tenter plus fort.** Le sweep 0/5/50 sature.
