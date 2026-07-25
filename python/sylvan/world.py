@@ -94,6 +94,15 @@ class WorldPreset:
     distractor_count: int = 0           # animaux mobiles NON comestibles
     gaze: bool = False                  # tête mobile — porte la proprioception de 132 à 133
     water_puddle_period: int = 0        # ticks du cycle de rétrécissement d'une flaque (0 = OFF)
+    # DANGER — zones FIXES (§6quinquies B) : incluses comme STRUCTURE SPATIALE (elles contraignent
+    # les trajets comme les arbres), PAS comme levier d'apprentissage — « évite la zone marquée » est
+    # probablement dérivable, on n'en attend aucun gain côté critique. Le risque de BLESSURE à la
+    # chasse reste DIFFÉRÉ (échec P2-bis mesuré). Une TROISIÈME classe de conséquence perceptible
+    # (dégâts) est aussi ce qui rend les requêtes-couleur APPRENABLES par contingence — sans elle
+    # l'encodeur reste aveugle au vert et le verrou A2 ne peut pas tomber.
+    hazard_count: int = 0
+    hazard_engulf_p: float = 0.0        # part des zones qui engloutissent (vs simple contact)
+    health_regen: float = 0.0           # la santé redevient une économie cyclique, pas un budget
 
     # ----------------------------------------------------------------------------------------
     @property
@@ -191,6 +200,11 @@ class WorldPreset:
             env["SYLVAN_DISTRACTOR_COUNT"] = f"{self.distractor_count}"
         if self.gaze:
             env["SYLVAN_GAZE"] = "1"
+        if self.hazard_count > 0:
+            env["SYLVAN_HAZARD_COUNT"] = f"{self.hazard_count}"
+            env["SYLVAN_HAZARD_ENGULF_P"] = f"{self.hazard_engulf_p}"
+        if self.health_regen > 0.0:
+            env["SYLVAN_HEALTH_REGEN"] = f"{self.health_regen}"
         return env
 
     # ── IDENTITÉS DE L'ÉVENTAIL DE VITESSE (§2.13) ────────────────────────────────────────────
@@ -421,6 +435,11 @@ FORET_V1 = dataclasses.replace(
     terrain_slow=0.6, terrain_radius_m=2.5, terrain_floor=0.25,
     distractor_count=6,                 # ça bouge et ça ne se mange pas (§2.9)
     gaze=True,                          # proprio 132 → 133 : incompatible avec les checkpoints actuels
+    # DANGER : réglages du monde-danger déjà promu (2026-07-17). Il n'est PAS là pour ajouter une
+    # difficulté — il est là parce que la spec l'inclut (§6quinquies B) ET parce qu'une TROISIÈME
+    # conséquence perceptible est ce qui rend le lien apparence→conséquence apprenable : sans elle,
+    # les requêtes-couleur restent codées-main (verrou A2) et le tronc-brun survit au retrain.
+    hazard_count=1, hazard_engulf_p=0.5, health_regen=0.05,
 )
 
 
@@ -515,10 +534,19 @@ def selfcheck() -> int:
           f"mesuré {tpm_ood} m sous le WM OOD → estimé compétent ~{tpm_comp} m après retrain ; densité "
           f"{f.patches_per_resource} sites vise cette cible SANS carpetter — affiné IN VIVO (nuance 3)")
 
+    # LES TROIS CONSÉQUENCES doivent exister dans le monde COLLECTÉ, sinon l'encodeur reste aveugle à
+    # celle qui manque et le lien apparence→conséquence n'est pas apprenable pour elle (verrou A2 :
+    # build_typed_slots exige K=3 groupes et la bijection food→énergie / eau→soif / vert→dégâts).
+    assert f.hazard_count > 0 and f.thirst_drain is not None, \
+        "les 3 conséquences (nourrir / abreuver / blesser) doivent être servies dans la MÊME collecte"
+    print(f"  [ok] foret_v1 : 3 conséquences servies (nourriture, eau, danger x{f.hazard_count}) — "
+          "condition pour que les requêtes-couleur soient APPRENABLES (verrou A2)")
+
     env = f.to_env()
     for k in ("SYLVAN_FOREST_COUNT", "SYLVAN_TERRAIN_SLOW", "SYLVAN_GAZE", "SYLVAN_SPEED_COST",
               "SYLVAN_DISTRACTOR_COUNT", "SYLVAN_FOOD_TYPE_HUES", "SYLVAN_WATER_PUDDLE_PERIOD",
-              "SYLVAN_INIT_THIRST", "SYLVAN_WM_VX_MIN", "SYLVAN_PLANNER_VX_GRID"):
+              "SYLVAN_INIT_THIRST", "SYLVAN_WM_VX_MIN", "SYLVAN_PLANNER_VX_GRID",
+              "SYLVAN_HAZARD_COUNT", "SYLVAN_HEALTH_REGEN"):
         assert k in env, f"foret_v1 n'émet pas {k} — un corpus ne se décrirait pas lui-même"
     assert env["SYLVAN_INIT_THIRST"] == env["SYLVAN_INIT_ENERGY"]
     print(f"  [ok] foret_v1 : to_env() émet {len(env)} variables, dont les 9 briques de la forêt "
