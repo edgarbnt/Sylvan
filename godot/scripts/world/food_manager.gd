@@ -788,17 +788,19 @@ func _tick_regrowth() -> void:
 		_alive[i] = true
 		_regrow_at[i] = -1
 		_born_at[i] = _life_tick
-		# 🚨 LE TYPE N'EST PLUS RE-TIRÉ À LA REPOUSSE (2026-07-25) — opt-in SYLVAN_FOOD_TYPE_RESHUFFLE
-		# pour retrouver l'ancien comportement. Le re-tirage VIOLAIT la règle de conception §2.8 :
-		# « une couleur doit être STABLE pour un objet donné (prévisible dans le temps) et VARIER
-		# ENTRE objets et entre épisodes ». Re-tiré à chaque repousse, le type est du BRUIT du point
-		# de vue du prédicteur — et le design doc avait pré-inscrit la conséquence mot pour mot :
-		# « JEPA jette délibérément ce qui est IMPRÉVISIBLE [...] l'encodeur a RAISON de l'écraser.
-		# On reproduirait l'échec en croyant l'avoir corrigé. » C'est exactement ce qui a été mesuré
-		# après le premier retrain forêt : teinte 100 % séparable dans la RÉTINE, et 29,1 % au latent
-		# contre 27,3 % de majorité — l'encodeur l'écrasait, à raison.
-		# Le type reste tiré au hasard PAR BAIE à chaque épisode (ligne ~536) : il varie donc bien
-		# entre objets ET entre vies, ce que §2.8 demande, sans être imprévisible DANS une vie.
+		# TYPE STABLE PAR BAIE dans une vie (2026-07-25) — opt-in SYLVAN_FOOD_TYPE_RESHUFFLE pour
+		# l'ancien comportement. Applique la règle §2.8 : « stable pour un objet donné (prévisible dans
+		# le temps), variable ENTRE objets et entre épisodes ». Le type reste tiré par baie à chaque
+		# reset (ligne ~536), donc il varie bien entre objets ET entre vies.
+		#
+		# ⚠️ HONNÊTETÉ — CE CHANGEMENT N'A RIEN CORRIGÉ, ET LA MESURE L'A PROUVÉ. Je l'avais d'abord
+		# présenté comme LA cause de l'échec du gate A1 (type illisible dans le latent). C'était FAUX :
+		# la repousse est à 2500 ticks alors que la vie la plus longue du corpus fait 827 ticks — 0/450
+		# vies n'atteint une seule repousse, donc ce re-tirage n'a JAMAIS eu lieu et le type était DÉJÀ
+		# stable. Preuve indépendante : la re-collecte après ce changement a rendu EXACTEMENT le même
+		# total (122 215 ticks) — un no-op parfait. La cause d'A1 est donc AILLEURS. On garde le
+		# changement parce qu'il est JUSTE selon §2.8 pour un monde où la repousse arriverait dans une
+		# vie, pas parce qu'il aurait réparé quoi que ce soit.
 		if _n_types > 0 and i < _type_of.size() and _type_reshuffle:
 			_type_of[i] = _rng.randi() % _n_types
 		if not _patch_centres.is_empty():
