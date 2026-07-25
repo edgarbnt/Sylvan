@@ -138,6 +138,10 @@ const TYPE_COLORS := [Color(0.900, 0.300, 0.200), Color(0.648, 0.216, 0.144),
 var _n_types := 0               # 0 = OFF, bit-identique
 var _type_values: Array[float] = []   # multiplicateur de valeur nutritive PAR TYPE (arbitraire)
 var _type_of: Array[int] = []
+# Le type est-il RE-TIRÉ à chaque repousse ? Défaut FALSE = stable par baie dans une vie (règle
+# §2.8 : prévisible localement, informatif globalement). SYLVAN_FOOD_TYPE_RESHUFFLE=1 restaure
+# l'ancien comportement, pour pouvoir reproduire les corpus d'avant.
+var _type_reshuffle := false
 var _type_hues: Array[Color] = []     # palette SÉPARABLE opt-in (SYLVAN_<PREFIX>_TYPE_HUES) ; vide = TYPE_COLORS
 
 # ── FLAQUES (2026-07-24, docs/design_foret_complete.md §2.12 + §2.12bis) — OPT-IN _PUDDLE_PERIOD ──
@@ -256,6 +260,7 @@ func _ensure_built() -> void:
 	# marche aleatoire a derive nulle -> mort certaine, survie dominee par la VARIANCE (mesure :
 	# budget/cycle -1.9..+0.2, 46-51 % de cycles gagnants). Aucune competence ne peut s'y voir.
 	# Override opt-in ; defaut 40 INCHANGE (collecte WM et resultats passes intacts).
+	_type_reshuffle = OS.get_environment("SYLVAN_%s_TYPE_RESHUFFLE" % _prefix) == "1"
 	var _epf_env := OS.get_environment("SYLVAN_%s_ENERGY_PER" % _prefix)
 	if _epf_env != "":
 		energy_per_food = maxf(1.0, float(_epf_env))
@@ -783,8 +788,19 @@ func _tick_regrowth() -> void:
 		_alive[i] = true
 		_regrow_at[i] = -1
 		_born_at[i] = _life_tick
-		if _n_types > 0 and i < _type_of.size():
-			_type_of[i] = _rng.randi() % _n_types      # nouveau tirage : le type n'est pas figé à vie
+		# 🚨 LE TYPE N'EST PLUS RE-TIRÉ À LA REPOUSSE (2026-07-25) — opt-in SYLVAN_FOOD_TYPE_RESHUFFLE
+		# pour retrouver l'ancien comportement. Le re-tirage VIOLAIT la règle de conception §2.8 :
+		# « une couleur doit être STABLE pour un objet donné (prévisible dans le temps) et VARIER
+		# ENTRE objets et entre épisodes ». Re-tiré à chaque repousse, le type est du BRUIT du point
+		# de vue du prédicteur — et le design doc avait pré-inscrit la conséquence mot pour mot :
+		# « JEPA jette délibérément ce qui est IMPRÉVISIBLE [...] l'encodeur a RAISON de l'écraser.
+		# On reproduirait l'échec en croyant l'avoir corrigé. » C'est exactement ce qui a été mesuré
+		# après le premier retrain forêt : teinte 100 % séparable dans la RÉTINE, et 29,1 % au latent
+		# contre 27,3 % de majorité — l'encodeur l'écrasait, à raison.
+		# Le type reste tiré au hasard PAR BAIE à chaque épisode (ligne ~536) : il varie donc bien
+		# entre objets ET entre vies, ce que §2.8 demande, sans être imprévisible DANS une vie.
+		if _n_types > 0 and i < _type_of.size() and _type_reshuffle:
+			_type_of[i] = _rng.randi() % _n_types
 		if not _patch_centres.is_empty():
 			_positions[i] = _patch_berry_pos(i)
 			_meshes[i].global_position = _positions[i]

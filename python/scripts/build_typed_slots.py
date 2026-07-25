@@ -57,16 +57,26 @@ def scan_run(run: Path) -> dict:
     """Par tick avec ≥1 rayon touchant : rgbn + distance du PLUS PROCHE, classe dominante
     (oracle éval), les 3 conséquences vécues, et la rétine brute (échantillonnée, pour G-slot)."""
     recs = []
-    p = run / "ep_0000.jsonl.gz"
-    op = gzip.open(p, "rt", errors="ignore") if p.exists() else open(run / "ep_0000.jsonl",
-                                                                     errors="ignore")
-    for line in op:
-        try:
-            r = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        recs.append((r["wm"]["retina0"], float(r["obs"]["energy"]),
-                     float(r["obs"]["thirst"]), float(r["obs"]["health"])))
+    # DEUX dispositions sur disque, toutes deux légitimes : la collecte BC écrit UN `ep_0000.jsonl`,
+    # la collecte WM — celle qui alimente le retrain, donc celle sur laquelle on veut DÉCOUVRIR les
+    # requêtes — écrit UN FICHIER PAR ÉPISODE. Ne lire que la première faisait échouer cet outil sur
+    # le corpus même du nouveau monde, avec un FileNotFoundError qui ressemble à une erreur de
+    # chemin alors que le corpus est là.
+    fichiers = [f for f in (run / "ep_0000.jsonl.gz", run / "ep_0000.jsonl") if f.exists()]
+    if not fichiers:
+        fichiers = sorted([*run.glob("episode_*.jsonl"), *run.glob("episode_*.jsonl.gz")])
+    if not fichiers:
+        raise SystemExit(f"aucun ep_0000.jsonl ni episode_*.jsonl dans {run}")
+    for f in fichiers:
+        op = gzip.open(f, "rt", errors="ignore") if f.suffix == ".gz" else open(f, errors="ignore")
+        with op:
+            for line in op:
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                recs.append((r["wm"]["retina0"], float(r["obs"]["energy"]),
+                             float(r["obs"]["thirst"]), float(r["obs"]["health"])))
     rgbn, dist, dom, ys = [], [], [], {o: [] for o in OUTCOMES}
     ret_sample = []
     for i in range(len(recs) - 1):
