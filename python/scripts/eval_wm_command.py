@@ -51,8 +51,12 @@ def main() -> None:
 
     payload = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     meta = payload["meta"]
+    # L'architecture d'encodeur se LIT dans la meta. La reconstruire au défaut fait échouer le
+    # chargement sur un WM à attention — ou, pire si un jour les formes coïncidaient, évaluerait un
+    # modèle différent de celui entraîné.
     model = CommandWorldModel(obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
-                              predictor_arch=meta.get("predictor_arch", "shallow"))
+                              predictor_arch=meta.get("predictor_arch", "shallow"),
+                              retina_attention=meta.get("retina_attention", False))
     model.load_state_dict(payload["model"])
     model.eval()
 

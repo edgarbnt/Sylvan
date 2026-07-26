@@ -1,4 +1,4 @@
-# ÉTAT — monde-forêt : collecte et retrain faits, gate A1 échoué
+# ÉTAT — monde-forêt : collecte, retrain, et **verrou A1 LEVÉ**
 
 **Date** : 2026-07-25 · **Branche** : `feat/perception-consequence` · Rien n'est allé sur `main`.
 Session autonome (owner absent). Tout ce qui suit est **mesuré** ; les hypothèses sont étiquetées.
@@ -123,16 +123,47 @@ PYTHONPATH=python SYLVAN_WM_USE_RETINA=1 env_pytorch_3.12/bin/python -m scripts.
 ```
 puis greffer le canal-slot et relancer `diag_latent_carries_type.py`.
 
+## 3quater. 🎉 A1 LEVÉ — il fallait les DEUX leviers (2026-07-26)
+
+La case manquante était la bonne, et c'est une **interaction**, pas une addition :
+
+| encodeur | sans pression | pression w_hue=50 |
+|---|---|---|
+| dense (MLP) | 33,3 % | 37,3 % |
+| **attention par rayon** | 30,4 % | **99,7 %** |
+
+(linéaire 99,7 % / MLP 99,5 % ; majorité 27,3 % ; cible fixée à >70 %.)
+
+Aucun levier seul ne bougeait l'aiguille — tous ≈ hasard. Ensemble ils saturent. Le latent RSSM
+suit : **96,8 %** en linéaire, **99,5 %** en MLP (contre 29,7 % avant) — l'information traverse
+désormais le goulot récurrent.
+
+**✅ Non-régression : la dynamique ne paie rien, elle s'AMÉLIORE.**
+
+| horizon | WM dense | WM attention+pression |
+|---|---|---|
+| h=10 | 0,020 m | **0,011 m** |
+| h=50 | 0,199 m | **0,132 m** |
+| h=80 | 0,322 m | **0,236 m** |
+| yaw @50 | 0,5° | **0,2°** |
+
+Jalon @50 **ATTEINT**. Checkpoint : `wm_foret_attn_hue`.
+
+**⚠️ Ce que ça ne dit pas encore.** La pression vient d'une tête de décodage dont la GRANDEUR est
+choisie à la main (la teinte). C'est une perception **apprise** — aucun seuil cosinus codé-main,
+aucun oracle, la cible sort de la rétine — mais ce n'est pas encore une pression née de la
+**conséquence vécue**, qui reste le north-star §6ter. A2 (requêtes-slot apprises) reste ouvert.
+
 ## 4. Ce que je recommande
 
-1. **La tête de décodage est réfutée — ne pas la re-tenter plus fort.** Le sweep 0/5/50 sature.
-2. **Piste ATTENTION (la plus étayée par nos propres données).** Le slot lit la même rétine et y
-   trouve la couleur sans peine ; un MLP dense n'y arrive pas. Un encodeur à attention sur les rayons
-   (au lieu d'un MLP sur 278 dims concaténées) est la différence architecturale exacte entre ce qui
-   marche et ce qui échoue chez nous. Testable sans re-collecte.
-3. **Piste VALEUR/CONSÉQUENCE** (value-aware model learning) : faire dépendre la perte de la valeur,
-   pas seulement de l'état suivant. Plus proche du north-star §6ter, plus coûteux à bâtir.
-4. Le reste du monde est prêt : si A1 se règle, la collecte et le retrain se rejouent tels quels.
+1. **Promouvoir `wm_foret_attn_hue`** comme WM vivant du monde-forêt (A1 passé, dynamique meilleure).
+   Reste à faire avant promotion : re-greffer/rebâtir le canal-slot proprement et rejouer les gates
+   closed-loop (le foraging n'a pas encore été mesuré sur ce WM).
+2. **Remplacer la pression main par une pression de CONSÉQUENCE** (§6ter) : la teinte est aujourd'hui
+   une grandeur choisie ; le north-star est que le gradient vienne du vécu (value-aware model
+   learning). L'architecture à attention est désormais en place pour l'accueillir.
+3. **A2** (requêtes-slot apprises) : `build_typed_slots` exige K=3 alors que le monde sert 4 teintes
+   de nourriture → autoriser plusieurs clusters par drive, ou compter les événements de dégât.
 
 ## 5. Outils ajoutés cette session
 
