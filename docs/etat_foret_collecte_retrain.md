@@ -157,8 +157,16 @@ aucun oracle, la cible sort de la rétine — mais ce n'est pas encore une press
 ## 4. Ce que je recommande
 
 1. **Promouvoir `wm_foret_attn_hue`** comme WM vivant du monde-forêt (A1 passé, dynamique meilleure).
-   Reste à faire avant promotion : re-greffer/rebâtir le canal-slot proprement et rejouer les gates
-   closed-loop (le foraging n'a pas encore été mesuré sur ce WM).
+   Reste à faire avant promotion : canal-slot propre + gates closed-loop (le foraging n'a PAS encore
+   été mesuré sur ce WM). **Deux obstacles identifiés le 2026-07-26, à traiter dans cet ordre** :
+   - ⛔ `serve_planner_command.py:155` reconstruit le WM **sans** `retina_attention` → il ne peut pas
+     charger ce checkpoint. Même correctif d'une ligne que celui déjà appliqué à
+     `diag_latent_carries_type.py` et `eval_wm_command.py` (lire l'archi dans la meta). ~2 min.
+   - ⚠️ `train_slot_channel.py` attend une tête slot **SIMPLE** (`SelfSupervisedSlotHead`) alors que
+     `slot_head_multi` est **MULTI** (elle porte `color_queries` + `score.1.*`) : le chargement
+     échoue. Rencontré et contourné par une greffe le 2026-07-25 — mais la greffe reporte les
+     requêtes de l'ANCIEN monde. Trancher : réparer le script pour le multi-slot, ou assumer la
+     greffe en le disant. Coût du rebâtissement non mesuré (4000 itérations, estimation 10-25 min).
 2. **Remplacer la pression main par une pression de CONSÉQUENCE** (§6ter) : la teinte est aujourd'hui
    une grandeur choisie ; le north-star est que le gradient vienne du vécu (value-aware model
    learning). L'architecture à attention est désormais en place pour l'accueillir.
