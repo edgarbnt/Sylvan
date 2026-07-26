@@ -135,6 +135,35 @@ class CommandWorldModel(nn.Module):
             # pas une quantité à fitter. Buffer (non entraîné).
             self.register_buffer("slot_calib", torch.tensor([1.0, -1.0, -1.0]))
 
+    @classmethod
+    def from_checkpoint(cls, payload: dict, **overrides) -> "CommandWorldModel":
+        """Construit le modèle DÉCRIT PAR LE CHECKPOINT, puis charge ses poids.
+
+        POURQUOI CE RACCOURCI EXISTE. Une cinquantaine d'endroits construisent un CommandWorldModel à
+        la main en recopiant les clés du meta. Chaque fois qu'un champ d'architecture s'ajoute, ils
+        deviennent tous faux à la fois — c'est arrivé avec `retina_attention` : la sonde A1, l'éval
+        open-loop et le serveur planner reconstruisaient l'encodeur DENSE et refusaient de charger un
+        checkpoint à attention. L'échec est bruyant tant que les formes diffèrent ; le jour où elles
+        coïncideraient, on évaluerait SILENCIEUSEMENT un autre modèle que celui entraîné.
+
+        Les 47 autres sites ne sont volontairement PAS convertis : ils échouent fort et clair
+        aujourd'hui. Ce constructeur est là pour le code qui compte (serveur, évals, sondes) et pour
+        celui qu'on écrira demain — pas pour justifier une réécriture de masse à faible valeur.
+        """
+        meta = payload["meta"]
+        kwargs = dict(
+            obs_dim=meta["obs_dim"],
+            proprio_dim=meta["proprio_dim"],
+            predictor_arch=meta.get("predictor_arch", "shallow"),
+            retina_attention=meta.get("retina_attention", False),
+            with_slot=meta.get("with_slot", False),
+            slot_resources=meta.get("slot_resources", 1),
+        )
+        kwargs.update(overrides)
+        model = cls(**kwargs)
+        model.load_state_dict(payload["model"])
+        return model
+
     def encode_slot(self, obs: torch.Tensor) -> torch.Tensor:
         """obs [..., obs_dim] → slot food [..., 2] (x_right, z_fwd) depuis la tranche rétine (attention apprise)."""
         retina = obs[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]

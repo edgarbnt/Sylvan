@@ -152,11 +152,9 @@ class _PlannerService:
         self.proprio_dim = meta["proprio_dim"]
         # RÉTINE étage 2 : WM-rétine si l'obs = proprio ++ rétine(144) ++ énergie (277) au lieu de +radar(12).
         self.wm_uses_retina = (meta["obs_dim"] == meta["proprio_dim"] + RETINA_DIM + 1)
-        wm = CommandWorldModel(obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
-                               predictor_arch=meta.get("predictor_arch", "shallow"),
-                               with_slot=meta.get("with_slot", False),
-                               slot_resources=meta.get("slot_resources", 1))
-        wm.load_state_dict(payload["model"])
+        # L'architecture se LIT dans le meta (dont `retina_attention`) : sans ça le serveur
+        # reconstruisait l'encodeur DENSE et ne pouvait pas charger un WM à attention.
+        wm = CommandWorldModel.from_checkpoint(payload)
         wm.eval()
         # SLOT-2 : assignation slot→ressource (label-free, calculée au train) portée par le meta.
         wm.food_idx = meta.get("food_idx", 0)
