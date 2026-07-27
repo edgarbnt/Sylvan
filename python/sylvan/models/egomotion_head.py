@@ -63,7 +63,18 @@ class EgomotionHead(nn.Module):
     def predict(self, proprio: List[float]) -> Tuple[float, float, float]:
         """Interface déploiement.  proprio = liste de 132 floats.
         Retourne (dyaw, dfwd, dlat) en (rad, m, m)."""
-        if len(proprio) != self.PROPRIO_DIM:
+        # PLUS LONG = ON TRONQUE, plus court = on refuse (2026-07-26). Cette tête a été entraînée
+        # AVANT le regard, sur 132 dims ; le corps en envoie 133 quand SYLVAN_GAZE=1. Comme l'angle
+        # de tête est APPENDÉ EN DERNIER, tronquer rend exactement la proprioception d'entraînement,
+        # bit pour bit — et l'égomotion (dyaw, dfwd, dlat) ne dépend de toute façon pas du regard,
+        # qui ne déplace pas le corps.
+        # POURQUOI ÇA COMPTAIT : le refus levait une exception à CHAQUE tick, le serveur planner
+        # répondait par son « safe fallback » (vx=0,5, omega=0), et l'entité fonçait tout droit sans
+        # jamais tourner — 2132 erreurs sur un seul run du viewer, sans qu'aucun voyant ne s'allume
+        # côté Godot. Un composant optionnel qui échoue ne doit pas piloter le corps en silence.
+        if len(proprio) > self.PROPRIO_DIM:
+            proprio = proprio[:self.PROPRIO_DIM]
+        elif len(proprio) < self.PROPRIO_DIM:
             raise ValueError(
                 f"EgomotionHead.predict attend {self.PROPRIO_DIM} floats, reçu {len(proprio)}"
             )
