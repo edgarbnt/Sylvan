@@ -458,7 +458,12 @@ FORET_V1 = dataclasses.replace(
     # conséquence perceptible est ce qui rend le lien apparence→conséquence apprenable : sans elle,
     # les requêtes-couleur restent codées-main (verrou A2) et le tronc-brun survit au retrain.
     hazard_count=1, hazard_engulf_p=0.5, health_regen=0.05,
-    kin_body_extent=(1.024, 0.213),     # MESURÉ sur l'habillage (museau 1,024 m, demi-largeur 0,213 m)
+    # kin_body_extent VOLONTAIREMENT NON SERVI (owner, 2026-07-28). L'encombrement réel est mesuré
+    # (museau 1,024 m, demi-largeur 0,213 m) et le mécanisme est committé — mais l'activer coince le
+    # planner 43,9 % du temps et effondre le budget à 45 m/vie contre les 152 exigés. On garde donc
+    # le corps tel qu'il est CONÇU depuis le pivot cinématique — une sphère de 0,35 m — et c'est
+    # l'HABILLAGE qu'on recule pour qu'il cesse de traverser les troncs. Rien ne change côté
+    # dynamique, donc rien à re-mesurer ; le vrai volume attend un corps qui en aura besoin.
 )
 
 

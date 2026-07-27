@@ -906,8 +906,22 @@ func _setup_wolf() -> void:
 		var _front: float = _aabb.position.z + _aabb.size.z
 		print("[wolf] encombrement MESURE (repere torse) : largeur %.3f m, longueur %.3f m, hauteur %.3f m"
 			% [_aabb.size.x, _aabb.size.z, _aabb.size.y])
-		print("[wolf] museau a %.3f m devant le centre | KIN_SKIN=%.2f m -> depassement %.3f m dans l'obstacle"
-			% [_front, _KIN_SKIN, maxf(0.0, _front - _KIN_SKIN)])
+		# RECULE L'HABILLAGE pour que le MUSEAU tombe sur la limite de collision (2026-07-28).
+		# Le corps est CONÇU comme une sphere de _KIN_SKIN : il s'arrete a 0,35 m d'un obstacle. Le
+		# maillage, lui, projette son museau a 1,02 m du centre — on voyait donc 0,67 m de loup entrer
+		# dans les troncs. On ne touche PAS a la physique (l'encombrement reel coince le planner 43,9 %
+		# du temps, mesure) : on deplace le COSTUME.
+		# Le decalage est DERIVE de la mesure, jamais ecrit en dur : changer SYLVAN_WOLF_SCALE le
+		# recalcule tout seul, sinon la correction deviendrait fausse au premier reglage d'echelle.
+		# ⚠️ CE QU'ON ECHANGE, et il faut le dire : l'animal entier est desormais dessine ~0,67 m en
+		# arriere du point qu'il occupe — sa queue depasse derriere. On troque « le nez traverse » contre
+		# « le corps est decale ». Mettre SYLVAN_WOLF_NOSE_FIT=0 pour revoir l'ancien rendu.
+		var _fit := OS.get_environment("SYLVAN_WOLF_NOSE_FIT") != "0"
+		var _back: float = maxf(0.0, _front - _KIN_SKIN) if _fit else 0.0
+		if _back > 0.0:
+			wolf.transform = Transform3D(b, Vector3(0.0, yo, -_back))
+		print("[wolf] museau a %.3f m devant le centre | KIN_SKIN=%.2f m -> recul applique %.3f m, depassement final %.3f m"
+			% [_front, _KIN_SKIN, _back, maxf(0.0, _front - _back - _KIN_SKIN)])
 	# ÉCLAIRCIR le loup : teinte chaque matériau vers le blanc (SYLVAN_WOLF_LIGHTEN, 0=inchangé, 1=blanc).
 	# On duplique le matériau (pour ne pas modifier la ressource partagée) et on l'assigne en override.
 	var _li := OS.get_environment("SYLVAN_WOLF_LIGHTEN"); var lighten := _li.to_float() if _li != "" else 0.35
