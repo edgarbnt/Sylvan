@@ -74,9 +74,27 @@ func spend_locomotion(cost: float) -> void:
 	# paramètre effort_cost de apply_metabolism abîme la SANTÉ au-dessus de 0.9 (héritage des pattes) :
 	# y verser le coût de vitesse coupleraient silencieusement « sprinter » et « se blesser », deux
 	# mécaniques distinctes dont l'une (la blessure) est un chantier DIFFÉRÉ (§6quinquies B, échec
-	# P2-bis mesuré). On ne facture donc que l'énergie, et rien d'autre.
-	if cost > 0.0:
+	# P2-bis mesuré).
+	#
+	# 🚨 RÉPARTI SUR LES DEUX JAUGES (2026-07-26) — corrige un déséquilibre STRUCTUREL mesuré. Cette
+	# fonction ne débitait que l'ÉNERGIE, alors que la calibration du monde traitait le coût comme
+	# réparti sur les deux (D_total = énergie + soif). Conséquence mesurée au premier gate
+	# closed-loop : au trot l'énergie se vidait en 250 ticks quand la soif tenait 750 — rapport 3,0x,
+	# 6,6x au sprint — et l'entité mourait de FAIM 11 fois sur 12, la soif encore à 38-79.
+	# Courir donne faim ET soif : le coût est distribué AU PRORATA des drains passifs, de sorte que
+	# la somme prélevée vaut exactement `cost`. Les identités du preset (vx* = sqrt(D_total/k),
+	# événements par vie) redeviennent VRAIES au lieu d'être rapiécées.
+	# Mono-pulsion (soif désactivée) : tout va à l'énergie — sinon un monde sans soif encaisserait
+	# silencieusement une locomotion moitié prix, et ses chiffres cesseraient d'être comparables.
+	if cost <= 0.0:
+		return
+	if not thirst_enabled:
 		energy = maxf(0.0, energy - cost)
+		return
+	var total := passive_energy_drain + passive_thirst_drain
+	var share_e := 0.5 if total <= 0.0 else passive_energy_drain / total
+	energy = maxf(0.0, energy - cost * share_e)
+	thirst = maxf(0.0, thirst - cost * (1.0 - share_e))
 
 
 func restore_energy(amount: float) -> void:
