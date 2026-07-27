@@ -407,7 +407,15 @@ FORET_V1 = dataclasses.replace(
     # corps : l'éventail. vx=0.25 redonne 0.0118 m/tick = le corps d'AUJOURD'HUI (la marche reste le
     # régime déjà calibré) ; vx=1.0 donne 0.0472 m/tick = la cible du candidat D. L'éventail s'ouvre
     # donc VERS LE HAUT, sans invalider ce qui a été mesuré en bas.
-    kin_speed=2.83,
+    # kin_speed RELEVÉ 2,83 → 6,4 (2026-07-26, décision owner). Le budget de trajet est LINÉAIRE en
+    # kin_speed, et c'est exactement le facteur qui manquait : le premier gate closed-loop a mesuré
+    # 10,20 m de trajet par repas contre 4,49 m tolérés (dépassement 2,27x), donc un monde qui ne
+    # supportait que ~4,4 événements par vie là où §2.13 en demande 10-30. x2,26 sur la vitesse porte
+    # le budget de 53,9 m à ~122 m/vie au trot, soit 10 événements AU TRAJET MESURÉ — sans toucher à
+    # la densité (qui dégraderait le slot, erreur 1,43 m à 60 % d'occupation) ni aux drains ni à la
+    # cible. Le coût k·vx² est indépendant de kin_speed : les identités métaboliques restent vraies.
+    # ⚠️ La marche ne reproduit plus le corps historique (0,0267 m/tick au lieu de 0,0118).
+    kin_speed=6.4,
     vx_fan=(0.25, 0.60, 1.00),          # marcher / trotter / sprinter (§2.13)
     # speed_cost lié au drain par k = (D_énergie + D_soif) / 0.6² : garde l'optimum au mètre SUR le
     # trot (cheapest_vx = 0,6). Avec drain 0,08+0,08, k = 0,16/0,36 = 0,4444.
@@ -522,17 +530,17 @@ def selfcheck() -> int:
     real = f.travel_budget(vstar)
     naive = (f.kin_speed * vstar / 60.0) * f.episode_steps
     assert f.terrain_factor < 1.0 and abs(real - naive * f.terrain_factor) < 1e-6
-    assert abs(real - 53.9) < 1.0, real
+    assert abs(real - 121.9) < 2.0, real   # 6.4 x 0.6 x 0.635 / 60 x 3000
     print(f"  [ok] foret_v1 : budget de trajet RÉEL {real:.1f} m/vie au trot (terrain "
           f"{f.terrain_factor}) vs {naive:.1f} m si sol dégagé — la V1 surestimait de "
           f"{naive / real:.2f}x")
 
     # JOIGNABILITÉ : le trajet toléré par événement, et l'honnêteté sur ce qui le rend atteignable.
     allowed = f.metres_per_event_budget(vstar)          # 53,9 / (1,2 x 10) = 4,49 m
-    tpm_ood, tpm_comp = 7.65, 5.4                        # G11 : borne HAUTE OOD ; estimé compétent
-    print(f"  ⚠️  foret_v1 : budget tolère {allowed:.2f} m/repas pour {ev[1]:.0f} événements | G11 a "
-          f"mesuré {tpm_ood} m sous le WM OOD → estimé compétent ~{tpm_comp} m après retrain ; densité "
-          f"{f.patches_per_resource} sites vise cette cible SANS carpetter — affiné IN VIVO (nuance 3)")
+    TPM_MEASURED = 10.20   # trajet/repas MESURÉ, corpus planner poolé (remplace l'estimé G11)
+    print(f"  ⚠️  foret_v1 : budget tolère {allowed:.2f} m/repas pour {ev[1]:.0f} événements | MESURÉ "
+          f"sur corpus planner poolé (51 827 ticks, 126 repas) : {TPM_MEASURED} m — la marge est "
+          f"MINCE ({allowed / TPM_MEASURED:.2f}x), et c'est ce qui a dicté kin_speed 2,83 → 6,4")
 
     # LES TROIS CONSÉQUENCES doivent exister dans le monde COLLECTÉ, sinon l'encodeur reste aveugle à
     # celle qui manque et le lien apparence→conséquence n'est pas apprenable pour elle (verrou A2 :
