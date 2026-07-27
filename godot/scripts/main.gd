@@ -385,6 +385,17 @@ func _update_heading() -> void:
 				agent_instance._rebuild_proprioception()
 				print("[Godot] GAZE ON | tete mobile, retine decouplee du cap | rate=%.2f rad/s butee=+-%.0f deg | proprio 132->133"
 					% [agent_instance.gaze_rate, rad_to_deg(agent_instance.gaze_limit)])
+			# ENCOMBREMENT DU CORPS (2026-07-26) — opt-in, défaut OFF bit-identique. Déclaré ici
+			# parce que c'est une propriété du CORPS : il s'applique que l'habillage soit chargé ou
+			# non, sinon la collecte headless et le viewer serviraient deux mondes différents.
+			var _kbe := OS.get_environment("SYLVAN_KIN_BODY_EXTENT")
+			if _kbe != "":
+				var _p := _kbe.split(",")
+				if _p.size() == 2:
+					agent_instance.kin_half_len = maxf(0.0, _p[0].to_float())
+					agent_instance.kin_half_wid = maxf(0.0, _p[1].to_float())
+					print("[Godot] ENCOMBREMENT CORPS | demi-longueur %.3f m, demi-largeur %.3f m (avant : sphere %.2f m)"
+						% [agent_instance.kin_half_len, agent_instance.kin_half_wid, 0.35])
 			# ÉVENTAIL DE VITESSE (§2.13) — le coût énergétique CROISSANT qui fait du sprint un pari.
 			# OPT-IN, défaut 0 = OFF bit-identique. Ne s'applique qu'au corps CINÉMATIQUE (le seul
 			# promu) : c'est _kinematic_step qui calcule le coût du tick.

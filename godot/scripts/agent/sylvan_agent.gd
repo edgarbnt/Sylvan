@@ -734,6 +734,19 @@ func _com_metrics() -> Vector2:
 const _KIN_OBSTACLE_LAYER := 1 << 2       # doit égaler ObstacleManager.OBSTACLE_LAYER
 const _KIN_PROBE_HEIGHT := 0.4            # hauteur du rayon horizontal (dans [0, hauteur obstacle])
 const _KIN_SKIN := 0.35                   # marge d'arrêt avant la surface (~demi-corps) → pas de pénétration
+# ENCOMBREMENT RÉEL DU CORPS (2026-07-26) — opt-in SYLVAN_KIN_BODY_EXTENT, défaut OFF bit-identique.
+# _KIN_SKIN seul modélise une SPHÈRE de 0,35 m. Le corps rendu est un loup de 2,22 m de long pour
+# 0,43 m de large (MESURÉ) : son museau est à 1,024 m du centre, donc 0,674 m du maillage pénètre
+# l'arbre — ce que l'œil voit tout de suite. Élargir le scalaire à 1,02 corrigerait le museau et
+# rendrait le corps absurde de flanc (il s'arrêterait à 1 m d'un arbre qu'il LONGE).
+# On prend donc l'encombrement DANS LA DIRECTION DU MOUVEMENT : pour une boîte de demi-tailles
+# (hx, hz) et une direction d exprimée dans le repère du corps, extent = |d.x|·hx + |d.z|·hz (la
+# fonction d'appui de la boîte). Avant : 1,02 m. De côté : 0,21 m. Chaque cas est juste.
+# ⚠️ Ces demi-tailles sont une propriété DÉCLARÉE du CORPS, pas du décor : elles s'appliquent que
+# l'habillage loup soit chargé ou non. Sinon la collecte headless (sans loup) et le viewer (avec)
+# serviraient deux mondes différents — exactement le mensonge qu'on cherche à supprimer.
+var kin_half_len := 0.0                   # demi-longueur (avant/arrière) ; 0 = OFF → _KIN_SKIN seul
+var kin_half_wid := 0.0                   # demi-largeur (flancs)
 var _kin_block_count := 0          # nb de blocages effectifs (instrumentation)
 var _obstacle_mask := -1                  # -1 = pas encore lu ; 0 = pas d'obstacle dans ce run ; sinon la couche
 
@@ -746,8 +759,16 @@ func _kin_collide(from_pos: Vector3, to_pos: Vector3) -> Vector3:
 		return to_pos
 	var dir := motion / dist
 	var probe := Vector3(0.0, _KIN_PROBE_HEIGHT, 0.0)
+	# Marge d'arrêt = encombrement du corps dans la direction du mouvement (fonction d'appui de la
+	# boîte), ou la sphère historique quand l'encombrement n'est pas déclaré.
+	var skin := _KIN_SKIN
+	if kin_half_len > 0.0:
+		var fwd := (Basis(Vector3.UP, kin_yaw) * Vector3(0.0, 0.0, 1.0)).normalized()
+		var d_fwd: float = absf(dir.dot(fwd))
+		var d_lat: float = sqrt(maxf(0.0, 1.0 - d_fwd * d_fwd))
+		skin = d_fwd * kin_half_len + d_lat * kin_half_wid
 	var space := get_world_3d().direct_space_state
-	var q := PhysicsRayQueryParameters3D.create(from_pos + probe, to_pos + probe + dir * _KIN_SKIN)
+	var q := PhysicsRayQueryParameters3D.create(from_pos + probe, to_pos + probe + dir * skin)
 	q.collision_mask = _obstacle_mask
 	q.collide_with_bodies = true
 	q.collide_with_areas = false
@@ -761,7 +782,7 @@ func _kin_collide(from_pos: Vector3, to_pos: Vector3) -> Vector3:
 		print("[kin] blocage #%d contre la couche obstacle" % _kin_block_count)
 	var hit_pos: Vector3 = hit["position"]
 	var hit_dist := Vector2(hit_pos.x - from_pos.x, hit_pos.z - from_pos.z).length()   # distance horizontale
-	var allowed := maxf(0.0, hit_dist - _KIN_SKIN)                                       # s'arrête _KIN_SKIN avant
+	var allowed := maxf(0.0, hit_dist - skin)                                             # s'arrête `skin` avant
 	return from_pos + dir * minf(dist, allowed)
 
 
@@ -863,6 +884,30 @@ func _setup_wolf() -> void:
 	var b := Basis(Vector3.UP, yw).scaled(Vector3(sc, sc, sc))
 	wolf.transform = Transform3D(b, Vector3(0.0, yo, 0.0))
 	torso.add_child(wolf)
+	# ENCOMBREMENT RÉEL DU LOUP, MESURÉ ET LOGGÉ (§6bis). Sans ce chiffre, ajuster la collision du
+	# corps sur l'habillage revient à inventer une demi-largeur. Mesuré : l'union des AABB des
+	# maillages, ramenée dans le repère du torse (donc échelle du loup incluse).
+	var _aabb := AABB()
+	var _first := true
+	for _mi in wolf.find_children("*", "MeshInstance3D", true, false):
+		var _m: MeshInstance3D = _mi
+		if _m.mesh == null:
+			continue
+		var _box := _m.get_aabb()
+		# du repère du maillage vers celui du TORSE (le loup porte l'échelle)
+		var _rel := torso.global_transform.affine_inverse() * _m.global_transform
+		var _t := _rel * _box
+		_aabb = _t if _first else _aabb.merge(_t)
+		_first = false
+	if not _first:
+		# Le DÉPASSEMENT VERS L'AVANT est ce qui compte : la collision est un rayon parti du CENTRE du
+		# corps, qui s'arrete _KIN_SKIN avant la surface. Tout ce que le maillage projette au-dela de
+		# cette marge entre visuellement dans l'obstacle. +z = avant du corps.
+		var _front: float = _aabb.position.z + _aabb.size.z
+		print("[wolf] encombrement MESURE (repere torse) : largeur %.3f m, longueur %.3f m, hauteur %.3f m"
+			% [_aabb.size.x, _aabb.size.z, _aabb.size.y])
+		print("[wolf] museau a %.3f m devant le centre | KIN_SKIN=%.2f m -> depassement %.3f m dans l'obstacle"
+			% [_front, _KIN_SKIN, maxf(0.0, _front - _KIN_SKIN)])
 	# ÉCLAIRCIR le loup : teinte chaque matériau vers le blanc (SYLVAN_WOLF_LIGHTEN, 0=inchangé, 1=blanc).
 	# On duplique le matériau (pour ne pas modifier la ressource partagée) et on l'assigne en override.
 	var _li := OS.get_environment("SYLVAN_WOLF_LIGHTEN"); var lighten := _li.to_float() if _li != "" else 0.35

@@ -100,6 +100,11 @@ class WorldPreset:
     # chasse reste DIFFÉRÉ (échec P2-bis mesuré). Une TROISIÈME classe de conséquence perceptible
     # (dégâts) est aussi ce qui rend les requêtes-couleur APPRENABLES par contingence — sans elle
     # l'encodeur reste aveugle au vert et le verrou A2 ne peut pas tomber.
+    # ENCOMBREMENT DU CORPS (demi-longueur, demi-largeur) en mètres — () = sphère historique 0,35 m.
+    # MESURÉ sur l'habillage servi : museau à 1,024 m du centre, demi-largeur 0,213 m. Sans lui, le
+    # corps s'arrête 0,35 m avant un arbre alors que son maillage en projette 1,02 : on VOIT 0,674 m
+    # de loup entrer dans le tronc. C'est une propriété du CORPS, donc servie même sans habillage.
+    kin_body_extent: tuple = ()
     hazard_count: int = 0
     hazard_engulf_p: float = 0.0        # part des zones qui engloutissent (vs simple contact)
     health_regen: float = 0.0           # la santé redevient une économie cyclique, pas un budget
@@ -200,6 +205,8 @@ class WorldPreset:
             env["SYLVAN_DISTRACTOR_COUNT"] = f"{self.distractor_count}"
         if self.gaze:
             env["SYLVAN_GAZE"] = "1"
+        if self.kin_body_extent:
+            env["SYLVAN_KIN_BODY_EXTENT"] = ",".join(f"{v}" for v in self.kin_body_extent)
         if self.hazard_count > 0:
             env["SYLVAN_HAZARD_COUNT"] = f"{self.hazard_count}"
             env["SYLVAN_HAZARD_ENGULF_P"] = f"{self.hazard_engulf_p}"
@@ -451,6 +458,7 @@ FORET_V1 = dataclasses.replace(
     # conséquence perceptible est ce qui rend le lien apparence→conséquence apprenable : sans elle,
     # les requêtes-couleur restent codées-main (verrou A2) et le tronc-brun survit au retrain.
     hazard_count=1, hazard_engulf_p=0.5, health_regen=0.05,
+    kin_body_extent=(1.024, 0.213),     # MESURÉ sur l'habillage (museau 1,024 m, demi-largeur 0,213 m)
 )
 
 
@@ -586,11 +594,15 @@ def main() -> int:
      "perpetual_v0": PERPETUAL_V0, "foret_v1": FORET_V1}[a.preset]
     if a.env:
         for k, v in p.to_env().items():
-            # Guillemets OBLIGATOIRES : la palette de teintes contient des « ; », que le shell lit
-            # comme un séparateur de commandes. Sans eux, `eval "$(... --env)"` coupe la ligne en
-            # deux et la palette est servie TRONQUÉE — un réglage silencieusement faux, exactement
-            # le mode de panne que ce fichier existe pour supprimer.
-            print(f'export {k}="{v}"')
+            # GUILLEMETS SEULEMENT SI LA VALEUR EN A BESOIN. La palette de teintes contient des
+            # « ; », que le shell lit comme un séparateur de commandes : sans guillemets,
+            # `eval "$(... --env)"` coupe la ligne et sert une palette TRONQUÉE.
+            # Mais les citer TOUTES casse l'autre style de lecture, `sed 's/^export //' | tr` , que
+            # SIX harnais utilisent — ils recevaient alors `"120.0"` guillemets compris, et le
+            # serveur mourait sur un float illisible. Mesuré en lançant le viewer.
+            # On cite donc au strict nécessaire : les valeurs simples restent lisibles par les deux
+            # styles, et seules celles qui contiennent un caractère spécial exigent `eval`.
+            print(f'export {k}="{v}"' if any(c in v for c in ' ;"\'$&|<>()') else f'export {k}={v}')
     else:
         print(f"{p.name}: floor={p.starvation_floor_ticks:.0f} ticks, "
               f"meals needed={p.meals_needed:.2f}, ray step={p.ray_step_deg:.2f} deg")
