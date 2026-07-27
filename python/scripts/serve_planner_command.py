@@ -209,6 +209,7 @@ class _PlannerService:
                   f"la perception+permanence vient du WM, plus de coordonnée codée-main dans le planner")
         self.planner = CommandPlanner(wm, cfg)
         self.action_dim = config.env.action_dim  # 18 (hexapod); used by the TCP fallbacks below
+        self._residual_proprio_dim = config.env.policy_input_dim - VISION_DIM
         self.residual = GaussianActorCritic(
             obs_dim=config.env.policy_input_dim,
             hidden_dim=config.controller.hidden_dim,
@@ -645,7 +646,14 @@ class _PlannerService:
                     self._plan_fresh = False
                 self._bc_file.write(json.dumps(record) + "\n")
             vision = [float(vx), float(om)] + [0.0] * (VISION_DIM - 2)
-            res_in = torch.tensor(proprio + vision, dtype=torch.float32).unsqueeze(0)
+            # Le RÉSIDU a sa PROPRE dimension de proprioception (132), indépendante de celle du WM :
+            # il a été entraîné avant le regard. Avec SYLVAN_GAZE=1 le corps en envoie 133, et lui
+            # passer 145 au lieu de 144 fait planter le serveur au premier tick. On tronque à CE que
+            # le résidu attend — l'angle de tête est appendé EN DERNIER, donc la troncature rend
+            # exactement la proprioception sur laquelle il a été entraîné, bit pour bit. (Et en mode
+            # cinématique son action est de toute façon ignorée : le corps glisse sur la commande.)
+            res_proprio = proprio[:self._residual_proprio_dim]
+            res_in = torch.tensor(res_proprio + vision, dtype=torch.float32).unsqueeze(0)
             action = self.residual.mean(res_in)[0]
         action = torch.nan_to_num(action, nan=0.0, posinf=1.0, neginf=-1.0).clamp(-1.0, 1.0)
         return {"action": [float(v) for v in action.tolist()], "command": [float(vx), float(om)]}
