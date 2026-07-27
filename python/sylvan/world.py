@@ -414,8 +414,11 @@ FORET_V1 = dataclasses.replace(
     # le budget de 53,9 m à ~122 m/vie au trot, soit 10 événements AU TRAJET MESURÉ — sans toucher à
     # la densité (qui dégraderait le slot, erreur 1,43 m à 60 % d'occupation) ni aux drains ni à la
     # cible. Le coût k·vx² est indépendant de kin_speed : les identités métaboliques restent vraies.
-    # ⚠️ La marche ne reproduit plus le corps historique (0,0267 m/tick au lieu de 0,0118).
-    kin_speed=6.4,
+    # ⚠️ La marche ne reproduit plus le corps historique (0,0333 m/tick au lieu de 0,0118).
+    # RELEVÉ UNE SECONDE FOIS 6,4 → 8,0 (2026-07-26) pour prendre de la MARGE : à 6,4 le budget
+    # toléré (10,16 m/repas) égalait le trajet mesuré (10,20 m) — une marge de 1,00x, c'est-à-dire
+    # un cycle de 85 min joué à pile ou face. À 8,0 la tolérance passe à ~12,7 m, soit 1,25x.
+    kin_speed=8.0,
     vx_fan=(0.25, 0.60, 1.00),          # marcher / trotter / sprinter (§2.13)
     # speed_cost lié au drain par k = (D_énergie + D_soif) / 0.6² : garde l'optimum au mètre SUR le
     # trot (cheapest_vx = 0,6). Avec drain 0,08+0,08, k = 0,16/0,36 = 0,4444.
@@ -530,7 +533,7 @@ def selfcheck() -> int:
     real = f.travel_budget(vstar)
     naive = (f.kin_speed * vstar / 60.0) * f.episode_steps
     assert f.terrain_factor < 1.0 and abs(real - naive * f.terrain_factor) < 1e-6
-    assert abs(real - 121.9) < 2.0, real   # 6.4 x 0.6 x 0.635 / 60 x 3000
+    assert abs(real - 152.4) < 2.0, real   # 8.0 x 0.6 x 0.635 / 60 x 3000
     print(f"  [ok] foret_v1 : budget de trajet RÉEL {real:.1f} m/vie au trot (terrain "
           f"{f.terrain_factor}) vs {naive:.1f} m si sol dégagé — la V1 surestimait de "
           f"{naive / real:.2f}x")
