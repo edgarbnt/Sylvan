@@ -151,6 +151,13 @@ class WorldPreset:
             "SYLVAN_KIN_TURN": f"{self.kin_turn}",
             "SYLVAN_ENERGY_DRAIN": f"{self.energy_drain}",
             "SYLVAN_INIT_ENERGY": f"{self.init_energy}",
+            # gauge_max existait dans ce fichier depuis le début et n'était SERVI nulle part : le
+            # champ était muet, la jauge restait aux 100 codés dans homeostasis.gd. On le branche
+            # (2026-07-28) parce que c'est lui qui décide si un repas est encaissable — voir le
+            # commentaire de reset_state(). L'obs du WM lit energy/max_energy, donc elle reste
+            # dans [0,1] quel que soit le plafond : agrandir la jauge ne déplace pas l'échelle
+            # d'observation, il déplace seulement ce qu'un repas peut y écrire.
+            "SYLVAN_MAX_ENERGY": f"{self.gauge_max}",
             "SYLVAN_MAX_EPISODE_STEPS": f"{self.episode_steps}",
             "SYLVAN_EAT_RADIUS": f"{self.eat_radius_m}",
             "SYLVAN_FOOD_COUNT": f"{self.items_total}",
@@ -195,6 +202,7 @@ class WorldPreset:
             # planchers de famine différents (init/drain) alors que rien ne l'a décidé : une pulsion
             # tuerait systématiquement avant l'autre, et l'arbitrage mesuré serait un artefact.
             env["SYLVAN_INIT_THIRST"] = f"{self.init_energy}"
+            env["SYLVAN_MAX_THIRST"] = f"{self.gauge_max}"   # même plafond, même raison que les drains
             if self.water_puddle_period > 0:
                 env["SYLVAN_WATER_PUDDLE_PERIOD"] = f"{self.water_puddle_period}"
         if self.food_type_hues:
@@ -479,8 +487,36 @@ FORET_V1 = dataclasses.replace(
     # x6 d'objets. La DENSITÉ de ressources est conservée, donc le trajet par repas (~10,2 m mesuré)
     # et toute la calibration métabolique restent valides.
     spawn_annulus_m=(3.0, 35.0),
-    patches_per_resource=180, items_total=180,
-    patch_spacing_min_m=3.0, patch_spacing_max_m=6.0,
+    # DENSITÉ DIVISÉE PAR 7 (2026-07-28), sur mesure et non sur goût. La densité conservée ci-dessus
+    # posait une ressource tous les 2 m ; le planner n'avait donc jamais à chasser, il se rechargeait
+    # en passant. Sondé à masse de nourriture CONSTANTE (probe_foret_densite.sh, 6 vies/condition,
+    # même graine, même WM) :
+    #        bosquets   repas/vie   énergie AU repas   encaissé   survie méd   trajet/repas
+    #            180        5,3            73             21          412         8,5 m
+    #             60        3,5            51             32          632         9,0 m
+    #             25        3,0            56             28          856        12,5 m
+    # La survie DOUBLE en éclaircissant, et le trajet reste très sous le budget (15,2 m). C'est le
+    # critère H1 pré-enregistré qui passe (-17 pts d'énergie-au-repas) ; H2 a échoué (1,36x contre
+    # 1,50x exigé) — d'où la seconde correction, le plafond de jauge, SANS laquelle éclaircir ne
+    # suffisait pas (856 ticks restent loin des 3000).
+    # items_total INCHANGÉ à 180 : la masse de nourriture du monde ne bouge pas, seule sa
+    # concentration change. 180 baies sur 25 bosquets = ~7 par bosquet, c'est-à-dire un vrai
+    # bosquet — là où 180 bosquets d'UNE baie n'étaient pas des bosquets du tout.
+    patches_per_resource=25, items_total=180,
+    # L'ÉCART SUIT LA DENSITÉ, sinon « moins de bosquets » veut dire « tous tassés dans un coin » :
+    # mesuré, à écart figé 3-6 m le placeur exige que chaque bosquet touche la chaîne existante et
+    # 25 bosquets se serraient à 3,10 m, exactement comme 180. On prend l'écart typique d'un semis
+    # uniforme, sqrt(aire/n) = 12,4 m, borné à [0,70x, 1,50x] — mesuré 8,68 m d'écart réel.
+    patch_spacing_min_m=8.7, patch_spacing_max_m=18.5,
+    # PLAFOND DE JAUGE 100 -> 200 (owner, 2026-07-28), le champ gauge_max enfin servi. Un repas rend
+    # 84 points : sur une jauge de 100 il n'est encaissable en entier qu'à 16 d'énergie, un niveau
+    # qu'un planner qui cherche à survivre ne s'autorise jamais — mesuré, elle mange entre 73 et 51
+    # et n'encaisse que 25-38 % du repas. La valeur servie était donc indélivrable, et le calibrage
+    # « 10 événements/vie » était bâti dessus. init reste à 60 : agrandir le PLAFOND rend le repas
+    # encaissable, agrandir le DÉPART aurait doublé la réserve et adouci le monde (plancher 25 % ->
+    # 50 %). Avec (200, 60) le plancher de famine reste 750 ticks = 25,0 % et le compte retombe
+    # exactement sur la cible pré-enregistrée : 10,0 événements/vie.
+    gauge_max=200.0,
     # HORLOGES RAMENÉES DANS LA VIE (audit S3) : une vie sans manger dure 375 ticks. Une repousse à
     # 2 500 ticks ne se déclenchait JAMAIS (le monde était un garde-manger qui se vide) et un cycle
     # de flaque à 300 tenait à peine un cycle. Une mécanique qui ne se déclenche pas n'existe pas.
@@ -616,6 +652,21 @@ def selfcheck() -> int:
         fk, wk = f"SYLVAN_FOOD_{suffix}", f"SYLVAN_WATER_{suffix}"
         assert wk in fenv, f"{wk} n'est pas servi — l'eau retombera sur le défaut du GDScript"
         assert fenv[fk] == fenv[wk], f"géométrie asymétrique : {fk}={fenv[fk]} mais {wk}={fenv[wk]}"
+    # UN REPAS DOIT ÊTRE ENCAISSABLE. C'est l'incohérence trouvée le 2026-07-28 : restore 84 sur une
+    # jauge de 100 n'est réalisable qu'à 16 d'énergie, et l'entité mange à 51-73 (MESURÉ sur trois
+    # densités). Toute la calibration en événements/vie suppose que le repas est encaissé EN ENTIER ;
+    # si le plafond ne le permet pas, cette calibration est fausse et rien ne le dit. On exige donc
+    # que le repas tienne depuis le niveau où elle mange RÉELLEMENT, pas depuis un niveau théorique.
+    EATS_AT = 56.0                       # médiane mesurée à 25 bosquets (probe_foret_densite.sh)
+    assert f.gauge_max - EATS_AT >= f.restore_per_item, (
+        f"repas indélivrable : {f.restore_per_item} pts servis mais seulement "
+        f"{f.gauge_max - EATS_AT} encaissables depuis {EATS_AT} (plafond {f.gauge_max})")
+    floor_ticks = f.init_energy / f.energy_drain
+    assert abs(floor_ticks / f.episode_steps - 0.25) < 0.005, floor_ticks
+    print(f"  [ok] foret_v1 : repas {f.restore_per_item:.0f} pts ENCAISSABLE depuis {EATS_AT:.0f} "
+          f"(plafond {f.gauge_max:.0f}) et plancher de famine inchangé à "
+          f"{floor_ticks / f.episode_steps * 100:.1f} % — agrandir la jauge n'adoucit rien")
+
     print(f"  [ok] foret_v1 : les 2 pulsions reçoivent la MÊME géométrie de bosquets "
           f"(écart {f.patch_spacing_min_m}-{f.patch_spacing_max_m} m, "
           f"{f.patches_per_resource} bosquets, rayon {f.patch_radius_m} m) — "
@@ -623,10 +674,17 @@ def selfcheck() -> int:
 
     # JOIGNABILITÉ : le trajet toléré par événement, et l'honnêteté sur ce qui le rend atteignable.
     allowed = f.metres_per_event_budget(vstar)          # 53,9 / (1,2 x 10) = 4,49 m
-    TPM_MEASURED = 10.20   # trajet/repas MESURÉ, corpus planner poolé (remplace l'estimé G11)
+    # Ce chiffre décrit la DENSITÉ SERVIE, il n'est donc pas transposable d'un monde à l'autre : le
+    # 10,20 m d'avant avait été mesuré à 180 bosquets et aurait menti ici (2026-07-28). Re-mesuré à
+    # la densité du preset par diag_foret_g11_portee.measure() sur le corpus dens_25 de la sonde.
+    TPM_MEASURED = 12.50   # 25 bosquets, 6 vies, 18 repas — probe_foret_densite.sh
+    assert TPM_MEASURED <= allowed, (
+        f"trajet/repas mesuré {TPM_MEASURED} m > {allowed:.2f} m tolérés : à cette densité l'entité "
+        "ne peut pas joindre ses ressources dans son budget, quel que soit son cerveau")
     print(f"  ⚠️  foret_v1 : budget tolère {allowed:.2f} m/repas pour {ev[1]:.0f} événements | MESURÉ "
-          f"sur corpus planner poolé (51 827 ticks, 126 repas) : {TPM_MEASURED} m — la marge est "
-          f"MINCE ({allowed / TPM_MEASURED:.2f}x), et c'est ce qui a dicté kin_speed 2,83 → 6,4")
+          f"à {f.patches_per_resource} bosquets (6 vies, 18 repas) : {TPM_MEASURED} m — la marge "
+          f"({allowed / TPM_MEASURED:.2f}x) s'ajoute au 1,2x déjà pris dans le budget, mais elle "
+          "reste MINCE et le corpus qui la mesure est petit")
 
     # LES TROIS CONSÉQUENCES doivent exister dans le monde COLLECTÉ, sinon l'encodeur reste aveugle à
     # celle qui manque et le lien apparence→conséquence n'est pas apprenable pour elle (verrou A2 :

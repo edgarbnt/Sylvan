@@ -30,6 +30,21 @@ var thirst := max_thirst
 
 
 func reset_state() -> void:
+	# PLAFOND DES JAUGES RÉGLABLE (2026-07-28) — mesuré : un repas sert 84 points sur une jauge de
+	# 100, donc l'entité ne peut l'encaisser en entier que tombée à 16, un niveau qu'un planner qui
+	# cherche à survivre ne s'autorise jamais. Sondé sur 3 densités : elle mange entre 73 et 51, et
+	# n'encaisse que 21 à 32 points — 25 à 38 % du repas. La valeur servie était donc une valeur que
+	# le monde ne pouvait pas délivrer, et tout le calibrage « 10 événements/vie » reposait dessus.
+	# Agrandir le PLAFOND (sans toucher au départ) rend le repas encaissable sans rien adoucir : le
+	# plancher de famine reste init/drain. Défaut 100 = comportement d'origine bit-identique.
+	# Les deux jauges bougent ENSEMBLE : un plafond asymétrique ferait mourir une pulsion avant
+	# l'autre sans que rien ne l'ait décidé (même raison que l'égalité des drains, ci-dessus).
+	var _me := OS.get_environment("SYLVAN_MAX_ENERGY")
+	if _me != "":
+		max_energy = maxf(1.0, float(_me))
+	var _mt := OS.get_environment("SYLVAN_MAX_THIRST")
+	if _mt != "":
+		max_thirst = maxf(1.0, float(_mt))
 	energy = max_energy
 	health = max_health
 	thirst = max_thirst
