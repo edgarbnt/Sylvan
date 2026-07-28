@@ -94,6 +94,7 @@ var _patch_count := 0             # 0 = OFF (perpetual field inchangé)
 # resserré 1,2 -> 0,6 m. Ça n'a rien corrigé et a CAUSÉ la cécité totale. Le barycentre était un
 # facteur secondaire ; l'occlusion par le marqueur était la cause.
 var _patch_radius := 0.95         # rayon EXTERNE de la couronne de baies (< eat_radius 1.0)
+var _patch_count_min := 0         # borne basse par épisode ; == _patch_count → variation OFF
 var _patch_spacing_max := 0.0     # 0 = pas de borne haute (comportement d'origine)
 var _patch_spacing := 9.0         # distance mini entre deux centres (traversée = 818 ticks = 41 pts d'énergie)
 var _regrow_ticks := 2000         # une baie repousse SUR PLACE après ce délai
@@ -343,6 +344,11 @@ func _read_patch_env() -> void:
 	var pc := OS.get_environment("SYLVAN_%s_PATCHES" % _prefix)
 	if pc != "":
 		_patch_count = maxi(0, int(pc))
+	# BORNE BASSE de l'effectif de bosquets par épisode (§2.8). Défaut = _patch_count → tirage
+	# dégénéré, aucun nombre aléatoire consommé, monde bit-identique. Clampé à [0, _patch_count]
+	# parce que la borne haute est le nombre de buissons-marqueurs réellement construits.
+	var pcm := OS.get_environment("SYLVAN_%s_PATCHES_MIN" % _prefix)
+	_patch_count_min = clampi(int(pcm) if pcm != "" else _patch_count, 0, _patch_count)
 	var pr := OS.get_environment("SYLVAN_%s_PATCH_RADIUS" % _prefix)
 	if pr != "":
 		_patch_radius = maxf(0.1, float(pr))
@@ -412,7 +418,12 @@ func _sample_patch_centres() -> void:
 	# échantillonne `randf_range(min, max)`, ce qui concentre la densité en 1/r vers le centre.
 	# Espacement mini imposé par rejet — sinon deux bosquets fusionnent et le choix disparaît.
 	_patch_centres.clear()
-	for _i in range(_patch_count):
+	# Effectif TIRÉ pour cet épisode : le WM doit apprendre une famille de mondes, pas une constante,
+	# sinon régler la densité après le retrain le met hors-distribution (85 min à chaque curseur).
+	var n_patches := _patch_count
+	if _patch_count_min < _patch_count:
+		n_patches = _rng.randi_range(_patch_count_min, _patch_count)
+	for _i in range(n_patches):
 		for _try in range(80):
 			var ang := _rng.randf_range(0.0, TAU)
 			var u := _rng.randf()
@@ -602,8 +613,14 @@ func _place_patch_bushes() -> void:
 		if i < _patch_centres.size():
 			_patch_meshes[i].global_position = Vector3(_patch_centres[i].x, PATCH_BUSH_R, _patch_centres[i].z)
 			_patch_meshes[i].visible = true
+			_patch_areas[i].collision_layer = 1 << 7
 		else:
+			# 🚨 Masquer le MESH ne suffit pas : l'Area3D enfant garde sa couche 8 et reste vue par le
+			# raycast de la rétine. Un bosquet absent resterait donc PERÇU sans être rendu — l'entité
+			# viserait un buisson que l'owner ne voit pas. Sans effet tant que tous les bosquets
+			# étaient placés ; faux dès que l'effectif varie par épisode.
 			_patch_meshes[i].visible = false
+			_patch_areas[i].collision_layer = 0
 
 
 func _build_bushes() -> void:

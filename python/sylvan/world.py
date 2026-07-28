@@ -68,6 +68,8 @@ class WorldPreset:
 
     # --- resources --------------------------------------------------------------------------
     patches_per_resource: int = 4
+    patches_min: int = 0                # 0 = OFF (effectif fixe) ; sinon tire dans [min, patches]
+    forest_count_min: int = 0           # 0 = OFF (effectif fixe) ; sinon tire dans [min, forest_count]
     items_total: int = 2                # berries spread over the patches
     patch_radius_m: float = 0.95        # OUTER radius of the berry RING (must be < eat_radius)
     patch_spacing_min_m: float = 9.0
@@ -163,6 +165,10 @@ class WorldPreset:
             "SYLVAN_FOOD_COUNT": f"{self.items_total}",
             "SYLVAN_FOOD_ENERGY_PER": f"{self.restore_per_item}",
             "SYLVAN_FOOD_PATCHES": f"{self.patches_per_resource}",
+            # Émis SEULEMENT si la variation est demandée : une variable absente laisse le
+            # gestionnaire sur un tirage dégénéré, donc les mondes historiques restent bit-identiques
+            # et ne consomment aucun nombre aléatoire de plus (§6quater F).
+            **({"SYLVAN_FOOD_PATCHES_MIN": f"{self.patches_min}"} if self.patches_min else {}),
             "SYLVAN_FOOD_PATCH_RADIUS": f"{self.patch_radius_m}",
             "SYLVAN_FOOD_PATCH_SPACING": f"{self.patch_spacing_min_m}",
             "SYLVAN_FOOD_PATCH_SPACING_MAX": f"{self.patch_spacing_max_m}",
@@ -180,6 +186,8 @@ class WorldPreset:
             env["SYLVAN_THIRST_DRAIN"] = f"{self.thirst_drain}"
             env["SYLVAN_WATER_COUNT"] = f"{self.items_total}"
             env["SYLVAN_WATER_PATCHES"] = f"{self.patches_per_resource}"
+            if self.patches_min:
+                env["SYLVAN_WATER_PATCHES_MIN"] = f"{self.patches_min}"
             env["SYLVAN_WATER_REGROW"] = f"{self.regrow_ticks}"
             env["SYLVAN_DRINK_RADIUS"] = f"{self.eat_radius_m}"
             # PANNE SILENCIEUSE RÉPARÉE (2026-07-28) : la géométrie des bosquets n'était servie qu'à
@@ -220,6 +228,8 @@ class WorldPreset:
             env["SYLVAN_SPEED_COST"] = f"{self.speed_cost}"
         if self.forest_count > 0:
             env["SYLVAN_FOREST_COUNT"] = f"{self.forest_count}"
+            if self.forest_count_min:
+                env["SYLVAN_FOREST_COUNT_MIN"] = f"{self.forest_count_min}"
             env["SYLVAN_FOREST_STANDS"] = f"{self.forest_stands}"
             env["SYLVAN_FOREST_CLEARINGS"] = f"{self.forest_clearings}"
             if self.forest_appearance_var > 0.0:
@@ -519,7 +529,15 @@ FORET_V1 = dataclasses.replace(
     # flaques étaient donc toujours là, seulement regroupées par 7 : le tapis visuel n'avait pas
     # bougé d'un objet. On servait 360 consommables pour ~10 événements par vie, soit 36x le besoin.
     # 50 par ressource laisse encore 8x de marge sur 6 événements, et 2 items par bosquet.
-    patches_per_resource=25, items_total=50,
+    # ⭐ EFFECTIFS VARIABLES PAR ÉPISODE (owner, 2026-07-28 soir). Même raisonnement que la taille
+    # des arbres : si le WM ne voit qu'une densité, il l'apprend comme une constante du monde et
+    # tout réglage ultérieur le met hors-distribution — 45 min de collecte + 40 min de retrain par
+    # curseur. En variant PENDANT la collecte, il apprend une FAMILLE de mondes et la densité
+    # redevient un réglage gratuit. Les bandes ne sont pas un goût, elles butent sur la physique
+    # des deux côtés : au-delà de 40 arbres la forêt devient un fourré (50 → 18 % de portes
+    # infranchissables) et sous 18 bosquets la nourriture sort du budget de trajet (15 → 16,1 m
+    # contre 15,88 tolérés). On varie donc VERS LE BAS depuis le plafond navigable.
+    patches_per_resource=25, patches_min=18, items_total=50,
     # L'ÉCART SUIT LA DENSITÉ, sinon « moins de bosquets » veut dire « tous tassés dans un coin » :
     # mesuré, à écart figé 3-6 m le placeur exige que chaque bosquet touche la chaîne existante et
     # 25 bosquets se serraient à 3,10 m, exactement comme 180. On prend l'écart typique d'un semis
@@ -561,7 +579,8 @@ FORET_V1 = dataclasses.replace(
     # futaie de cette grosseur pousse justement à ~100 m²/tige. 40 arbres = 95 m²/tige : la forêt
     # devient cohérente avec l'épaisseur de ses propres troncs, au lieu de l'être avec un chiffre
     # emprunté à un autre âge de peuplement. Peuplements et clairières suivent le même facteur.
-    forest_count=40, forest_stands=12, forest_clearings=6, forest_appearance_var=0.15,
+    forest_count=40, forest_count_min=20, forest_stands=12, forest_clearings=6,
+    forest_appearance_var=0.15,
     forest_radius_var=0.35,             # troncs de 0,23 à 0,47 m : la GÉOMÉTRIE varie, donc s'apprend
     forest_ring_m=(2.5, 35.0),
     terrain_slow=0.6, terrain_radius_m=2.5, terrain_floor=0.25,
@@ -691,6 +710,30 @@ def selfcheck() -> int:
         fk, wk = f"SYLVAN_FOOD_{suffix}", f"SYLVAN_WATER_{suffix}"
         assert wk in fenv, f"{wk} n'est pas servi — l'eau retombera sur le défaut du GDScript"
         assert fenv[fk] == fenv[wk], f"géométrie asymétrique : {fk}={fenv[fk]} mais {wk}={fenv[wk]}"
+    # LES BANDES DE VARIATION DOIVENT TENIR DANS LA PHYSIQUE, AUX DEUX BOUTS. Varier les effectifs
+    # n'a de valeur que si CHAQUE tirage donne un monde jouable : un seul épisode de fourré, ou un
+    # seul où la nourriture est hors budget, et on collecte du bruit en croyant collecter de la
+    # diversité. On vérifie donc les BORNES, pas le cas moyen — c'est tout l'intérêt d'une borne.
+    if f.forest_count_min:
+        assert 0 < f.forest_count_min <= f.forest_count, (f.forest_count_min, f.forest_count)
+        print(f"  [ok] foret_v1 : arbres tirés dans [{f.forest_count_min}, {f.forest_count}] par "
+              "épisode — le pire cas est le PLAFOND, et il est déjà gaté par S5 (15 % de portes)")
+    if f.patches_min:
+        assert 0 < f.patches_min <= f.patches_per_resource, (f.patches_min, f.patches_per_resource)
+        # Le pire cas est le PLANCHER : moins de bosquets = trajet par repas plus long. On rejoue
+        # l'identité de joignabilité au plancher, avec l'inefficacité de trajet MESURÉE (2,02x).
+        ineff = 2.02
+        r_in, r_out = f.spawn_annulus_m
+        area = math.pi * (r_out ** 2 - r_in ** 2)
+        worst = 0.5 * math.sqrt(area / f.patches_min) * ineff
+        allowed_min = f.metres_per_event_budget(vstar)
+        assert worst <= allowed_min, (
+            f"au PLANCHER de {f.patches_min} bosquets le trajet par repas monte à {worst:.1f} m "
+            f"pour {allowed_min:.2f} m tolérés : ce tirage donnerait un monde infaisable")
+        print(f"  [ok] foret_v1 : bosquets tirés dans [{f.patches_min}, "
+              f"{f.patches_per_resource}] — au PLANCHER le trajet monte à {worst:.1f} m pour "
+              f"{allowed_min:.2f} m tolérés, donc tous les tirages restent joignables")
+
     # UN REPAS DOIT ÊTRE ENCAISSABLE. C'est l'incohérence trouvée le 2026-07-28 : restore 84 sur une
     # jauge de 100 n'est réalisable qu'à 16 d'énergie, et l'entité mange à 51-73 (MESURÉ sur trois
     # densités). Toute la calibration en événements/vie suppose que le repas est encaissé EN ENTIER ;

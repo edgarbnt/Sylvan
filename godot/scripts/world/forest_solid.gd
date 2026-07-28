@@ -38,6 +38,8 @@ const RETINA_LAYER := 1 << 7                       # bit 7 (128) — perceptible
 const TREE_COLOR := Color(0.13, 0.35, 0.13)        # vert foncé — fuite MESURÉE = 0.0000
 
 var _count := 0
+var _count_min := 0            # borne basse de l'effectif par épisode ; == _count → variation OFF
+var _episode_count := 0        # effectif RÉELLEMENT servi cet épisode (tiré dans [_count_min, _count])
 var _radius_min := 2.5                             # anneau de dispersion : on garde le centre dégagé
 var _radius_max := 11.0
 var _trunk_r := 0.35                               # rayon du tronc (collision + rétine)
@@ -107,6 +109,10 @@ var _app_cosred_hi := 0.0
 
 func _init() -> void:
 	_count = int(_env("SYLVAN_FOREST_COUNT", "0"))
+	# Défaut = _count : sans variable servie, le tirage est dégénéré et le monde bit-identique.
+	# Clampé à [0, _count] parce que la borne haute est le nombre de corps réellement CONSTRUITS —
+	# un minimum supérieur au maximum produirait un randi_range inversé, donc un crash ou pire.
+	_count_min = clampi(int(_env("SYLVAN_FOREST_COUNT_MIN", str(_count))), 0, _count)
 	_radius_min = _envf("SYLVAN_FOREST_RADIUS_MIN", _radius_min)
 	_radius_max = _envf("SYLVAN_FOREST_RADIUS_MAX", _radius_max)
 	_trunk_r = _envf("SYLVAN_FOREST_TRUNK_R", _trunk_r)
@@ -229,11 +235,31 @@ func _ensure_built() -> void:
 # Disperse les arbres pour le nouvel épisode. GARDES : jamais dans le rayon dégagé autour du spawn
 # (sinon l'agent démarre emmuré), jamais à moins de `_keepout` d'une ressource (sinon elle devient
 # inatteignable et on mesurerait un échec du MONDE, pas de l'entité — §2).
+# Un arbre ABSENT doit l'être pour TOUT LE MONDE : le rendu, la collision, et la rétine. Séparer ces
+# trois vérités est exactement la façon dont un monde se met à mentir en silence.
+func _hide_tree(i: int) -> void:
+	_bodies[i].visible = false
+	_bodies[i].collision_layer = 0
+
+
+func _show_tree(i: int) -> void:
+	_bodies[i].visible = true
+	_bodies[i].collision_layer = OBSTACLE_LAYER | RETINA_LAYER
+
+
 func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: Array) -> void:
 	_centers.clear()
 	if not active():
 		return
 	_ensure_built()
+	# EFFECTIF TIRÉ PAR ÉPISODE (§2.8 : stable dans l'épisode, variable entre épisodes → apprenable).
+	# But : que le WM apprenne une FAMILLE de forêts et pas une constante, sinon changer la densité
+	# après coup le met hors-distribution et coûte une collecte + un retrain entiers. La borne haute
+	# est le nombre de corps construits (_count) ; la borne basse vient du preset. Défaut _count_min
+	# = _count → tirage dégénéré, monde bit-identique, et surtout AUCUN tirage consommé.
+	_episode_count = _count
+	if _count_min < _count:
+		_episode_count = _rng.randi_range(_count_min, _count)
 	_sample_structure()
 	for i in range(_bodies.size()):
 		var center := Vector3.ZERO
@@ -262,17 +288,26 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 			if not clash:
 				ok = true
 				break
-		if not ok:
-			# aucune place trouvée en 40 essais → on n'invente pas une position douteuse : cet arbre
-			# reste masqué (mieux vaut une forêt un peu moins dense qu'une ressource emmurée).
-			_bodies[i].visible = false
+		if i >= _episode_count or not ok:
+			# Deux cas se rejoignent ici : l'arbre est hors de l'effectif tiré pour cet épisode, ou
+			# aucune place n'a été trouvée en 40 essais (on n'invente pas une position douteuse —
+			# mieux vaut une forêt un peu moins dense qu'une ressource emmurée).
+			# 🚨 `visible = false` NE SUFFIT PAS, et c'était un défaut latent : un StaticBody3D masqué
+			# garde sa collision ET sa couche rétine. L'arbre restait donc un MUR INVISIBLE, et un
+			# obstacle que la rétine voit sans que rien ne soit rendu — le pire des deux mondes.
+			# Inoffensif tant que 191/191 arbres étaient placés ; catastrophique dès qu'on en retire
+			# la moitié par épisode. On éteint les DEUX couches, et on les rallume au placement.
+			_hide_tree(i)
 			continue
 		center.y = _height * 0.5                              # posé sur le sol
 		_bodies[i].global_transform = Transform3D(Basis(), center)
-		_bodies[i].visible = true
+		_show_tree(i)
 		_centers.append(center)
-	print("[forest] episode : %d/%d arbres places (keep-out %.1f m autour de %d ressources)"
-		% [_centers.size(), _bodies.size(), _keepout, resource_positions.size()])
+	# La bannière rapporte l'effectif TIRÉ, pas seulement le nombre de corps construits : sans ça une
+	# variation par épisode serait invisible dans les logs et un corpus ne se décrirait pas lui-même.
+	print("[forest] episode : %d/%d arbres places (effectif tire %d dans [%d,%d]) "
+		% [_centers.size(), _episode_count, _episode_count, _count_min, _count]
+		+ "(keep-out %.1f m autour de %d ressources)" % [_keepout, resource_positions.size()])
 	if _min_gap > 0.0:
 		print("[forest] espacement mini entre arbres : %.2f m" % _min_gap)
 	# PROUVER l'arrangement au lieu de l'affirmer (règle de méthode du projet).
