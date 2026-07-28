@@ -143,8 +143,44 @@ WM_CKPT=data/checkpoints/wm_foret_v2_slot/wm_best.pt bash scripts/gate_foret_clo
 | **closed-loop** cause de mort | **pas 11/12 de faim** | l'asymétrie des jauges est corrigée |
 
 Un échec closed-loop est un **négatif informatif** : STOP, diagnostiquer gratuitement, ne pas
-enchaîner un tweak. Le trajet par repas mesuré (~10,2 m) contre le budget toléré (12,7 m) donne
-**1,25× de marge** — c'est mince, et c'est assumé.
+enchaîner un tweak. Le trajet par repas re-mesuré à la densité servie (**12,5 m**, 25 bosquets)
+contre le budget toléré (12,70 m) ne laisse que **1,02× de marge** — mesuré sur 6 vies / 18 repas
+seulement, avec un WM hors-distribution. C'est mince, c'est assumé, et le selfcheck l'assère
+désormais au lieu de simplement l'afficher.
+
+## 🚨 ÉTAT AU 2026-07-28 — DEUX DÉFAUTS DE MONDE RÉPARÉS, UN BLOCAGE OUVERT
+
+Le visuel (pas un gate) a révélé deux défauts que la collecte aurait gravés dans le corpus.
+
+**1. L'eau était quasi absente.** `to_env()` ne servait la géométrie des bosquets qu'à la
+NOURRITURE ; l'eau retombait sur les défauts du GDScript, dont un anneau de 7 m — 26× plus petit.
+Mesuré : `WATER : 2/180 bosquets placés` contre `FOOD : 176/180`, et 3 vies sur 3 mortes de soif
+sans une gorgée. Un corpus collecté ainsi n'aurait contenu **aucun événement de boisson**.
+Réparé (178/180) et gardé par `--selfcheck` (symétrie des 8 clés, comparée en valeur).
+
+**2. Un repas était indélivrable.** 84 points servis sur une jauge plafonnée à 100 : encaissable
+seulement à 16 d'énergie, un niveau qu'un planner qui survit ne s'autorise jamais. Mesuré sur trois
+densités : elle mange à 73/51/56 et n'encaisse que 21/32/28 pts (25-38 %). Tout le calibrage
+« 10 événements/vie » reposait sur cette valeur. Corrigé en deux temps, sur mesure :
+
+| | avant | après | preuve |
+|---|---|---|---|
+| bosquets/ressource | 180 | **25** | survie médiane 412 → 856 (`probe_foret_densite.sh`) |
+| plafond de jauge | 100 | **200** | énergie observée jusqu'à 197 — impossible avant |
+| départ (init) | 60 | **60** | inchangé : le monter aurait doublé la réserve (plancher 25 % → 50 %) |
+
+**Le blocage restant est la BOISSON, et il est localisé.** Gate closed-loop après correctifs
+(8 vies) : survie médiane **415** (exigé > 1000), **6 morts de soif sur 8**, énergie à 178-197 au
+moment de mourir de soif. Une vie a tenu les **3000 ticks pleins** (12 repas, 6 boissons) — le monde
+EST survivable. Ce n'est **pas** un problème de perception : la matrice requête×objet est propre,
+chaque objet n'est vu que par sa propre requête et l'eau est détectée à **cos 0,999**. Elle VOIT
+l'eau et n'y va pas. C'est le mur d'arbitrage déjà documenté (`sylvan-second-drive-arbitration`),
+ici inversé : elle se gave et meurt de soif.
+
+**Deux réserves à ne pas oublier** : le WM servi vient de l'ANCIENNE dynamique (hors-distribution
+partout), et le canal-slot est GREFFÉ. Le prochain pas honnête est donc de **diagnostiquer
+gratuitement l'arbitrage** (pourquoi le planner ne cible pas l'eau alors qu'il la voit) AVANT de
+payer collecte + retrain — pas de collecter en espérant que le retrain le règle.
 
 ---
 
