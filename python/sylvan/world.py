@@ -459,7 +459,12 @@ FORET_V1 = dataclasses.replace(
     # RELEVÉ UNE SECONDE FOIS 6,4 → 8,0 (2026-07-26) pour prendre de la MARGE : à 6,4 le budget
     # toléré (10,16 m/repas) égalait le trajet mesuré (10,20 m) — une marge de 1,00x, c'est-à-dire
     # un cycle de 85 min joué à pile ou face. À 8,0 la tolérance passe à ~12,7 m, soit 1,25x.
-    kin_speed=8.0,
+    # RALENTI 8,0 -> 6,0 (owner, 2026-07-28, sur observation visuelle « le loup va trop vite »). Ce
+    # n'est finançable QUE parce que les repas sont devenus rares : à 6 événements/vie le budget se
+    # divise par 6 et non par 10, ce qui laisse 15,88 m tolérés contre 12,5 m mesurés = 1,27x, la
+    # marge que le design exige. 6,0 est la vitesse la PLUS BASSE qui la tient (5,5 -> 1,16x, 5,0 ->
+    # 1,06x : mesuré, pas estimé). Croisière 8,2 km/h = le trot d'un vrai loup (8-10 km/h).
+    kin_speed=6.0,
     # ROTATION RELEVÉE 1,5 → 6,0 (audit S1). Le rayon de braquage vaut kin_speed·vx/kin_turn : à 1,5
     # il faisait 3,20 m quand l'écart libre entre deux arbres voisins en fait 1,54 — le corps ne
     # pouvait PAS slalomer, seulement contourner un massif entier. À 6,0 il braque en 0,80 m.
@@ -473,10 +478,16 @@ FORET_V1 = dataclasses.replace(
     # TERRAIN mesuré sous la politique par G11 = 0,635 (pas la moyenne d'arène, pas la médiane du
     # babillage) : c'est lui qui ramène le budget de trajet de 84,9 m (fantasme) à 53,9 m (réel).
     terrain_factor=0.635,
-    # métabolisme RE-CALIBRÉ sur le budget réel (2026-07-25). drain 0,08/jauge → 10 événements exigés
-    # à la croisière (bas de la bande 10-30, honnête : 53,9 m ne portent pas le haut) ; init 60 tient
-    # le plancher à 25,0 % (60/0,08 = 750 ticks) ; restore 84 = un repas remplit une petite réserve.
-    energy_drain=0.08, thirst_drain=0.08, init_energy=60.0, restore_per_item=84.0,
+    # métabolisme RE-CALIBRÉ sur le budget réel (2026-07-25). drain 0,08/jauge ; init 60 tient le
+    # plancher à 25,0 % (60/0,08 = 750 ticks).
+    # ⭐ restore 84 → 140 (owner, 2026-07-28) : le RYTHME d'interaction était le vrai grief visuel —
+    # 6 repas + 1 boisson en 868 ticks, « dans la nature un loup ne mange pas autant ». Le levier
+    # n'est PAS le drain : le baisser rendrait le monde plus doux, ce qui n'est pas demandé. On
+    # augmente la VALEUR d'un repas, à drain constant : la pression par tick est identique au point
+    # près, mais un repas tient 875 ticks (29 % de la vie) au lieu de 525, donc 6 événements/vie au
+    # lieu de 10. Elle mange plus rarement sans vivre plus confortablement — c'est la différence
+    # entre espacer les repas et adoucir le monde (§2).
+    energy_drain=0.08, thirst_drain=0.08, init_energy=60.0, restore_per_item=140.0,
     # ressources : densité RE-CALIBRÉE 12 → 18. Le budget réel (53,9 m) ne tolère que 4,5 m de trajet
     # par événement pour 10 repas ; 12 bosquets donnaient 7,65 m (WM OOD, G11). +50 % de densité vise
     # ~5 m pour un forageur COMPÉTENT (post-retrain), SANS carpetter (pas les ~48 sites qu'exigerait le
@@ -502,7 +513,13 @@ FORET_V1 = dataclasses.replace(
     # items_total INCHANGÉ à 180 : la masse de nourriture du monde ne bouge pas, seule sa
     # concentration change. 180 baies sur 25 bosquets = ~7 par bosquet, c'est-à-dire un vrai
     # bosquet — là où 180 bosquets d'UNE baie n'étaient pas des bosquets du tout.
-    patches_per_resource=25, items_total=180,
+    # ⭐ items 180 → 50 (2026-07-28). MON ERREUR, et elle est instructive : j'avais gardé 180 baies
+    # DÉLIBÉRÉMENT pour que la sonde compare les densités à masse de nourriture constante — un bon
+    # choix pour un A/B — et je ne l'ai jamais reconsidéré pour le monde final. Les 180 baies + 180
+    # flaques étaient donc toujours là, seulement regroupées par 7 : le tapis visuel n'avait pas
+    # bougé d'un objet. On servait 360 consommables pour ~10 événements par vie, soit 36x le besoin.
+    # 50 par ressource laisse encore 8x de marge sur 6 événements, et 2 items par bosquet.
+    patches_per_resource=25, items_total=50,
     # L'ÉCART SUIT LA DENSITÉ, sinon « moins de bosquets » veut dire « tous tassés dans un coin » :
     # mesuré, à écart figé 3-6 m le placeur exige que chaque bosquet touche la chaîne existante et
     # 25 bosquets se serraient à 3,10 m, exactement comme 180. On prend l'écart typique d'un semis
@@ -624,10 +641,18 @@ def selfcheck() -> int:
           "→ la vitesse est un pari, pas un choix gratuit")
 
     ev = [f.events_at(vx) for vx in f.vx_fan]
-    assert 9.9 <= ev[1] <= 30.0, ev               # RE-CALIBRÉ au bas de la bande (budget réel) : ≈10
+    # BANDE ABAISSÉE [10,30] -> [5,30] (2026-07-28) et il faut dire pourquoi, parce que relâcher une
+    # borne pour faire passer un chiffre est précisément ce que §2 interdit. Ici la borne basse ne
+    # protégeait pas une CAPACITÉ, elle exprimait un souhait de RICHESSE du corpus : « qu'il y ait
+    # assez de contacts pour apprendre le lien perception→conséquence ». Or ce souhait était démenti
+    # par les faits : la collecte de 450 vies a rendu 313 consommations, soit 0,7 par vie — 14x SOUS
+    # la borne, sans que rien ne le signale, parce que la borne contraint le monde OFFERT et pas le
+    # comportement OBSERVÉ. À 6/vie le corpus reste ~9x plus riche que celui qu'on a réellement eu.
+    # Ce qui protège vraiment la richesse, c'est le contrat de monde mesuré SUR LE CORPUS.
+    assert 5.0 <= ev[1] <= 30.0, ev
     print(f"  [ok] foret_v1 : événements/vie {ev[0]:.1f} (marche) / {ev[1]:.1f} (trot) / "
-          f"{ev[2]:.1f} (sprint) — bas de la bande [10,30] à la CROISIÈRE (le budget réel ne porte "
-          "pas le haut) ; sprinter en permanence reste délibérément inabordable")
+          f"{ev[2]:.1f} (sprint) — la croisière vise 6 (un repas tient 29 % de la vie) ; "
+          "sprinter en permanence reste délibérément inabordable")
 
     # LA CORRECTION TERRAIN EST VIVE : le budget de trajet réel (terrain 0,635) est STRICTEMENT sous
     # le budget sol-dégagé (1,0) qu'on supposait à tort. Sans cette assertion, un retour silencieux
@@ -635,7 +660,7 @@ def selfcheck() -> int:
     real = f.travel_budget(vstar)
     naive = (f.kin_speed * vstar / 60.0) * f.episode_steps
     assert f.terrain_factor < 1.0 and abs(real - naive * f.terrain_factor) < 1e-6
-    assert abs(real - 152.4) < 2.0, real   # 8.0 x 0.6 x 0.635 / 60 x 3000
+    assert abs(real - 114.3) < 2.0, real   # 6.0 x 0.6 x 0.635 / 60 x 3000
     print(f"  [ok] foret_v1 : budget de trajet RÉEL {real:.1f} m/vie au trot (terrain "
           f"{f.terrain_factor}) vs {naive:.1f} m si sol dégagé — la V1 surestimait de "
           f"{naive / real:.2f}x")

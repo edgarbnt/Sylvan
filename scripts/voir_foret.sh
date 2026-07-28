@@ -40,9 +40,6 @@ cd "$(dirname "$0")/.." || exit 1; ROOT="$(pwd)"
 # Défaut = le monde qu'on collecte VRAIMENT (foret_v1), pas son ancêtre.
 PRESET=${PRESET:-foret_v1}
 
-TREES=${TREES:-45}          # 45 = plafond de navigabilité MESURÉ (54 → immobile 85 % du temps)
-STANDS=${STANDS:-6}
-CLEARINGS=${CLEARINGS:-3}
 PORT=${PORT:-6291}
 WM=${WM_CKPT:-data/checkpoints/wm_foret_attn_slot/wm_best.pt}
 
@@ -61,9 +58,16 @@ eval "$(PYTHONPATH=python ./env_pytorch_3.12/bin/python -m sylvan.world --preset
   || { echo "[voir-foret] preset '$PRESET' inconnu"; exit 1; }
 echo "[voir-foret] monde = $PRESET (kin_speed=$SYLVAN_KIN_SPEED, fov=$SYLVAN_RETINA_FOV_DEG)"
 
-# Les seuls réglages que ce script s'autorise à FORCER, et ils sont exposés comme knobs : la densité
-# d'arbres qu'on veut pouvoir comparer à l'œil. Posés APRÈS le preset, donc délibérément prioritaires.
-export SYLVAN_FOREST_COUNT=$TREES SYLVAN_FOREST_STANDS=$STANDS SYLVAN_FOREST_CLEARINGS=$CLEARINGS
+# DENSITÉ D'ARBRES : le preset décide, ce script n'écrase QUE si on le lui demande explicitement.
+# Auparavant TREES=45 était forcé en dur, hérité du plafond de navigabilité mesuré dans l'ARÈNE DE
+# 11 m (54 arbres → immobile 85 % du temps). L'arène fait maintenant 35 m, dix fois l'aire : ce
+# plafond n'y veut plus rien dire, et le défaut faisait regarder l'owner une forêt QUATRE FOIS plus
+# claire (45 arbres) que celle qui sera collectée (191) — exactement ce que le commit « montrer le
+# monde qu'on collecte vraiment » devait supprimer. Un knob qui survit à son monde devient un
+# mensonge silencieux. TREES/STANDS/CLEARINGS restent disponibles pour comparer à l'œil.
+export SYLVAN_FOREST_COUNT=${TREES:-$SYLVAN_FOREST_COUNT}
+export SYLVAN_FOREST_STANDS=${STANDS:-$SYLVAN_FOREST_STANDS}
+export SYLVAN_FOREST_CLEARINGS=${CLEARINGS:-$SYLVAN_FOREST_CLEARINGS}
 env SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 SYLVAN_PLANNER_RESTORE=0.4 \
     SYLVAN_PLANNER_HEADING_W=0.0 \
     PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
