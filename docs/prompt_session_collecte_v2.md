@@ -148,6 +148,37 @@ contre le budget toléré (12,70 m) ne laisse que **1,02× de marge** — mesur�
 seulement, avec un WM hors-distribution. C'est mince, c'est assumé, et le selfcheck l'assère
 désormais au lieu de simplement l'afficher.
 
+## ✅ AUDIT PRÉ-COLLECTE DU 2026-07-28 SOIR — FAIT, ET IL A TROUVÉ TROIS CHOSES
+
+Vérifié en exécutant, pas en lisant : preset cohérent, 9/9 échelles, carte d'archi valide, contrat
+de monde **12/12 vert** sur un corpus réellement collecté, chemins du retrain = 9 attendus / 9
+produits, dimensions 278/133 de bout en bout, zéro orphelin, 22 Go libres.
+
+Trois défauts trouvés, tous réparés et re-mesurés :
+
+1. **La greffe éteignait une pulsion en silence.** `wm_foret_attn_slot` portait `water_idx=None` :
+   la greffe copiait les poids et les requêtes mais pas la table slot→ressource. Le serveur lit
+   `food_idx` avec un défaut de 0 (donc la nourriture marchait par accident) et `water_idx` sans
+   défaut. Le planner n'avait **aucun canal vers l'eau**. Mesuré : approche minimale bouffe 0,95 m
+   avec repas, eau 2,03-4,37 m, **0 gorgée sur 10 vies**. Après re-greffe : eau à 0,30-1,02 m et
+   **9 boissons sur 4 vies**. Le serveur crie désormais quand une pulsion est éteinte.
+2. **Le harnais de collecte ne servait pas le coût survie**, donc le planner tournait en
+   mono-pulsion. Corrigé ici et dans le gate closed-loop.
+3. **Le contrat de monde criait au loup sur deux clauses**, et la cause était mon propre correctif :
+   la locomotion débite les deux jauges depuis cette session, donc mesurer `k` sur l'énergie seule
+   donnait exactement la moitié, et la soif était mesurée par une médiane brute là où l'énergie
+   passait par une régression. Vérifié que les deux jauges sont rigoureusement symétriques.
+
+⚠️ **Correction d'une conclusion précédente** : les « 6 morts de soif sur 8 » du gate de la veille
+n'étaient **pas** un mur d'arbitrage. Le planner n'avait simplement jamais été mis au courant de la
+soif (causes 1 et 2). Ne pas rouvrir un chantier d'arbitrage sur cette base.
+
+**Richesse du corpus après correctifs** : 1,50 consommation par vie contre **0,70** dans le corpus
+qui avait produit le retrain réussi (A1 à 99,7 %), et les **trois conséquences vécues** (nourrir,
+abreuver, blesser). Déséquilibre à noter : l'échafaudage boit beaucoup plus qu'il ne mange
+(2 repas / 10 boissons) — les deux dynamiques sont représentées, ce qui est ce que le WM demande,
+mais ne pas lire ces proportions comme un comportement cible.
+
 ## 🚨 ÉTAT AU 2026-07-28 — DEUX DÉFAUTS DE MONDE RÉPARÉS, UN BLOCAGE OUVERT
 
 Le visuel (pas un gate) a révélé deux défauts que la collecte aurait gravés dans le corpus.
