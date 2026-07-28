@@ -81,7 +81,9 @@ for _ in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 
 if ! ss -ltn 2>/dev/null | grep -q ":$PORT"; then
   echo "[voir-foret] le serveur planner n'a pas démarré — voir /tmp/voir_foret_srv.log"; tail -20 /tmp/voir_foret_srv.log; exit 1
 fi
-echo "[voir-foret] serveur prêt (WM=$WM). Fenêtre Godot : $TREES massifs, $STANDS peuplements, $CLEARINGS clairières."
+echo "[voir-foret] serveur prêt (WM=$WM). Fenêtre Godot : $SYLVAN_FOREST_COUNT massifs, \
+$SYLVAN_FOREST_STANDS peuplements, $SYLVAN_FOREST_CLEARINGS clairières \
+(bosquets $SYLVAN_FOOD_PATCHES x $SYLVAN_FOOD_COUNT items, kin_speed $SYLVAN_KIN_SPEED)."
 echo "[voir-foret] décor visual-only ÉTEINT — tout ce qui est dessiné est perçu par l'entité."
 # BUISSON ÉTEINT PAR DÉFAUT (2026-07-26) : le preset foret_v1 n'en sert pas, donc le laisser à 1
 # afficherait un objet PERCEPTIBLE de plus que le monde réellement collecté. Un visuel qui sert à
