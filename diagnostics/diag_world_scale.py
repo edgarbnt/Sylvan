@@ -58,6 +58,12 @@ from sylvan.world import FORET_V1, WorldPreset  # noqa: E402
 TICKS_PER_S = 60.0
 BODY_LEN_M = 2.221          # longueur du maillage servi, MESURÉE au chargement ([wolf] encombrement)
 BODY_HALF_W = 0.213         # demi-largeur MESURÉE
+# Barre de franchissabilité : au-delà, l'entité passe son temps à raboter les troncs au lieu de
+# forager. 15 % = une porte bloquée sur sept, ce qu'un détour absorbe ; à 35 % (mesuré sur 191
+# arbres) le visuel montre une entité qui oscille contre un tronc, lacet alternant et déplacement
+# figé. Ce n'est pas un réglage de confort : une forêt infranchissable rend le trajet par repas
+# incontrôlable, donc toute la calibration métabolique fausse.
+MAX_BLOCKED_FRAC = 0.15
 PREY_MIN_RATIO = 0.6        # §2.4, mesuré par diag_prey_interception : en dessous, gain NUL
 ARENA_MIN_BODIES = 20.0     # une arène de moins de 20 longueurs de corps est une pièce, pas un monde
 CROSSINGS_MAX = 4.0         # au-delà, l'entité fait le tour et l'espace cesse d'être une ressource
@@ -99,7 +105,16 @@ def audit(p: WorldPreset) -> list[tuple[bool, str, str]]:
         # monde où l'entité se coince régulièrement.
         r_max = 0.35 * (1.0 + p.forest_radius_var)
         gap = nn - 2.0 * r_max
-        body_w = 2.0 * BODY_HALF_W
+        # ⚠️ ON JUGE CE QUI EST SERVI, PAS CE QUI EST MESURÉ (corrigé 2026-07-28). S5 comparait
+        # l'écart libre à la largeur MESURÉE du loup (0,43 m) alors que `kin_body_extent` est
+        # VOLONTAIREMENT non servi : la collision vive est un RAYON avant avec une marge d'arrêt de
+        # _KIN_SKIN = 0,35 m, donc le couloir réellement exigé fait 2 x 0,35 = 0,70 m, pas 0,43.
+        # L'audit annonçait 0,30 m de marge quand la vraie marge est de 0,03 — et le visuel a rendu
+        # le verdict que l'audit ne rendait pas : 201 blocages contre la couche obstacle en ~320
+        # pas. Un audit qui mesure une géométrie non servie certifie un monde qui n'existe pas.
+        KIN_SKIN = 0.35
+        served_half_w = (max(p.kin_body_extent[1:]) if len(p.kin_body_extent) > 1 else KIN_SKIN)
+        body_w = 2.0 * served_half_w
         # ⚠️ CRITÈRE CORRIGÉ (2026-07-28) : je testais le braquage à la CROISIÈRE, ce qui confond
         # « le corps peut passer » et « il peut passer SANS RALENTIR ». L'éventail de vitesse existe
         # justement pour ralentir en zone dense — un loup ne traverse pas un fourré au trot. Le
@@ -114,11 +129,21 @@ def audit(p: WorldPreset) -> list[tuple[bool, str, str]]:
                     f"{gap:.2f} m (centre-à-centre {nn:.2f} m) → "
                     f"{'passe au pas' if turn_slow <= gap else 'NE PASSE PAS même au pas : c est un fourré'}"
                     f"{', doit RALENTIR pour slalomer' if must_slow else ', passe même au trot'}"))
-        out.append((gap >= body_w, "S5 DENSITÉ",
-                    f"écart libre {gap:.2f} m vs largeur du corps {body_w:.2f} m | "
-                    f"{m2_per_stem:.1f} m²/tige (forêt réelle {REAL_FOREST_M2_PER_STEM[0]:.0f}-"
-                    f"{REAL_FOREST_M2_PER_STEM[1]:.0f}) → "
-                    f"{'le corps passe' if gap >= body_w else 'le corps NE PASSE PAS : un modèle par RAYON le laisse traverser quand même'}"))
+        # S5 NE COMPARE PLUS DEUX MOYENNES (corrigé 2026-07-28, sur preuve). `nn` est un écart MOYEN :
+        # exiger « moyenne >= largeur » laisse par construction la MOITIÉ des couloirs sous la barre,
+        # et le verdict « le corps passe » se gagnait ici à 0,03 m près. Le visuel a tranché ce que
+        # l'audit ne voyait pas : 201 blocages en ~320 pas. On mesure donc la seule chose qui décide,
+        # la PROPORTION de couloirs infranchissables, via la loi du plus proche voisin (Rayleigh,
+        # P(d < x) = 1 - exp(-λπx²)), corrigée du regroupement puisque les peuplements resserrent.
+        lam = p.forest_count / area / (CLUSTERING ** 2)      # densité EFFECTIVE vue par les paires
+        corridor = body_w + 2.0 * r_max                      # centre-à-centre minimal franchissable
+        blocked = 1.0 - math.exp(-lam * math.pi * corridor ** 2)
+        out.append((blocked <= MAX_BLOCKED_FRAC, "S5 DENSITÉ",
+                    f"{blocked * 100:.0f} % des paires d'arbres forment une porte INFRANCHISSABLE "
+                    f"(couloir requis {corridor:.2f} m centre-à-centre pour un corps servi de "
+                    f"{body_w:.2f} m) | {m2_per_stem:.1f} m²/tige (forêt réelle "
+                    f"{REAL_FOREST_M2_PER_STEM[0]:.0f}-{REAL_FOREST_M2_PER_STEM[1]:.0f}) → "
+                    f"{'la forêt est traversable' if blocked <= MAX_BLOCKED_FRAC else f'un tiers de fourré : l entité racle les troncs (barre {MAX_BLOCKED_FRAC * 100:.0f} %)'}"))
 
     # --- mobiles : sont-ils encore mobiles RELATIVEMENT au corps ? ------------------------------
     if p.prey_speed > 0:

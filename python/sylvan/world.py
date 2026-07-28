@@ -548,16 +548,30 @@ FORET_V1 = dataclasses.replace(
     # la valeur où l'interception paie (67,5 % de capture contre 56,2 %).
     prey_speed=0.046,
     distractor_speed=0.030,             # 0,6x la croisière : ils bougent VRAIMENT pour ce corps
-    # forêt : occlusion + couvert + variation d'apparence, à la densité navigable mesurée (45 arbres ;
-    # 54 → immobile 85 % du temps, plafond dur du §3)
-    # FORÊT À L'ÉCHELLE D'UN LOUP (2026-07-28, audit diag_world_scale). 191 arbres sur 3 820 m² =
-    # 20 m²/tige, soit la borne basse d'une forêt réelle (500-1000 tiges/ha) — au lieu du fourré de
-    # 7,8 m²/tige où l'écart libre entre voisins (0,70 m) était plus petit que le rayon de braquage.
-    forest_count=191, forest_stands=60, forest_clearings=30, forest_appearance_var=0.15,
+    # ⭐ FORÊT RAMENÉE À 40 ARBRES (2026-07-28 soir) — ET C'EST UNE AUTO-CORRECTION. J'avais monté
+    # à 191 « pour atteindre la densité d'une forêt réelle (10-20 m²/tige) », en écartant au passage
+    # le plafond historique de 45 arbres comme périmé (il avait été mesuré dans l'arène de 11 m).
+    # Le visuel a rendu le verdict : l'entité oscille contre un tronc, lacet alternant, déplacement
+    # FIGÉ, 201 blocages contre la couche obstacle en ~320 pas. Re-mesuré proprement : à 191 arbres,
+    # **53 % des paires forment une porte infranchissable** pour le corps SERVI (rayon + marge de
+    # 0,35 m, soit un couloir de 1,65 m centre-à-centre). Le plafond calculé est de 41 arbres —
+    # c'est-à-dire, à trois près, le 45 que j'avais écarté. La mesure d'origine avait raison.
+    # POURQUOI « forêt réelle » était le mauvais repère : à 10-20 m²/tige on décrit un peuplement de
+    # PERCHIS (troncs fins). Ici les troncs font 0,23 à 0,47 m de rayon, donc des arbres MÛRS, et une
+    # futaie de cette grosseur pousse justement à ~100 m²/tige. 40 arbres = 95 m²/tige : la forêt
+    # devient cohérente avec l'épaisseur de ses propres troncs, au lieu de l'être avec un chiffre
+    # emprunté à un autre âge de peuplement. Peuplements et clairières suivent le même facteur.
+    forest_count=40, forest_stands=12, forest_clearings=6, forest_appearance_var=0.15,
     forest_radius_var=0.35,             # troncs de 0,23 à 0,47 m : la GÉOMÉTRIE varie, donc s'apprend
     forest_ring_m=(2.5, 35.0),
     terrain_slow=0.6, terrain_radius_m=2.5, terrain_floor=0.25,
-    distractor_count=60,                # densité conservée (6 sur 380 m² -> 60 sur 3 820)
+    # ⭐ DISTRACTEURS 60 → 12 (2026-07-28 soir). « Densité conservée » était un automatisme : j'avais
+    # multiplié par 10 avec l'aire sans demander à quoi ils servent. Leur rôle (§2.9) est de casser
+    # le raccourci « ça bouge donc ça se mange » — il suffit d'en RENCONTRER, pas d'en joncher le sol.
+    # 12 sur 3 820 m² = un tous les 318 m², soit un croisement toutes les ~2 traversées de rétine
+    # (portée 10 m) : le raccourci reste cassé, la scène redevient calme. C'était la principale
+    # source des « boules vertes » signalées à l'écran, avec les 50 buissons-marqueurs de bosquets.
+    distractor_count=12,
     gaze=True,                          # proprio 132 → 133 : incompatible avec les checkpoints actuels
     # DANGER : réglages du monde-danger déjà promu (2026-07-17). Il n'est PAS là pour ajouter une
     # difficulté — il est là parce que la spec l'inclut (§6quinquies B) ET parce qu'une TROISIÈME
