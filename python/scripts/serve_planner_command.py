@@ -164,6 +164,18 @@ class _PlannerService:
         # SLOT-2 : assignation slot→ressource (label-free, calculée au train) portée par le meta.
         wm.food_idx = meta.get("food_idx", 0)
         wm.water_idx = meta.get("water_idx")
+        # UNE PULSION ÉTEINTE DOIT SE VOIR. Un checkpoint dont le meta ne porte pas water_idx laisse
+        # ce champ à None, et le planner perd silencieusement tout canal vers l'eau : il ne la vise
+        # jamais, quel que soit son coût. Mesuré le 2026-07-28 sur un WM greffé (les index n'étaient
+        # pas recopiés) — 0 gorgée sur 10 vies, distance minimale à l'eau 2,0-4,4 m contre 1,0 m à la
+        # nourriture — et le seul indice était un « water_idx=None » noyé dans la bannière. Ce n'est
+        # pas une erreur qu'on peut lever ici (le monde servi n'est pas connu du serveur), mais elle
+        # doit être IMPOSSIBLE À MANQUER : un monde multi-pulsion servi à un WM borgne fabrique un
+        # corpus où l'eau ne se boit jamais, et tout l'arbitrage repose dessus.
+        if meta.get("with_slot") and wm.water_idx is None:
+            print("[planner-cmd] 🚨 ATTENTION : water_idx ABSENT du meta — le planner n'a AUCUN "
+                  "canal vers l'eau et ne la visera JAMAIS. Si ce monde sert la soif, le corpus "
+                  "sera borgne. Corriger : re-greffer avec scripts/graft_slot_channel.py.", flush=True)
         wm.hazard_idx = meta.get("hazard_idx")   # 3ᵉ slot danger (WM construit par build_hazard_slot) — None sinon
         # MARGES PAR-REQUÊTE (P6-reopen) : le WM TYPÉ (build_typed_slots) porte des seuils MESURÉS
         # par type dans meta — le buffer (non-persistant, défaut 0.55 = historique) les reçoit ici.

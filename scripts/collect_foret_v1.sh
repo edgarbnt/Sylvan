@@ -81,7 +81,18 @@ collect_planner() {  # $1=vies  $2=graine
   echo "--- part planner : $1 vies (échafaudage : WM actuel, OOD en forêt) -> $dir"
   rm -rf "$dir"; mkdir -p "$dir"
   pkill -9 -f serve_planner_command 2>/dev/null; sleep 1
-  PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
+  # 🚨 COÛT SURVIE, SANS QUOI LA MOITIÉ DU MONDE N'ENTRE PAS DANS LE CORPUS (trouvé le 2026-07-28
+  # par le dry-run). Sans SYLVAN_PLANNER_COST, le planner reste en MONO-PULSION : il ne vise que la
+  # nourriture et l'eau ne l'intéresse pas — pas par faiblesse, par construction. Mesuré sur 6 vies
+  # de planner : distance minimale à la bouffe 1,02 m (elle ferme et elle mange), distance minimale
+  # à l'eau 1,87 à 4,65 m, ZÉRO tick à portée de boisson, ZÉRO gorgée. Le corpus aurait donc appris
+  # au WM une eau qu'on ne boit jamais, et tout le chantier d'arbitrage multi-pulsion repose dessus.
+  # C'est aussi ce qui expliquait les « 6 morts de soif sur 8 » du gate de la veille, que j'avais
+  # mises sur le compte d'un mur d'arbitrage : le planner n'avait simplement pas été mis au courant
+  # de la soif. Valeurs = celles de la config PROMUE (CLAUDE.md, multi-drive vivant).
+  PYTHONPATH=python SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 \
+    SYLVAN_PLANNER_RESTORE=0.4 SYLVAN_PLANNER_HEADING_W=0.0 \
+    ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
     --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
     --host 127.0.0.1 --port "$PORT" --horizon 80 --replan-every 10 \
     > "/tmp/collect_${TAG}_planner_srv.log" 2>&1 &

@@ -66,6 +66,17 @@ def graft(dst_payload: dict, src_payload: dict) -> tuple[dict, list[str]]:
                          "requêtes NON re-dérivées : lancer build_typed_slots pour lever A2")
     if "query_thr" in src_meta:
         meta["query_thr"] = src_meta["query_thr"]
+    # 🚨 LES INDEX DE SLOT, SANS QUOI LA GREFFE ÉTEINT UNE PULSION EN SILENCE (2026-07-28).
+    # On copiait les poids, les requêtes-couleur et les seuils, mais PAS la table qui dit quel slot
+    # porte quelle ressource. Le serveur lit alors `meta.get("food_idx", 0)` — la nourriture marche
+    # par accident, parce que son défaut tombe juste — et `meta.get("water_idx")` SANS défaut, donc
+    # None : le planner n'a plus aucun canal pour l'eau et ne peut pas la viser, quel que soit son
+    # coût. Mesuré sur le corpus de répétition : distance minimale à la bouffe 0,95-1,05 m (elle
+    # ferme et elle mange), à l'eau 2,03-4,37 m, ZÉRO gorgée sur 10 vies. Une greffe muette sur un
+    # index est pire qu'une greffe qui échoue : elle rend un checkpoint qui a l'air complet.
+    for k in ("food_idx", "water_idx", "hazard_idx"):
+        if src_meta.get(k) is not None:
+            meta[k] = src_meta[k]
     out["meta"] = meta
     return out, sorted(src_slots)
 

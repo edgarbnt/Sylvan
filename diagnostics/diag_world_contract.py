@@ -56,6 +56,7 @@ class Served:
     cmd: torch.Tensor              # [N, 2] commandes (vx, ω) RÉELLEMENT exécutées
     proprio_dim: int               # 132, ou 133 quand le regard était actif
     moving: torch.Tensor           # [N] booléen : le corps AVANCE vraiment à ce tick
+    thirst: torch.Tensor           # [N] — la 2e jauge, mesurée comme la 1re et non par une médiane
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,7 @@ class Clause:
 # Mesures — chacune lit le corpus, aucune ne lit un réglage.
 # --------------------------------------------------------------------------------------------- #
 
-def _fit_drain(s: Served) -> tuple[float, float]:
+def _fit_drain(s: Served, series: torch.Tensor | None = None) -> tuple[float, float]:
     """Sépare le drain PASSIF du coût de LOCOMOTION par régression : conso/tick = D + k·vx².
 
     🚨 POURQUOI ON NE PEUT PLUS PRENDRE LA MÉDIANE. Depuis l'éventail de vitesse (§2.13), la baisse
@@ -88,7 +89,8 @@ def _fit_drain(s: Served) -> tuple[float, float]:
     Renvoie (D, k), ou (médiane, nan) quand le corpus ne fait pas varier vx assez pour identifier k —
     on préfère dire « non mesurable » (verdict ⚠️) que rendre une pente ajustée sur du bruit.
     """
-    d = (s.energy[:-1] - s.energy[1:])
+    src = s.energy if series is None else series
+    d = (src[:-1] - src[1:])
     vx2 = s.cmd[:len(d), 0] ** 2
     garde = torch.ones(len(d), dtype=torch.bool)
     for b in s.bounds[1:-1]:                       # frontières d'épisode : la jauge y est remise à plein
@@ -116,7 +118,20 @@ def _m_drain_e(s: Served) -> float:
 
 
 def _m_speed_cost(s: Served) -> float:
-    return _fit_drain(s)[1]
+    """k SUR LA SOMME DES DEUX JAUGES, parce que c'est ainsi que la constante est définie.
+
+    🚨 CORRIGÉ LE 2026-07-28, et l'erreur était la mienne. Depuis que le coût de locomotion est
+    réparti au prorata sur les deux jauges (correctif d'asymétrie de cette même session), l'énergie
+    n'en paie plus que la MOITIÉ. Mesurer la pente sur l'énergie seule et l'opposer à speed_cost
+    donnait donc un écart de 50 % — exactement, ce qui aurait dû me mettre la puce à l'oreille — sur
+    un monde parfaitement conforme. Vérifié sur le corpus : énergie et soif rendent la MÊME pente
+    (0,2003 chacune) et la somme rend 0,4006 pour 0,4444 demandé. La constante décrit un TOTAL ;
+    on mesure donc le total. Changer la physique sans changer l'instrument qui la mesure, c'est
+    fabriquer un faux positif au moment précis où l'outil doit valider une collecte.
+    """
+    if s.thirst.numel() != s.energy.numel():
+        return _fit_drain(s)[1]                       # monde mono-pulsion : l'énergie EST le total
+    return _fit_drain(s, s.energy + s.thirst)[1]
 
 
 def _m_gaze(s: Served) -> float:
@@ -130,7 +145,16 @@ def _m_gaze(s: Served) -> float:
 
 
 def _m_drain_t(s: Served) -> float:
-    return s.const["drain_t"]
+    """Drain PASSIF de la soif, par la même régression que l'énergie — et pas par une médiane.
+
+    La médiane des baisses mesure D + k·vx², donc elle gonfle avec la vitesse : elle rendait 0,0939
+    pour 0,08 demandé (+17 %) pendant que l'énergie, régressée, tombait pile. Deux jauges
+    rigoureusement symétriques dans le monde paraissaient donc asymétriques dans le rapport, ce qui
+    est le pire des mensonges pour un outil dont le rôle est de garantir la symétrie de l'arbitrage.
+    """
+    if s.thirst.numel() != s.energy.numel():
+        return float("nan")                           # pas de 2e jauge dans ce corpus
+    return _fit_drain(s, s.thirst)[0]
 
 
 def _m_restore_e(s: Served) -> float:
@@ -257,10 +281,15 @@ def load_served(run: str) -> Served:
     obs, energy, _cmds, bounds = load_bc_corpus(run)
     fichiers = [f for f in (os.path.join(run, "ep_0000.jsonl"), os.path.join(run, "ep_0000.jsonl.gz"))
                 if os.path.exists(f)] or sorted(glob.glob(os.path.join(run, "episode_*.jsonl*")))
-    health = []
+    health, thirst = [], []
     for f in fichiers:
         with (gzip.open(f, "rt") if f.endswith(".gz") else open(f)) as fh:
-            health += [json.loads(line)["obs"].get("health", float("nan")) for line in fh if line.strip()]
+            for line in fh:
+                if not line.strip():
+                    continue
+                o = json.loads(line)["obs"]
+                health.append(o.get("health", float("nan")))
+                thirst.append(o.get("thirst", float("nan")))
     # La tranche rétine commence après la proprio ; obs = proprio ++ rétine ++ énergie (277).
     p = obs.shape[1] - RETINA_DIM - 1
     # Le corps avance-t-il ? Vitesse RÉALISÉE = norme horizontale de la vitesse du torse (proprio
@@ -269,6 +298,7 @@ def load_served(run: str) -> Served:
     return Served(const=measured_constants(run), retina=obs[:, p:p + RETINA_DIM], energy=energy,
                   cmd=_cmds, proprio_dim=p, moving=moving,
                   health=torch.tensor(health, dtype=torch.float32), bounds=bounds,
+                  thirst=torch.tensor(thirst, dtype=torch.float32),
                   ate=meal_flags(energy, bounds))
 
 

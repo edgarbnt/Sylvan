@@ -37,7 +37,12 @@ echo "    ⚠️  canal-slot GREFFÉ (requêtes de l'ancien monde) — ce gate n
 pkill -9 -f serve_planner_command 2>/dev/null; sleep 1
 rm -rf "$RUN_DIR"; mkdir -p "$RUN_DIR"
 
-PYTHONPATH=python ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
+# COÛT SURVIE — ce gate mesure la survie d'une entité à DEUX pulsions ; sans lui le planner ne
+# connaît que la faim et meurt de soif par construction, ce qui rendait le verdict ininterprétable
+# (mesuré le 2026-07-28 : 6 morts de soif sur 8, que j'avais prises pour un mur d'arbitrage).
+PYTHONPATH=python SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 \
+  SYLVAN_PLANNER_RESTORE=0.4 SYLVAN_PLANNER_HEADING_W=0.0 \
+  ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
   --host 127.0.0.1 --port "$PORT" --horizon 80 --replan-every 10 \
   > "/tmp/${TAG}_srv.log" 2>&1 &
