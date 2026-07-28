@@ -175,6 +175,22 @@ class WorldPreset:
             env["SYLVAN_WATER_PATCHES"] = f"{self.patches_per_resource}"
             env["SYLVAN_WATER_REGROW"] = f"{self.regrow_ticks}"
             env["SYLVAN_DRINK_RADIUS"] = f"{self.eat_radius_m}"
+            # PANNE SILENCIEUSE RÉPARÉE (2026-07-28) : la géométrie des bosquets n'était servie qu'à
+            # la NOURRITURE. L'eau retombait donc sur les défauts du GDScript — écart mini 9,0 m et
+            # PAS de borne haute — un intervalle que le placeur ne peut pas satisfaire pour 180
+            # bosquets dans 3820 m². Mesuré dans le visuel : « WATER : 2/180 bosquets placés » contre
+            # « FOOD : 176/180 », et les 3 vies observées sont mortes de SOIF, énergie quasi pleine,
+            # sans une seule gorgée. Un corpus collecté ainsi n'aurait contenu AUCUN événement de
+            # boisson : la seconde pulsion aurait été absente du monde qu'on prétend lui apprendre.
+            env["SYLVAN_WATER_PATCH_RADIUS"] = f"{self.patch_radius_m}"
+            env["SYLVAN_WATER_PATCH_SPACING"] = f"{self.patch_spacing_min_m}"
+            env["SYLVAN_WATER_PATCH_SPACING_MAX"] = f"{self.patch_spacing_max_m}"
+            # ...et l'ANNEAU, sans quoi le correctif ci-dessus ne sert à rien : le gestionnaire d'eau
+            # retombait sur ses défauts d'export (1,5-7,0 m), un disque 26x plus petit que celui de la
+            # nourriture (3,0-35,0 m). Toute l'eau du monde tenait autour du point de départ, et il n'y
+            # rentre que ~15 bosquets à 3 m d'écart — d'où « 15/180 » une fois l'écart réparé.
+            env["SYLVAN_WATER_MIN_RADIUS"] = f"{self.spawn_annulus_m[0]}"
+            env["SYLVAN_WATER_SPAWN_RADIUS"] = f"{self.spawn_annulus_m[1]}"
             # La soif DOIT partir du même niveau que l'énergie. Sans ça les deux jauges ont des
             # planchers de famine différents (init/drain) alors que rien ne l'a décidé : une pulsion
             # tuerait systématiquement avant l'autre, et l'arbitrage mesuré serait un artefact.
@@ -587,6 +603,23 @@ def selfcheck() -> int:
     print(f"  [ok] foret_v1 : budget de trajet RÉEL {real:.1f} m/vie au trot (terrain "
           f"{f.terrain_factor}) vs {naive:.1f} m si sol dégagé — la V1 surestimait de "
           f"{naive / real:.2f}x")
+
+    # SYMÉTRIE DES DEUX PULSIONS — la garde qui manquait le 2026-07-28. Ces clés décrivent la
+    # GÉOMÉTRIE des bosquets ; servie à la nourriture seule, elle laisse l'eau retomber sur les
+    # défauts du GDScript (écart mini 9,0 m, pas de borne haute) que le placeur ne peut pas
+    # satisfaire → 2 bosquets d'eau sur 180, et une entité qui meurt de soif sans jamais boire.
+    # Le bug était invisible : aucune erreur, un monde qui se charge, un corpus qui aurait
+    # simplement été dépourvu de la seconde pulsion. On compare les VALEURS, pas la présence.
+    fenv = f.to_env()
+    for suffix in ("COUNT", "PATCHES", "PATCH_RADIUS", "PATCH_SPACING",
+                   "PATCH_SPACING_MAX", "REGROW", "MIN_RADIUS", "SPAWN_RADIUS"):
+        fk, wk = f"SYLVAN_FOOD_{suffix}", f"SYLVAN_WATER_{suffix}"
+        assert wk in fenv, f"{wk} n'est pas servi — l'eau retombera sur le défaut du GDScript"
+        assert fenv[fk] == fenv[wk], f"géométrie asymétrique : {fk}={fenv[fk]} mais {wk}={fenv[wk]}"
+    print(f"  [ok] foret_v1 : les 2 pulsions reçoivent la MÊME géométrie de bosquets "
+          f"(écart {f.patch_spacing_min_m}-{f.patch_spacing_max_m} m, "
+          f"{f.patches_per_resource} bosquets, rayon {f.patch_radius_m} m) — "
+          "sans cette garde, l'eau était placée à 2/180")
 
     # JOIGNABILITÉ : le trajet toléré par événement, et l'honnêteté sur ce qui le rend atteignable.
     allowed = f.metres_per_event_budget(vstar)          # 53,9 / (1,2 x 10) = 4,49 m
