@@ -30,7 +30,15 @@ LIVES="${1:-60}"
 SEED="${2:-11}"
 TAG="${3:-foret_v1}"
 STEPS="${STEPS:-3000}"
-WM="${WM_CKPT:-data/checkpoints/wm_objcentric_kin/wm_best.pt}"
+# ÉCHAFAUDAGE DE COLLECTE — il doit être HORS-DISTRIBUTION mais PARLER LA MÊME LANGUE.
+# Le défaut pointait sur wm_objcentric_kin, qui est en obs 277 / proprio 132 alors que foret_v1 sert
+# 278 / 133 (le regard). Le serveur DÉMARRE quand même — la dimension n'est vérifiée qu'à
+# l'inférence — puis chaque tick tombait dans le repli « safe fallback » vx=0,5 ω=0 : la part
+# PLANNER du corpus, soit la moitié, aurait été une entité fonçant en ligne droite, avec pour seul
+# témoin une ligne dans un log serveur que personne ne lit pendant 45 minutes. wm_foret_attn_slot
+# est le seul checkpoint aux dimensions du monde servi. (Le repli est désormais fatal après 20
+# erreurs consécutives — mais un défaut juste vaut mieux qu'un garde-fou qui se déclenche.)
+WM="${WM_CKPT:-data/checkpoints/wm_foret_attn_slot/wm_best.pt}"
 PORT="${PORT:-6067}"
 
 # Répartition : la pertinence pèse le plus (c'est elle qui produit les CONTACTS, ce que le babillage

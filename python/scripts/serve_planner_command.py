@@ -76,6 +76,11 @@ def occlude_retina(retina: list[float], fov_deg: float) -> list[float]:
 
 import torch
 
+# Au-delà de ce nombre d'erreurs CONSÉCUTIVES, on cesse de croire à l'accident. 20 est assez haut
+# pour absorber un hoquet de démarrage ou une poignée de payloads malformés, et assez bas pour
+# mourir en moins d'une seconde de collecte plutôt qu'au bout de 45 minutes de ligne droite.
+_FATAL_AFTER_N_ERRORS = 20
+
 from sylvan.config import SylvanConfig
 from sylvan.control.planning.command_planner import CommandPlanner, CommandPlanConfig, food_xz_from_radar
 from sylvan.control.mode1.obs import RED as _RETINA_RED, _color_gated_depths as _cgd
@@ -840,9 +845,28 @@ class _Handler(socketserver.StreamRequestHandler):
                 else:
                     resp = self.server.service.predict_full(payload)
             except Exception as exc:  # noqa: BLE001 — deliberately broad: never kill the server
-                print(f"[planner-cmd] request error: {exc!r} — sending safe fallback", flush=True)
+                # UN REPLI EST BON POUR UN ACCIDENT, PAS POUR UNE ERREUR DE CONFIGURATION.
+                # Tel quel, servir un checkpoint aux mauvaises dimensions ne cassait rien : chaque
+                # tick tombait ici, l'entité recevait vx=0,5 ω=0 — elle FONÇAIT TOUT DROIT — et le
+                # seul témoin était une ligne dans un log serveur que personne ne lit pendant une
+                # collecte de 45 minutes. C'est arrivé le 2026-07-28 (2132 ticks ainsi), et le
+                # corpus produit aurait été de la ligne droite étiquetée « planner ». Une erreur
+                # transitoire est rare et isolée ; une erreur de config échoue à TOUS les ticks.
+                # On distingue donc les deux par le compte, et on meurt bruyamment sur la seconde.
+                self.server.consecutive_errors += 1
+                if self.server.consecutive_errors >= _FATAL_AFTER_N_ERRORS:
+                    print(f"[planner-cmd] FATAL : {self.server.consecutive_errors} erreurs "
+                          f"CONSÉCUTIVES — ce n'est pas un accident, c'est la configuration.\n"
+                          f"           dernière : {exc!r}\n"
+                          f"           (dimension du checkpoint contre monde servi ?) — on arrête "
+                          f"au lieu de servir de la ligne droite en silence.", flush=True)
+                    os._exit(3)
+                print(f"[planner-cmd] request error: {exc!r} — sending safe fallback "
+                      f"({self.server.consecutive_errors}/{_FATAL_AFTER_N_ERRORS})", flush=True)
                 resp = {"action": [0.0] * self.server.service.action_dim,
                         "command": [0.5, 0.0], "error": str(exc)}
+            else:
+                self.server.consecutive_errors = 0
             self.wfile.write(json.dumps(resp).encode("utf-8") + b"\n")
             self.wfile.flush()
 
@@ -850,6 +874,9 @@ class _Handler(socketserver.StreamRequestHandler):
 class _Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    # Compteur d'erreurs CONSÉCUTIVES, remis à zéro par la première requête servie. Porté par le
+    # serveur et non par le handler : un handler naît par connexion, il ne verrait jamais la série.
+    consecutive_errors = 0
 
     def __init__(self, addr, service):
         super().__init__(addr, _Handler)
