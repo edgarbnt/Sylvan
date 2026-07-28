@@ -77,6 +77,23 @@ var _color := TREE_COLOR
 # teinte jitterée est CLAMPÉE hors des cônes ressource (cos-rouge/cos-bleu < seuil) — un tronc qui
 # dériverait vers le rouge serait lu comme de la NOURRITURE. Défaut 0 → couleur unique, bit-identique.
 var _appearance_var := 0.0
+# TAILLE VARIABLE PAR ARBRE (2026-07-28) — OPT-IN SYLVAN_FOREST_RADIUS_VAR, défaut 0 = OFF
+# bit-identique. MÊME RAISONNEMENT QUE §2.8 POUR LA COULEUR, appliqué à la GÉOMÉTRIE : un encodeur
+# qui n'a jamais vu que des troncs de 0,35 m n'a aucune raison d'encoder « rayon » comme une
+# variable — il peut le figer dans ses poids. Un arbre d'une autre taille devient alors
+# hors-distribution, et l'entité ne peut PAS s'y adapter : non parce qu'elle en serait incapable,
+# mais parce qu'on ne lui a jamais montré deux tailles. C'est exactement le mécanisme du verrou A1
+# (l'encodeur ne représente que ce qui a VARIÉ), transposé de la teinte à la forme.
+# Le rayon est tiré PAR ARBRE et RE-TIRÉ à chaque épisode : stable dans une vie (prévisible), varié
+# entre objets ET entre vies (informatif) — la règle §2.8 mot pour mot.
+# ⚠️ Contrairement à la couleur, le rayon change la COLLISION *et* la rétine : c'est de la géométrie,
+# donc ça doit entrer dans la collecte, jamais après.
+var _radius_var := 0.0
+var _rad_lo := 0.0
+var _rad_hi := 0.0
+var _trunk_r_of: Array[float] = []
+var _shapes: Array = []       # CylinderShape3D par arbre (clump=1) — redimensionnées par épisode
+var _cyls: Array = []         # CylinderMesh par arbre — le visuel suit la collision
 var _rng := RandomNumberGenerator.new()
 
 var _material: StandardMaterial3D
@@ -116,12 +133,16 @@ func _init() -> void:
 		if p.size() == 3:
 			_color = Color(float(p[0]), float(p[1]), float(p[2]))
 	_appearance_var = _envf("SYLVAN_FOREST_APPEARANCE_VAR", 0.0)
+	_radius_var = clampf(_envf("SYLVAN_FOREST_RADIUS_VAR", 0.0), 0.0, 0.9)
 
 
 # Rayon EFFECTIF de l'occulteur. ⚠️ Le keep-out doit en dépendre : avec des massifs, un centre à
 # 1,4 m d'une ressource l'ENGLOUTIRAIT. Sans ça on mesurerait un échec du MONDE, pas de l'entité (§2).
 func _effective_r() -> float:
-	return _trunk_r + (_clump_r if _clump > 1 else 0.0)
+	# Rayon MAXIMAL possible, pas le nominal : avec des troncs de taille variable, réserver l'espace
+	# du rayon moyen laisserait deux gros arbres se chevaucher — et le keep-out autour des ressources
+	# cesserait de garantir ce qu'il promet.
+	return _trunk_r * (1.0 + _radius_var) + (_clump_r if _clump > 1 else 0.0)
 
 
 func active() -> bool:
@@ -167,6 +188,8 @@ func _ensure_built() -> void:
 			var cs := CollisionShape3D.new()
 			var cyl := CylinderShape3D.new()
 			cyl.radius = _trunk_r
+			if j == 0:
+				_shapes.append(cyl)
 			cyl.height = _height
 			cs.shape = cyl
 			cs.position = off
@@ -175,6 +198,8 @@ func _ensure_built() -> void:
 			var cm := CylinderMesh.new()
 			cm.top_radius = _trunk_r * 0.75                  # léger fuselage : lit mieux en low-poly
 			cm.bottom_radius = _trunk_r
+			if j == 0:
+				_cyls.append(cm)
 			cm.height = _height
 			mesh.mesh = cm
 			mesh.material_override = body_mat
@@ -259,7 +284,11 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		% [_stand_centers.size(), _stand_sigma, _clearing_centers.size(), _clearing_r]
 		+ "n=%d ppv_moyen MESURE %.3f m | aire %.1f m2 | Clark-Evans MESURE %.3f (<1 = groupe, 1 = aleatoire)"
 		% [_centers.size(), _mean_nn(), _support_area(), _clark_evans()])
+	_apply_tree_radius()
 	_apply_tree_appearance()
+	if _radius_var > 0.0:
+		print("[forest] taille : var %.2f | rayon des troncs MESURE %.3f..%.3f m (nominal %.2f) — la geometrie VARIE, donc l encodeur peut l apprendre"
+			% [_radius_var, _rad_lo, _rad_hi, _trunk_r])
 	if _appearance_var > 0.0:
 		# §6bis : prouver l'étendue d'apparence RÉELLEMENT servie. cos-rouge lo..hi > 0 = ça VARIE ;
 		# hi < 0.55 = tous les arbres restent HORS du cône bouffe (garde §3, aucun tronc lu comme bouffe).
@@ -371,6 +400,26 @@ func _jitter_out_of_cone(base: Color) -> Color:
 
 # Pose une teinte PAR ARBRE (visible) au nouvel épisode : matériau + meta retina_color. Stable dans la
 # vie (posée une fois par épisode), variable entre arbres ET entre épisodes (§2.8). OFF → ne fait rien.
+func _apply_tree_radius() -> void:
+	# Rayon PAR ARBRE, re-tiré à chaque épisode (règle §2.8 : stable dans une vie, varié entre objets
+	# et entre vies). On redimensionne la COLLISION et le MAILLAGE ensemble — les dissocier ferait
+	# exactement le mensonge visuel qu'on vient de corriger sur l'habillage.
+	if _radius_var <= 0.0:
+		return
+	_trunk_r_of.clear()
+	_rad_lo = 1e9
+	_rad_hi = 0.0
+	for i in range(_shapes.size()):
+		var f := 1.0 + _rng.randf_range(-_radius_var, _radius_var)
+		var r := maxf(0.05, _trunk_r * f)
+		_trunk_r_of.append(r)
+		(_shapes[i] as CylinderShape3D).radius = r
+		(_cyls[i] as CylinderMesh).bottom_radius = r
+		(_cyls[i] as CylinderMesh).top_radius = r * 0.75
+		_rad_lo = minf(_rad_lo, r)
+		_rad_hi = maxf(_rad_hi, r)
+
+
 func _apply_tree_appearance() -> void:
 	if _appearance_var <= 0.0:
 		return

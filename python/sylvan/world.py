@@ -88,10 +88,13 @@ class WorldPreset:
     forest_stands: int = 0              # peuplements Neyman-Scott (0 = semis uniforme)
     forest_clearings: int = 0           # clairières (disques d'exclusion)
     forest_appearance_var: float = 0.0  # jitter de teinte PAR ARBRE, hors des cônes ressource
+    forest_radius_var: float = 0.0      # jitter de RAYON de tronc PAR ARBRE (géométrie : collision + rétine)
+    forest_ring_m: tuple = ()           # anneau où les arbres se dispersent — () = défaut du code
     terrain_slow: float = 0.0           # pente du ralentissement par arbre proche (0 = OFF)
     terrain_radius_m: float = 2.5
     terrain_floor: float = 0.25
     distractor_count: int = 0           # animaux mobiles NON comestibles
+    distractor_speed: float = 0.0       # m/tick — 0 = défaut du code (0,006, calibré sur l'ancien corps)
     gaze: bool = False                  # tête mobile — porte la proprioception de 132 à 133
     water_puddle_period: int = 0        # ticks du cycle de rétrécissement d'une flaque (0 = OFF)
     # DANGER — zones FIXES (§6quinquies B) : incluses comme STRUCTURE SPATIALE (elles contraignent
@@ -197,12 +200,19 @@ class WorldPreset:
             env["SYLVAN_FOREST_CLEARINGS"] = f"{self.forest_clearings}"
             if self.forest_appearance_var > 0.0:
                 env["SYLVAN_FOREST_APPEARANCE_VAR"] = f"{self.forest_appearance_var}"
+            if self.forest_radius_var > 0.0:
+                env["SYLVAN_FOREST_RADIUS_VAR"] = f"{self.forest_radius_var}"
+            if self.forest_ring_m:
+                env["SYLVAN_FOREST_RADIUS_MIN"] = f"{self.forest_ring_m[0]}"
+                env["SYLVAN_FOREST_RADIUS_MAX"] = f"{self.forest_ring_m[1]}"
         if self.terrain_slow > 0.0:
             env["SYLVAN_TERRAIN_SLOW"] = f"{self.terrain_slow}"
             env["SYLVAN_TERRAIN_RADIUS"] = f"{self.terrain_radius_m}"
             env["SYLVAN_TERRAIN_FLOOR"] = f"{self.terrain_floor}"
         if self.distractor_count > 0:
             env["SYLVAN_DISTRACTOR_COUNT"] = f"{self.distractor_count}"
+            if self.distractor_speed > 0.0:
+                env["SYLVAN_DISTRACTOR_SPEED"] = f"{self.distractor_speed}"
         if self.gaze:
             env["SYLVAN_GAZE"] = "1"
         if self.kin_body_extent:
@@ -426,6 +436,12 @@ FORET_V1 = dataclasses.replace(
     # toléré (10,16 m/repas) égalait le trajet mesuré (10,20 m) — une marge de 1,00x, c'est-à-dire
     # un cycle de 85 min joué à pile ou face. À 8,0 la tolérance passe à ~12,7 m, soit 1,25x.
     kin_speed=8.0,
+    # ROTATION RELEVÉE 1,5 → 6,0 (audit S1). Le rayon de braquage vaut kin_speed·vx/kin_turn : à 1,5
+    # il faisait 3,20 m quand l'écart libre entre deux arbres voisins en fait 1,54 — le corps ne
+    # pouvait PAS slalomer, seulement contourner un massif entier. À 6,0 il braque en 0,80 m.
+    # Ce n'est pas un réglage de confort : une rotation calibrée pour un corps 10x plus lent devient
+    # géométriquement incompatible avec la forêt dès qu'on accélère.
+    kin_turn=6.0,
     vx_fan=(0.25, 0.60, 1.00),          # marcher / trotter / sprinter (§2.13)
     # speed_cost lié au drain par k = (D_énergie + D_soif) / 0.6² : garde l'optimum au mètre SUR le
     # trot (cheapest_vx = 0,6). Avec drain 0,08+0,08, k = 0,16/0,36 = 0,4444.
@@ -441,23 +457,44 @@ FORET_V1 = dataclasses.replace(
     # par événement pour 10 repas ; 12 bosquets donnaient 7,65 m (WM OOD, G11). +50 % de densité vise
     # ~5 m pour un forageur COMPÉTENT (post-retrain), SANS carpetter (pas les ~48 sites qu'exigerait le
     # chiffre OOD, qui saturerait après retrain). Le chiffre exact reste affiné IN VIVO (nuance 3).
-    patches_per_resource=18, items_total=18,
+    # ARÈNE x10 EN AIRE (rayon 11 -> 35 m) : 70 m de diamètre = 31 longueurs de corps, contre 10
+    # avant — une arène de 10 corps est une pièce, pas un monde. Le coût de calcul a été MESURÉ avant
+    # de s'engager (§6quater D, gate jamais passé jusqu'ici) : +3,6 % seulement pour x10 d'aire et
+    # x6 d'objets. La DENSITÉ de ressources est conservée, donc le trajet par repas (~10,2 m mesuré)
+    # et toute la calibration métabolique restent valides.
+    spawn_annulus_m=(3.0, 35.0),
+    patches_per_resource=180, items_total=180,
     patch_spacing_min_m=3.0, patch_spacing_max_m=6.0,
-    water_puddle_period=300,            # la flaque rétrécit GRADUELLEMENT (§2.12bis)
+    # HORLOGES RAMENÉES DANS LA VIE (audit S3) : une vie sans manger dure 375 ticks. Une repousse à
+    # 2 500 ticks ne se déclenchait JAMAIS (le monde était un garde-manger qui se vide) et un cycle
+    # de flaque à 300 tenait à peine un cycle. Une mécanique qui ne se déclenche pas n'existe pas.
+    regrow_ticks=300, water_puddle_period=150,
     # perception : la palette séparable validée par G5 (les TYPE_COLORS par défaut sont des multiples
     # scalaires l'un de l'autre — cosinus mutuel ~1,0, donc illisibles par construction)
     food_type_hues=((0.9, 0.12, 0.1), (0.9, 0.55, 0.08), (0.85, 0.1, 0.45), (0.8, 0.42, 0.42)),
+    # MOBILES REMIS À L'ÉCHELLE DU CORPS (audit S2). La proie était à 0,0099 m/tick — calibré quand
+    # l'agent faisait 0,011. Face à une croisière de 0,0508 elle était à 0,19x, soit QUASI IMMOBILE :
+    # `diag_prey_interception` a mesuré qu'en dessous de 0,6x le gain de l'interception sur la
+    # poursuite est NUL, donc toute la brique « nourriture mobile » était décorative. Remise à 0,9x,
+    # la valeur où l'interception paie (67,5 % de capture contre 56,2 %).
+    prey_speed=0.046,
+    distractor_speed=0.030,             # 0,6x la croisière : ils bougent VRAIMENT pour ce corps
     # forêt : occlusion + couvert + variation d'apparence, à la densité navigable mesurée (45 arbres ;
     # 54 → immobile 85 % du temps, plafond dur du §3)
-    forest_count=45, forest_stands=6, forest_clearings=3, forest_appearance_var=0.15,
+    # FORÊT À L'ÉCHELLE D'UN LOUP (2026-07-28, audit diag_world_scale). 191 arbres sur 3 820 m² =
+    # 20 m²/tige, soit la borne basse d'une forêt réelle (500-1000 tiges/ha) — au lieu du fourré de
+    # 7,8 m²/tige où l'écart libre entre voisins (0,70 m) était plus petit que le rayon de braquage.
+    forest_count=191, forest_stands=60, forest_clearings=30, forest_appearance_var=0.15,
+    forest_radius_var=0.35,             # troncs de 0,23 à 0,47 m : la GÉOMÉTRIE varie, donc s'apprend
+    forest_ring_m=(2.5, 35.0),
     terrain_slow=0.6, terrain_radius_m=2.5, terrain_floor=0.25,
-    distractor_count=6,                 # ça bouge et ça ne se mange pas (§2.9)
+    distractor_count=60,                # densité conservée (6 sur 380 m² -> 60 sur 3 820)
     gaze=True,                          # proprio 132 → 133 : incompatible avec les checkpoints actuels
     # DANGER : réglages du monde-danger déjà promu (2026-07-17). Il n'est PAS là pour ajouter une
     # difficulté — il est là parce que la spec l'inclut (§6quinquies B) ET parce qu'une TROISIÈME
     # conséquence perceptible est ce qui rend le lien apparence→conséquence apprenable : sans elle,
     # les requêtes-couleur restent codées-main (verrou A2) et le tronc-brun survit au retrain.
-    hazard_count=1, hazard_engulf_p=0.5, health_regen=0.05,
+    hazard_count=10, hazard_engulf_p=0.5, health_regen=0.05,   # densité conservée sur l'arène x10
     # kin_body_extent VOLONTAIREMENT NON SERVI (owner, 2026-07-28). L'encombrement réel est mesuré
     # (museau 1,024 m, demi-largeur 0,213 m) et le mécanisme est committé — mais l'activer coince le
     # planner 43,9 % du temps et effondre le budget à 45 m/vie contre les 152 exigés. On garde donc
