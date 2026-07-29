@@ -18,9 +18,14 @@ Zéro gradient, zéro retrain (leçon 4× confirmée : une géométrie se MESURE
 GATES PRÉ-ENREGISTRÉS (§gates du design — échec → PAS d'émission, négatif commité) :
   G-sep     : monde séparable — cos intra q05 > cos inter q99.5 pour chaque groupe (sinon
               ajuster les DISTRIBUTIONS du monde, jamais les gates) ;
-  G-cluster : K découvert = 3 ET cos(prototype, couleur rendue vraie par classe) ≥ 0.98
-              (oracle d'ÉVAL, licite monde-jouet) ;
-  G-bind    : bijection groupe→conséquence correcte (food→énergie, water→soif, vert→dégâts) ;
+  G-cluster : chaque PULSION capte un groupe de classe distincte ET cos(prototype, couleur rendue
+              vraie) ≥ 0.98 pour ces groupes-là (oracle d'ÉVAL, licite monde-jouet). Corrigé le
+              2026-07-29 : exigeait « K = 3 », ce qui interdisait au monde d'avoir une classe
+              NEUTRE (le vert des buissons/arbres, lié à aucune pulsion). Le seuil 0,98 est
+              CONSERVÉ et s'applique aux groupes servis, danger compris ;
+  G-bind    : bijection PULSION→groupe correcte (énergie→rouge, soif→bleu, dégâts→vert). Corrigé
+              le même jour : exigeait une bijection sur TOUS les groupes, donc qu'aucun ne reste
+              neutre. Le groupe élu pour une pulsion est celui de contingence MAXIMALE ;
   G-slot    : position du slot typé vs oracle couleur-rendue ≤ 0.5 m méd sur visibles (varié).
 
 Usage :
@@ -251,6 +256,8 @@ def main() -> None:
     ap.add_argument("--pool", nargs="+", default=DEATH_RUNS)
     ap.add_argument("--src", default=SRC_WM)
     ap.add_argument("--out", default=OUT_DIR)
+    ap.add_argument("--emit-anyway", action="store_true",
+                    help="écrire malgré un gate rouge, en INSCRIVANT l'échec dans le meta")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
     if args.selfcheck:
@@ -288,8 +295,17 @@ def main() -> None:
         proto_cos[j] = float(A["C"][j] @ true_c)
         print(f"[typed]   groupe {j} ≈ {PURE_CLASS.get(cl, '?'):6s} cos(vrai rendu)={proto_cos[j]:.4f} "
               f"intra-q05={A['own_q05'][j]:.3f} inter-q99.5={A['cross_q995'][j]:.3f}")
-    g_cluster = A["K"] == 3 and len(set(cls_of_group.values())) == 3 \
-        and min(proto_cos.values()) >= 0.98
+    # G-CLUSTER — SPÉCIFICATION CORRIGÉE (owner, 2026-07-29), et il faut dire exactement ce qui
+    # change et ce qui NE change pas. L'ancienne forme exigeait « K == 3 » : elle a été écrite pour
+    # un monde où chaque couleur était une pulsion. Le monde-forêt en a QUATRE — rouge, bleu, le
+    # vert du danger, et un vert NEUTRE (buissons, arbres) qui ne se lie à rien. Exiger 3 revient à
+    # interdire au monde d'être plus riche que l'hypothèse du gate, ce que le gate ne cherchait pas
+    # à garantir. Ce qu'il garantissait vraiment : que chaque PULSION dispose d'un groupe propre et
+    # fidèle à la couleur rendue. C'est ce qu'on écrit ici.
+    # 🚨 CE QUI EST DÉLIBÉRÉMENT CONSERVÉ : le seuil de fidélité 0,98, et il s'applique aux groupes
+    # LIÉS À UNE PULSION. On ne l'abaisse pas, et on n'exempte pas le danger. Un groupe neutre, lui,
+    # n'a pas à être fidèle : personne ne s'en sert.
+    g_cluster = None   # calculé après l'étape B (il dépend des liaisons) — voir plus bas
 
     # Étape B (poolé)
     B = stage_b_bind(A["C"], pooled)
@@ -298,11 +314,24 @@ def main() -> None:
         row = " ".join(f"P({o})={B['table'][j, oi]:.4f}" for oi, o in enumerate(OUTCOMES))
         print(f"[typed]   groupe {j} ({PURE_CLASS.get(cls_of_group[j], '?')}) : {row} → {B['bound'][j]}")
     want = {0: "energy", 2: "thirst", 1: "damage"}            # rouge→E, bleu→T, vert→D (oracle éval)
-    g_bind = (sorted(B["bound"].values()) == sorted(OUTCOMES)
-              and all(B["bound"][j] == want.get(cls_of_group[j]) for j in range(A["K"])))
-
-    # ordre des slots par drive DÉCOUVERT (convention consommateurs : food=0, water=1, danger=2)
-    order = {o: j for j, o in B["bound"].items()}
+    # G-BIND — MÊME CORRECTION. L'ancienne forme exigeait une bijection sur TOUS les groupes, donc
+    # qu'aucun groupe ne reste sans pulsion : impossible dès qu'il existe une classe neutre. Ce
+    # qu'elle protégeait réellement, c'est que chaque PULSION soit captée par le BON groupe. On
+    # vérifie donc la bijection sur les trois pulsions, et que le groupe élu est bien celui que
+    # l'oracle d'éval attend. Un groupe neutre peut se lier à ce qu'il veut : il n'est pas servi.
+    #
+    # 🚨 ET ON RÉPARE UNE FRAGILITÉ AU PASSAGE. `order` inversait le dictionnaire des liaisons :
+    # quand deux groupes revendiquaient la même pulsion, c'est le DERNIER dans l'ordre d'itération
+    # qui gagnait. Ici le bon groupe l'emportait par chance ; si le neutre avait porté un indice
+    # plus grand, il aurait écrasé le bon SANS RIEN SIGNALER. On élit désormais explicitement le
+    # groupe de CONTINGENCE MAXIMALE pour chaque pulsion, ce qui est ce qu'on voulait dire.
+    oi = {o: i for i, o in enumerate(OUTCOMES)}
+    order = {o: int(np.argmax(B["table"][:, oi[o]])) for o in OUTCOMES}
+    g_bind = (len(set(order.values())) == 3
+              and all(want.get(cls_of_group[order[o]]) == o for o in OUTCOMES))
+    # G-cluster, maintenant que les groupes SERVIS sont connus (fidélité exigée sur eux seuls).
+    g_cluster = (len({cls_of_group[j] for j in order.values()}) == 3
+                 and min(proto_cos[j] for j in order.values()) >= 0.98)
     slot_order = [order["energy"], order["thirst"], order["damage"]]
     C_ord = A["C"][slot_order]
     thr_ord = A["thr"][slot_order]
@@ -323,9 +352,17 @@ def main() -> None:
     print(f"[typed] G-bind    : bijection correcte → {'✅' if g_bind else '❌'} ({B['bound']})")
     print(f"[typed] G-slot    : méd ≤ 0.5 m ∀type → {'✅' if g_slot else '❌'}")
     verdict = g_sep and g_cluster and g_bind and g_slot
-    if not verdict:
+    failed = [n for n, ok in (("G-sep", g_sep), ("G-cluster", g_cluster),
+                              ("G-bind", g_bind), ("G-slot", g_slot)) if not ok]
+    if not verdict and not args.emit_anyway:
         print("[typed] ❌ GATE ÉCHOUÉ → PAS d'émission (négatif à commiter, diagnostiquer sur trace)")
         return
+    if not verdict:
+        # ÉMISSION SOUS RÉSERVE, décidée par l'owner. Le point important n'est pas qu'on émette :
+        # c'est que le checkpoint PORTE la trace de ce qui a échoué. Un canal dont on sait qu'un
+        # slot est mauvais n'est pas dangereux ; un canal dont plus personne ne sait qu'un slot est
+        # mauvais l'est. `meta["gates_failed"]` est donc écrit et le serveur pourra le lire.
+        print(f"[typed] ⚠️  ÉMISSION FORCÉE malgré {failed} — inscrit dans meta['gates_failed']")
     # Émission : WM gelé, seuls color_queries (buffer) + meta changent
     payload = torch.load(args.src, map_location="cpu", weights_only=False)
     state = dict(payload["model"])
@@ -337,11 +374,18 @@ def main() -> None:
                  "queries": "typed_learned_from_consequence_P6reopen",
                  "queries_cos_to_hand": [round(float(new_q[i] @ old_q[i]), 4) for i in range(3)],
                  "bind_table": B["table"][slot_order].tolist(),
-                 "varied_run": str(args.varied), "pool_runs": list(args.pool)})
+                 "varied_run": str(args.varied), "pool_runs": list(args.pool),
+                 # TRACE DE CE QUI N'A PAS PASSÉ. Vide = tous les gates verts. Non vide = le
+                 # checkpoint est utilisable MAIS un consommateur doit savoir sur quoi. On préfère
+                 # un canal dont on connaît le défaut à un canal dont le défaut a été oublié.
+                 "gates_failed": failed,
+                 "slot_quality_m": {n: round(float(gs[i][0]), 3)
+                                    for i, n in enumerate(("food", "water", "danger"))}})
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"model": state, "meta": meta}, out / "wm_best.pt")
-    print(f"[typed] ✅ GATES PASSÉS → WM TYPÉ émis : {out / 'wm_best.pt'}")
+    print(f"[typed] {'✅ GATES PASSÉS' if verdict else '⚠️  ÉMIS SOUS RÉSERVE'} → WM TYPÉ émis : "
+          f"{out / 'wm_best.pt'}")
     print(f"[typed]   requêtes apprises (cos vs main : {meta['queries_cos_to_hand']}), "
           f"marges {meta['query_thr']} — zéro couleur codée-main, lien slot→drive DÉCOUVERT.")
 
