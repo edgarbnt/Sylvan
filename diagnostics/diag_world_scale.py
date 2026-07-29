@@ -244,8 +244,15 @@ def selfcheck() -> int:
     # doubler le rayon de l'arène doit améliorer l'étendue et réduire les traversées
     # 22 m de rayon donnerait 19,8 longueurs de corps — JUSTE sous le seuil de 20. On prend donc
     # franchement plus grand, sinon le test mesure la marge du seuil et pas la sensibilité du critère.
+    # 🚨 ASSERTION PÉRIMÉE, RÉPARÉE LE 2026-07-30. Elle prenait FORET_V1 comme cas NÉGATIF (« une
+    # arène trop petite doit échouer »), ce qui était vrai quand l'anneau faisait 22 m — 19,8
+    # longueurs de corps, juste sous le seuil. L'arène a été portée à 35 m et fait maintenant 32
+    # longueurs : le preset passe, le cas négatif a disparu, et le selfcheck échouait en silence
+    # depuis. Un cas négatif ne doit jamais être le monde COURANT : il suit ses évolutions et finit
+    # par cesser d'être négatif. On le fabrique donc explicitement.
     big = dataclasses.replace(FORET_V1, name="t", spawn_annulus_m=(3.0, 40.0))
-    assert g(big, "S4 ÉTENDUE (taille)") and not g(FORET_V1, "S4 ÉTENDUE (taille)")
+    petite = dataclasses.replace(FORET_V1, name="t", spawn_annulus_m=(3.0, 12.0))
+    assert g(big, "S4 ÉTENDUE (taille)") and not g(petite, "S4 ÉTENDUE (taille)")
     print("  [ok] S4 réagit à l'étendue : l'arène servie échoue, une arène double passe")
     print("SELFCHECK PASSED")
     return 0
