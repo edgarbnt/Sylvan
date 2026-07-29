@@ -583,7 +583,22 @@ FORET_V1 = dataclasses.replace(
     # `diag_prey_interception` a mesuré qu'en dessous de 0,6x le gain de l'interception sur la
     # poursuite est NUL, donc toute la brique « nourriture mobile » était décorative. Remise à 0,9x,
     # la valeur où l'interception paie (67,5 % de capture contre 56,2 %).
-    prey_speed=0.046,
+    # ⚠️ 0,046 → 0,023 (2026-07-30), et ce n'est PAS un assouplissement : c'est le retrait d'une
+    # IMPOSSIBILITÉ. Le 0,9× ci-dessus a été calibré sur une croisière de 0,0508 m/tick ; depuis, le
+    # corps est passé à kin_speed 6,0 et la croisière est tombée à 0,0381 — la proie s'est donc
+    # retrouvée à 1,21× l'agent, plus RAPIDE que lui. Or le planner fait de la POURSUITE PURE : le
+    # transport du slot ne corrige que l'ego-motion (`transport_slot(slot, disp_real)`), donc il vise
+    # toujours la position ACTUELLE. Poursuivre plus rapide que soi ne converge jamais : mesuré, le
+    # temps de fermeture sur 4 m est INFINI à 0,046, encore 656 ticks à 0,032, contre 375 ticks de
+    # réserve. Le monde était insoluble, pas difficile.
+    # 0,023 = exactement la borne basse que le gate d'échelle exige (0,6× croisière, seuil sous lequel
+    # l'interception ne paie plus). On se pose donc au point le plus DUR qui reste soluble. Le gate
+    # n'avait qu'une borne basse : l'absence de borne haute est le trou par lequel c'est passé.
+    # 🚨 CECI EST UNE SONDE, pas le correctif final. Le monde a été conçu pour l'INTERCEPTION (la
+    # proie ne fuit pas, délibérément, pour que viser devant paie). Un planner à modèle d'objet
+    # statique ne peut pas intercepter. Le vrai correctif est un slot qui porte une VITESSE ; celui-ci
+    # ne fait que rendre la poursuite possible, pour savoir si la vitesse de proie explique l'échec.
+    prey_speed=0.023,
     distractor_speed=0.030,             # 0,6x la croisière : ils bougent VRAIMENT pour ce corps
     # ⭐ FORÊT RAMENÉE À 40 ARBRES (2026-07-28 soir) — ET C'EST UNE AUTO-CORRECTION. J'avais monté
     # à 191 « pour atteindre la densité d'une forêt réelle (10-20 m²/tige) », en écartant au passage

@@ -19,9 +19,14 @@ CRITÈRES PRÉ-ENREGISTRÉS (chacun cite la source de son seuil) :
   S1 MANŒUVRABILITÉ . le rayon de braquage doit tenir dans l'espace libre entre deux arbres voisins,
                       sinon le corps ne peut PAS slalomer — il ne peut que s'arrêter ou contourner
                       le massif entier. Seuil : rayon de braquage <= écart libre moyen.
-  S2 MOBILES ....... proies et distracteurs doivent aller à >= 0,6x la vitesse de croisière : en
-                     dessous, `diag_prey_interception` a MESURÉ que le gain de l'interception sur la
-                     poursuite est nul (§2.4). Sous ce seuil, « nourriture mobile » est décoratif.
+  S2 MOBILES ....... la proie doit tenir dans la BANDE 0,6-1,0x la vitesse de croisière. Plancher :
+                     `diag_prey_interception` a mesuré qu'en dessous de 0,6x le gain de
+                     l'interception sur la poursuite est nul (§2.4) — « nourriture mobile » devient
+                     décoratif. Plafond AJOUTÉ le 2026-07-30 : au-delà de 1,0x la proie va plus vite
+                     que l'agent, et le planner fait de la poursuite PURE (le slot suppose l'objet
+                     immobile), donc elle est INATTRAPABLE. Ce test n'avait qu'un plancher et a
+                     validé d'un ✅ une proie à 1,21x — un gate borné d'un seul côté certifie qu'une
+                     mécanique n'est pas inerte, pas qu'elle est jouable.
   S3 HORLOGES ...... toute horloge du monde (repousse, cycle des flaques) doit se déclencher au moins
                      une fois dans une vie, sinon la mécanique n'existe pas du point de vue de
                      l'entité. Seuil : période <= durée de vie.
@@ -65,6 +70,9 @@ BODY_HALF_W = 0.213         # demi-largeur MESURÉE
 # incontrôlable, donc toute la calibration métabolique fausse.
 MAX_BLOCKED_FRAC = 0.15
 PREY_MIN_RATIO = 0.6        # §2.4, mesuré par diag_prey_interception : en dessous, gain NUL
+# Plafond : au-delà, l'agent ne rattrape plus à la croisière. On se cale sur 1,0 — la proie
+# peut être aussi rapide que la croisière, jamais davantage, sinon le monde est insoluble.
+PREY_MAX_RATIO = 1.0
 ARENA_MIN_BODIES = 20.0     # une arène de moins de 20 longueurs de corps est une pièce, pas un monde
 CROSSINGS_MAX = 4.0         # au-delà, l'entité fait le tour et l'espace cesse d'être une ressource
 MOUTH_MIN_TICKS = 4.0       # hérité de G2
@@ -148,10 +156,20 @@ def audit(p: WorldPreset) -> list[tuple[bool, str, str]]:
     # --- mobiles : sont-ils encore mobiles RELATIVEMENT au corps ? ------------------------------
     if p.prey_speed > 0:
         ratio = p.prey_speed / v_real
-        out.append((ratio >= PREY_MIN_RATIO, "S2 MOBILES (proie)",
+        # 🚨 BORNE HAUTE AJOUTÉE (2026-07-30) — c'est par son absence que le trou est passé. Ce test
+        # n'avait qu'un plancher (« la proie doit bouger assez pour que la poursuite compte ») et il
+        # a donc validé d'un ✅ un monde où la proie allait à 1,21x la croisière, donc PLUS VITE que
+        # l'agent. Le planner fait de la poursuite PURE — le transport du slot ne corrige que
+        # l'ego-motion, l'objet est supposé immobile — et poursuivre plus rapide que soi ne converge
+        # jamais : temps de fermeture INFINI, mesuré. Un gate qui ne borne que d'un côté certifie
+        # qu'une mécanique n'est pas inerte, pas qu'elle est jouable.
+        ok = PREY_MIN_RATIO <= ratio <= PREY_MAX_RATIO
+        why = ("la poursuite reste un problème JOUABLE" if ok else
+               "la proie est QUASI IMMOBILE : la brique est inerte" if ratio < PREY_MIN_RATIO else
+               "la proie DISTANCE l'agent : sous poursuite pure elle est INATTRAPABLE")
+        out.append((ok, "S2 MOBILES (proie)",
                     f"proie {p.prey_speed:.4f} m/tick = {ratio:.2f}x la croisière {v_real:.4f} "
-                    f"(exigé >= {PREY_MIN_RATIO}) → "
-                    f"{'la poursuite reste un problème' if ratio >= PREY_MIN_RATIO else 'la proie est QUASI IMMOBILE pour ce corps : la brique est inerte'}"))
+                    f"(bande exigée {PREY_MIN_RATIO}-{PREY_MAX_RATIO}) → {why}"))
 
     # --- horloges : se déclenchent-elles seulement une fois par vie ? ---------------------------
     out.append((p.regrow_ticks <= life, "S3 HORLOGE (repousse)",
