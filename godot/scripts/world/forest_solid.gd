@@ -41,6 +41,11 @@ var _count := 0
 var _use_mesh := false         # habillage KayKit (visuel seul) ; défaut OFF = primitives, bit-identique
 var _mesh_cache = null         # modèle chargé UNE fois puis dupliqué (un glTF par arbre serait absurde)
 var _mesh_tried := false       # on ne retente pas un chargement qui a échoué à chaque arbre
+var _grass_root: Node3D = null # racine du sous-bois VISUEL ; null = jamais construit (headless)
+var _grass_per_tree := 10      # touffes semées par arbre dans son disque de traînée
+var _grass_radius := 2.5       # = SYLVAN_TERRAIN_RADIUS, le disque RÉELLEMENT compté
+var _rng_grass := RandomNumberGenerator.new()  # flux DÉDIÉ : le décor ne doit pas décaler
+                                               # le tirage des commandes (§6quater F)
 var _count_min := 0            # borne basse de l'effectif par épisode ; == _count → variation OFF
 var _episode_count := 0        # effectif RÉELLEMENT servi cet épisode (tiré dans [_count_min, _count])
 var _radius_min := 2.5                             # anneau de dispersion : on garde le centre dégagé
@@ -117,6 +122,10 @@ func _init() -> void:
 	# un minimum supérieur au maximum produirait un randi_range inversé, donc un crash ou pire.
 	_count_min = clampi(int(_env("SYLVAN_FOREST_COUNT_MIN", str(_count))), 0, _count)
 	_use_mesh = _env("SYLVAN_FOREST_MESH", "0") == "1"   # habillage : visuel seul, jamais en collecte
+	# Le sous-bois se dessine sur le rayon RÉELLEMENT servi au ralentissement, jamais sur un chiffre
+	# recopié : sinon l'image montrerait un disque de traînée qui n'est pas celui qu'on applique.
+	_grass_radius = _envf("SYLVAN_TERRAIN_RADIUS", _grass_radius)
+	_grass_per_tree = int(_env("SYLVAN_FOREST_UNDERGROWTH", "0"))
 	_radius_min = _envf("SYLVAN_FOREST_RADIUS_MIN", _radius_min)
 	_radius_max = _envf("SYLVAN_FOREST_RADIUS_MAX", _radius_max)
 	_trunk_r = _envf("SYLVAN_FOREST_TRUNK_R", _trunk_r)
@@ -168,6 +177,13 @@ func set_seed(value: int) -> void:
 func _ensure_built() -> void:
 	if not active() or not _bodies.is_empty():
 		return
+	# Racine du sous-bois : créée UNIQUEMENT en mode visuel. En headless elle reste null et
+	# _build_undergrowth() sort au premier test → la collecte ne paie rien et ne change pas.
+	if _grass_per_tree > 0 and DisplayServer.get_name() != "headless":
+		_rng_grass.seed = 20260729
+		_grass_root = Node3D.new()
+		_grass_root.name = "SousBois"
+		add_child(_grass_root)
 	_material = StandardMaterial3D.new()
 	_material.albedo_color = _color
 	_material.emission_enabled = true
@@ -383,6 +399,7 @@ func begin_episode(_episode_index: int, spawn_pos: Vector3, resource_positions: 
 		% [_centers.size(), _mean_nn(), _support_area(), _clark_evans()])
 	_apply_tree_radius()
 	_apply_tree_appearance()
+	_build_undergrowth()
 	if _radius_var > 0.0:
 		print("[forest] taille : var %.2f | rayon des troncs MESURE %.3f..%.3f m (nominal %.2f) — la geometrie VARIE, donc l encodeur peut l apprendre"
 			% [_radius_var, _rad_lo, _rad_hi, _trunk_r])
@@ -549,6 +566,50 @@ func speed_multiplier_at(pos: Vector3, strength: float, radius: float, floor_v: 
 		if Vector2(pos.x - c.x, pos.z - c.z).length_squared() < r2:
 			n += 1
 	return maxf(floor_v, 1.0 / (1.0 + strength * float(n)))
+
+
+# SOUS-BOIS VISIBLE (2026-07-29, opt-in SYLVAN_FOREST_UNDERGROWTH, mode VISUEL seulement).
+#
+# POURQUOI. `speed_multiplier_at` ci-dessus ralentit l'entité selon le NOMBRE d'arbres dans un rayon
+# de `terrain_radius` — c'est du sous-bois, et c'est lourd : le facteur terrain mesuré (0,635) fait
+# passer le budget de trajet de 84,9 m à 53,9 m par vie, l'une des constantes les plus lourdes du
+# monde. Or il n'avait AUCUN rendu : le sol paraissait uniformément plat pendant qu'elle pataugeait.
+#
+# CE QUE ÇA MONTRE, ET CE QUE ÇA NE MONTRE PAS. On sème une nappe par arbre, du rayon exact du disque
+# de traînée : là où les disques se recouvrent, la végétation s'épaissit d'elle-même, donc l'image
+# dit la vérité sur l'endroit où la vitesse tombe. En revanche l'entité, elle, ne VOIT pas ce
+# sous-bois : il n'est ni sur la couche 8 ni porteur de `retina_color`. Elle le SUBIT sans le
+# percevoir. Ce n'est pas un mensuel visuel — c'est le rendu d'une force réellement vécue — mais
+# c'est une ASYMÉTRIE qu'il faut connaître, et c'est une question de conception ouverte : faut-il
+# qu'elle puisse voir le terrain qui la freine ? Les touffes sont donc rendues MATES et BASSES,
+# quand tout ce qu'elle perçoit est émissif : impossible de les confondre à l'œil avec un objet.
+func _build_undergrowth() -> void:
+	if _grass_root == null:
+		return
+	for c in _grass_root.get_children():
+		c.queue_free()                       # les arbres bougent à chaque épisode : on re-sème
+	if _centers.is_empty():
+		return
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.16, 0.24, 0.13)   # olive sombre, MAT : ne peut pas passer pour un objet
+	mat.roughness = 1.0
+	var tuft := CylinderMesh.new()               # touffe basse et large, pas un objet dressé
+	tuft.top_radius = 0.0
+	tuft.bottom_radius = 0.32
+	tuft.height = 0.22
+	for c in _centers:
+		for _k in range(_grass_per_tree):
+			var a := _rng_grass.randf_range(0.0, TAU)
+			# uniforme EN AIRE dans le disque de traînée : la densité dessinée suit la densité
+			# réellement comptée par speed_multiplier_at, au lieu de s'entasser près du tronc.
+			# rayon = SYLVAN_TERRAIN_RADIUS : on dessine le disque SERVI, pas un joli disque.
+			var r := sqrt(_rng_grass.randf()) * _grass_radius
+			var m := MeshInstance3D.new()
+			m.mesh = tuft
+			m.material_override = mat
+			m.position = Vector3(c.x + cos(a) * r, 0.10, c.z + sin(a) * r)
+			m.rotate_y(_rng_grass.randf_range(0.0, TAU))
+			_grass_root.add_child(m)
 
 
 func _env(key: String, dflt: String) -> String:

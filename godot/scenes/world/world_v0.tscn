@@ -1,9 +1,12 @@
 [gd_scene load_steps=7 format=3]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.2, 0.45, 0.85, 1)
-sky_horizon_color = Color(0.55, 0.65, 0.8, 1)
-ground_bottom_color = Color(0.1, 0.1, 0.12, 1)
+sky_top_color = Color(0.28, 0.44, 0.62, 1)
+sky_horizon_color = Color(0.76, 0.79, 0.74, 1)
+ground_horizon_color = Color(0.5, 0.5, 0.44, 1)
+ground_bottom_color = Color(0.16, 0.17, 0.13, 1)
+sun_angle_max = 24.0
+sun_curve = 0.15
 
 [sub_resource type="Sky" id="Sky_sky"]
 sky_material = SubResource("ProceduralSkyMaterial_sky")
@@ -11,8 +14,20 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 2
 sky = SubResource("Sky_sky")
-tonemap_mode = 2
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.85
+ambient_light_energy = 1.1
+tonemap_mode = 3
+tonemap_white = 1.4
+fog_enabled = true
+fog_light_color = Color(0.72, 0.76, 0.72, 1)
+fog_density = 0.012
+fog_sky_affect = 0.3
+fog_height = 6.0
+fog_height_density = 0.02
 glow_enabled = true
+glow_intensity = 0.5
+glow_bloom = 0.05
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(100, 2, 100)
