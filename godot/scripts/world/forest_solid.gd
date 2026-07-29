@@ -38,6 +38,9 @@ const RETINA_LAYER := 1 << 7                       # bit 7 (128) — perceptible
 const TREE_COLOR := Color(0.13, 0.35, 0.13)        # vert foncé — fuite MESURÉE = 0.0000
 
 var _count := 0
+var _use_mesh := false         # habillage KayKit (visuel seul) ; défaut OFF = primitives, bit-identique
+var _mesh_cache = null         # modèle chargé UNE fois puis dupliqué (un glTF par arbre serait absurde)
+var _mesh_tried := false       # on ne retente pas un chargement qui a échoué à chaque arbre
 var _count_min := 0            # borne basse de l'effectif par épisode ; == _count → variation OFF
 var _episode_count := 0        # effectif RÉELLEMENT servi cet épisode (tiré dans [_count_min, _count])
 var _radius_min := 2.5                             # anneau de dispersion : on garde le centre dégagé
@@ -113,6 +116,7 @@ func _init() -> void:
 	# Clampé à [0, _count] parce que la borne haute est le nombre de corps réellement CONSTRUITS —
 	# un minimum supérieur au maximum produirait un randi_range inversé, donc un crash ou pire.
 	_count_min = clampi(int(_env("SYLVAN_FOREST_COUNT_MIN", str(_count))), 0, _count)
+	_use_mesh = _env("SYLVAN_FOREST_MESH", "0") == "1"   # habillage : visuel seul, jamais en collecte
 	_radius_min = _envf("SYLVAN_FOREST_RADIUS_MIN", _radius_min)
 	_radius_max = _envf("SYLVAN_FOREST_RADIUS_MAX", _radius_max)
 	_trunk_r = _envf("SYLVAN_FOREST_TRUNK_R", _trunk_r)
@@ -224,6 +228,22 @@ func _ensure_built() -> void:
 			can.material_override = body_mat
 			can.position = off + Vector3(0.0, _height * 0.55, 0.0)
 			body.add_child(can)
+			# HABILLAGE (2026-07-29, opt-in SYLVAN_FOREST_MESH=1, mode VISUEL uniquement).
+			# On remplace la silhouette cylindre+cône par un vrai modèle KayKit (CC0), et on cache
+			# les primitives. Trois invariants tenus, sans lesquels ce serait un habillage malhonnête :
+			#   1. la COLLISION ne bouge pas (le CollisionShape3D reste le cylindre) → la profondeur
+			#      lue par la rétine est bit-identique, donc le WM en cours d'entraînement reste valide ;
+			#   2. `retina_color` ne bouge pas, et le modèle est TEINTÉ vers cette même couleur →
+			#      l'owner continue de voir ce que l'entité perçoit (§2.1, cf. le houppier ci-dessus) ;
+			#   3. défaut OFF + repli sur les primitives si le pack manque (il est git-ignoré, donc
+			#      absent pour quiconque clone le dépôt) → aucune régression possible.
+			if _use_mesh:
+				var pretty := _load_tree_model()
+				if pretty != null:
+					pretty.position = off
+					body.add_child(pretty)
+					mesh.visible = false
+					can.visible = false
 		body.visible = false
 		add_child(body)
 		_bodies.append(body)
@@ -235,6 +255,44 @@ func _ensure_built() -> void:
 # Disperse les arbres pour le nouvel épisode. GARDES : jamais dans le rayon dégagé autour du spawn
 # (sinon l'agent démarre emmuré), jamais à moins de `_keepout` d'une ressource (sinon elle devient
 # inatteignable et on mesurerait un échec du MONDE, pas de l'entité — §2).
+# Charge le modèle d'arbre UNE fois et le teinte à la couleur perçue. Renvoie un duplicata prêt à
+# être posé, ou null (pack absent, mode headless, chargement raté) → l'appelant garde les primitives.
+func _load_tree_model() -> Node3D:
+	if not _mesh_tried:
+		_mesh_tried = true
+		# HEADLESS = on ne charge RIEN. Les workers de collecte ne doivent payer ni le temps de
+		# chargement ni la mémoire, et surtout le monde qu'ils enregistrent doit rester le même.
+		if DisplayServer.get_name() == "headless":
+			return null
+		var dir := ProjectSettings.globalize_path("res://../ForestLowPolyAssets/Assets/gltf/")
+		var doc := GLTFDocument.new()
+		var st := GLTFState.new()
+		if doc.append_from_file(dir + "Tree_1_A_Color1.gltf", st) == OK:
+			_mesh_cache = doc.generate_scene(st)
+	if _mesh_cache == null:
+		return null
+	var inst: Node3D = _mesh_cache.duplicate()
+	# Le modèle KayKit fait ~1 unité de large ; on l'amène au gabarit du tronc SERVI pour que la
+	# silhouette rendue corresponde à l'obstacle réel. Un arbre dessiné plus fin que sa collision
+	# ferait croire à un passage qui n'existe pas — le mensonge inverse de celui du houppier brun.
+	var s := _height / 2.0
+	inst.scale = Vector3(s, s, s)
+	_tint(inst)
+	return inst
+
+
+# Teinte TOUT le modèle vers `retina_color`. C'est ce qui rend l'habillage honnête : la géométrie
+# gagne en détail, la couleur reste celle que l'entité lit dans la méta.
+func _tint(n: Node) -> void:
+	if n is MeshInstance3D:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = _color
+		m.roughness = 0.9
+		(n as MeshInstance3D).material_override = m
+	for c in n.get_children():
+		_tint(c)
+
+
 # Un arbre ABSENT doit l'être pour TOUT LE MONDE : le rendu, la collision, et la rétine. Séparer ces
 # trois vérités est exactement la façon dont un monde se met à mentir en silence.
 func _hide_tree(i: int) -> void:
