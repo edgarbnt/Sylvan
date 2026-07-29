@@ -612,7 +612,18 @@ func _load_bush_model(mat: StandardMaterial3D) -> Node3D:
 
 func _tint_node(n: Node, mat: StandardMaterial3D) -> void:
 	if n is MeshInstance3D:
-		(n as MeshInstance3D).material_override = mat
+		# Même correctif que forest_solid._tint : on duplique le matériau du modèle et on n'écrase
+		# que la couleur. Remplacer le matériau détruisait l'alpha-cutout des feuilles, qui se
+		# rendaient alors en panneaux pleins.
+		var mi := n as MeshInstance3D
+		var src := mi.get_active_material(0)
+		if src != null:
+			var d := src.duplicate()
+			if d is StandardMaterial3D:
+				(d as StandardMaterial3D).albedo_color = mat.albedo_color
+			mi.material_override = d
+		else:
+			mi.material_override = mat
 	for c in n.get_children():
 		_tint_node(c, mat)
 

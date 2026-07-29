@@ -333,7 +333,21 @@ func _load_tree_model(mat: StandardMaterial3D, idx: int) -> Node3D:
 # la richesse qu'il avait perdue : la diversité qu'on affiche est celle qui EXISTE.
 func _tint(n: Node, mat: StandardMaterial3D) -> void:
 	if n is MeshInstance3D:
-		(n as MeshInstance3D).material_override = mat
+		var mi := n as MeshInstance3D
+		# 🚨 ON TEINTE LE MATÉRIAU D'ORIGINE, ON NE LE REMPLACE PAS (2026-07-29, vu sur capture :
+		# les houppiers se rendaient en PANNEAUX CARRÉS PLATS). Les feuillages KayKit sont des
+		# cartes en alpha-cutout ; poser un StandardMaterial3D opaque par-dessus détruisait le mode
+		# de transparence, donc chaque carte de feuilles devenait un rectangle plein. On duplique
+		# le matériau du modèle et on n'écrase QUE la couleur : le cutout, la texture et le mode de
+		# culling survivent, et la teinte perçue est quand même respectée.
+		var src := mi.get_active_material(0)
+		if src != null:
+			var d := src.duplicate()
+			if d is StandardMaterial3D:
+				(d as StandardMaterial3D).albedo_color = mat.albedo_color
+			mi.material_override = d
+		else:
+			mi.material_override = mat
 	for c in n.get_children():
 		_tint(c, mat)
 
@@ -643,7 +657,10 @@ func _build_undergrowth() -> void:
 				node = m
 			node.position = Vector3(c.x + cos(a) * r, 0.0, c.z + sin(a) * r)
 			node.rotate_y(_rng_grass.randf_range(0.0, TAU))
-			var sc := _rng_grass.randf_range(1.1, 2.3)     # tailles variées : un semis régulier
+			# ÉCHELLE RAMENÉE À DU SOUS-BOIS (vu sur capture : les brins dépassaient le loup, et
+			# saturaient la scène au point qu'on ne voyait plus qu'eux). Le sous-bois se marche
+			# dessus, il ne se contourne pas — sinon ce serait un obstacle, et ça n'en est pas un.
+			var sc := _rng_grass.randf_range(0.25, 0.5)    # tailles variées : un semis régulier
 			node.scale = Vector3(sc, sc, sc)               # se lit comme une texture, pas une plante
 			_grass_root.add_child(node)
 
