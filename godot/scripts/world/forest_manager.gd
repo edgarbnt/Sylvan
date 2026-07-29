@@ -28,7 +28,10 @@ var _dir := ""              # absolute path to the glTF dir (res:// can't escape
 # Day/night cycle (visual only)
 var _sun: DirectionalLight3D
 var _env: Environment
-var _day_period := 120.0    # seconds for a full day->night->day cycle (visible while watching)
+# Période allongée 120 -> 420 s : à 120 s on traversait une nuit toutes les minutes, ce qui rendait
+# l'observation hachée. Réglable, comme le plancher de nuit (0 = noir d'origine, 1 = plein jour).
+var _day_period := 420.0
+var _night_floor := 0.35
 var _time := 0.0
 @export var enabled := true
 
@@ -40,6 +43,12 @@ var _cam_offset := Vector3(0.0, 3.0, -5.5)   # above + behind (-z = behind the +
 
 func setup(world_node: Node, agent_node: Node = null, seed_value: int = 0) -> void:
 	_rng.seed = seed_value
+	var _dp := OS.get_environment("SYLVAN_DAY_PERIOD")
+	if _dp != "":
+		_day_period = maxf(1.0, _dp.to_float())
+	var _nf := OS.get_environment("SYLVAN_NIGHT_FLOOR")
+	if _nf != "":
+		_night_floor = clampf(_nf.to_float(), 0.0, 1.0)
 	_agent = agent_node
 	_dir = ProjectSettings.globalize_path(GLTF_DIR)   # -> absolute /…/ForestLowPolyAssets/Assets/gltf/
 	_decor_root = Node3D.new()
@@ -157,15 +166,23 @@ func _process(delta: float) -> void:
 	var elevation := sin(theta)                     # >0 day, <0 night
 	# Sweep the sun pitch around so light comes from changing directions through the day.
 	_sun.rotation = Vector3(-theta, 0.6, 0.0)
-	# Bright at noon, ~dark at night; warm (orange) near the horizon, white at noon.
-	_sun.light_energy = clampf(elevation * 1.3, 0.0, 1.3)
+	# 🚨 LA NUIT NE DOIT PLUS ÊTRE UN NOIR (2026-07-29, sur capture de l'owner : « très très sombre,
+	# on ne comprend pas grand-chose »). Le réglage d'origine tombait à light_energy = 0 et ambient
+	# 0,05 — un vrai noir, toutes les 60 s avec un cycle de 120.
+	# CE QUE ÇA COÛTAIT, ET À QUI : ce cycle est PUREMENT COSMÉTIQUE. La rétine fait des raycasts sur
+	# la couche 8 et lit `retina_color` dans une méta — elle ne voit ni le soleil ni l'ambiante. La
+	# nuit, l'ENTITÉ perçoit donc exactement la même chose, et seul l'OBSERVATEUR devient aveugle.
+	# Pour un outil dont le rôle est de JUGER un comportement, c'est un coût unilatéral. On garde le
+	# cycle (il reste beau et il prépare un vrai jour/nuit), mais avec un plancher : une nuit lit
+	# comme un crépuscule bleu, pas comme un écran éteint.
+	var day := clampf(elevation, 0.0, 1.0)
+	_sun.light_energy = lerpf(_night_floor * 1.3, 1.3, day)
 	var warmth := clampf(1.0 - maxf(elevation, 0.0), 0.0, 1.0)
 	_sun.light_color = Color(1.0, lerpf(1.0, 0.55, warmth), lerpf(1.0, 0.30, warmth))
 	if _env != null:
-		# Dim the ambient at night so it actually gets dark.
-		_env.ambient_light_energy = lerpf(0.05, 0.6, clampf(elevation, 0.0, 1.0))
+		_env.ambient_light_energy = lerpf(0.6 * _night_floor + 0.12, 0.7, day)
 		if "background_energy_multiplier" in _env:
-			_env.background_energy_multiplier = lerpf(0.15, 1.0, clampf(elevation * 0.5 + 0.5, 0.0, 1.0))
+			_env.background_energy_multiplier = lerpf(0.35, 1.0, clampf(elevation * 0.5 + 0.5, 0.0, 1.0))
 
 
 # Third-person follow: keep the camera at a fixed offset above/behind the trunk, smoothly tracking

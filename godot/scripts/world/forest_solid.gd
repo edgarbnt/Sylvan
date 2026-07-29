@@ -40,6 +40,7 @@ const TREE_COLOR := Color(0.13, 0.35, 0.13)        # vert foncé — fuite MESUR
 var _count := 0
 var _use_mesh := false         # habillage KayKit (visuel seul) ; défaut OFF = primitives, bit-identique
 var _mesh_cache = null         # modèle chargé UNE fois puis dupliqué (un glTF par arbre serait absurde)
+var _mesh_pool: Array = []     # les essences disponibles ; l'arbre i prend _mesh_pool[i % taille]
 var _mesh_tried := false       # on ne retente pas un chargement qui a échoué à chaque arbre
 var _grass_root: Node3D = null # racine du sous-bois VISUEL ; null = jamais construit (headless)
 var _grass_per_tree := 10      # touffes semées par arbre dans son disque de traînée
@@ -256,7 +257,7 @@ func _ensure_built() -> void:
 			#   3. défaut OFF + repli sur les primitives si le pack manque (il est git-ignoré, donc
 			#      absent pour quiconque clone le dépôt) → aucune régression possible.
 			if _use_mesh:
-				var pretty := _load_tree_model(body_mat)
+				var pretty := _load_tree_model(body_mat, i)
 				if pretty != null:
 					# 🚨 LES ARBRES VOLAIENT (repéré à l'œil par l'owner, 2026-07-29). Le CORPS est
 					# posé à y = _height/2 parce qu'un CylinderMesh est centré sur son origine et
@@ -282,7 +283,7 @@ func _ensure_built() -> void:
 # inatteignable et on mesurerait un échec du MONDE, pas de l'entité — §2).
 # Charge le modèle d'arbre UNE fois et le teinte à la couleur perçue. Renvoie un duplicata prêt à
 # être posé, ou null (pack absent, mode headless, chargement raté) → l'appelant garde les primitives.
-func _load_tree_model(mat: StandardMaterial3D) -> Node3D:
+func _load_tree_model(mat: StandardMaterial3D, idx: int) -> Node3D:
 	if not _mesh_tried:
 		_mesh_tried = true
 		# HEADLESS = on ne charge RIEN. Les workers de collecte ne doivent payer ni le temps de
@@ -290,15 +291,28 @@ func _load_tree_model(mat: StandardMaterial3D) -> Node3D:
 		if DisplayServer.get_name() == "headless":
 			return null
 		var dir := ProjectSettings.globalize_path("res://../ForestLowPolyAssets/Assets/gltf/")
-		var doc := GLTFDocument.new()
-		var st := GLTFState.new()
-		if doc.append_from_file(dir + "Tree_1_A_Color1.gltf", st) == OK:
-			_mesh_cache = doc.generate_scene(st)
-		print("[forest] habillage ARBRES : %s" % ("modele KayKit" if _mesh_cache != null
-			else "REPLI primitif (pack introuvable a %s)" % dir))
+		# PLUSIEURS ESSENCES, pas une (2026-07-29). Quarante exemplaires du même modèle se lisent
+		# comme un motif répété, pas comme une forêt — l'œil repère la copie avant de voir l'arbre.
+		# Les variantes du pack coûtent un chargement chacune et rien de plus : elles sont mises en
+		# cache une fois et dupliquées ensuite, comme le modèle unique l'était déjà.
+		for f in ["Tree_1_A_Color1.gltf", "Tree_2_A_Color1.gltf", "Tree_1_C_Color1.gltf",
+				  "Tree_2_B_Color1.gltf"]:
+			var doc := GLTFDocument.new()
+			var st := GLTFState.new()
+			if doc.append_from_file(dir + f, st) == OK:
+				var n := doc.generate_scene(st)
+				if n != null:
+					_mesh_pool.append(n)
+		if not _mesh_pool.is_empty():
+			_mesh_cache = _mesh_pool[0]
+		print("[forest] habillage ARBRES : %s" % ("%d essences KayKit" % _mesh_pool.size()
+			if _mesh_cache != null else "REPLI primitif (pack introuvable a %s)" % dir))
 	if _mesh_cache == null:
 		return null
-	var inst: Node3D = _mesh_cache.duplicate()
+	# Essence choisie par l'INDICE de l'arbre, pas au hasard : stable d'un épisode à l'autre pour un
+	# même arbre, donc la scène ne scintille pas entre deux vies alors que rien n'a bougé.
+	var src: Node3D = _mesh_pool[idx % _mesh_pool.size()]
+	var inst: Node3D = src.duplicate()
 	# Le modèle KayKit fait ~1 unité de large ; on l'amène au gabarit du tronc SERVI pour que la
 	# silhouette rendue corresponde à l'obstacle réel. Un arbre dessiné plus fin que sa collision
 	# ferait croire à un passage qui n'existe pas — le mensonge inverse de celui du houppier brun.

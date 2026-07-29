@@ -171,6 +171,9 @@ func _update_hud() -> void:
 		"drinks": water_manager.consumed_this_episode,
 		"step": episode_manager.current_step_id,
 		"max_step": episode_manager.max_episode_steps,
+		# Le facteur REELLEMENT applique au corps ce tick, pas une re-derivation : un HUD qui
+		# recalcule sa propre version finit par afficher autre chose que ce que subit l entite.
+		"terrain": _terrain_last,
 	})
 
 
@@ -270,6 +273,7 @@ var _terrain_slow := 0.0     # pente du ralentissement par arbre proche (0 = OFF
 var _terrain_radius := 2.0   # rayon de comptage du sous-bois autour du corps, en mètres
 var _terrain_floor := 0.25   # plancher : même le sous-bois le plus dense laisse 25 % de la vitesse
 var _terrain_scale_sum := 0.0
+var _terrain_last := 1.0     # dernier facteur RÉELLEMENT appliqué (lu par le HUD, pas recalculé)
 var _terrain_slowed_ticks := 0
 var _terrain_ticks := 0
 # ÉVENTAIL DE VITESSE (§2.13) — comptabilité MESURÉE du coût de locomotion réellement facturé.
@@ -725,6 +729,7 @@ func _physics_process(delta: float) -> void:
 		if _tpos != null:
 			var _sc := forest_solid.speed_multiplier_at(_tpos.global_position, _terrain_slow, _terrain_radius, _terrain_floor)
 			agent_instance.terrain_speed_scale = _sc
+			_terrain_last = _sc
 			# §6bis : mesurer ce qui a RÉELLEMENT ralenti, pas ce qui est demandé.
 			_terrain_scale_sum += _sc
 			if _sc < 0.999:

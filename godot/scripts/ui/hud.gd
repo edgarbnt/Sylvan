@@ -36,6 +36,7 @@ var _meals := 0
 var _drinks := 0
 var _step := 0
 var _max_step := 0
+var _terrain := 1.0   # multiplicateur de vitesse SUBI (1 = sol libre, < 1 = sous-bois)
 var _ready_ok := false
 
 
@@ -60,6 +61,7 @@ func update(state: Dictionary) -> void:
 	_drinks = int(state.get("drinks", 0))
 	_step = int(state.get("step", 0))
 	_max_step = int(state.get("max_step", 0))
+	_terrain = float(state.get("terrain", 1.0))
 	_canvas.queue_redraw()
 
 
@@ -87,6 +89,12 @@ func _on_draw() -> void:
 	status += "   step %d" % _step
 	if _max_step > 0:
 		status += " / %d" % _max_step
+	# SOUS-BOIS CHIFFRÉ. Le ralentissement du terrain est la constante la plus lourde du monde
+	# (facteur mesuré 0,635 : budget de trajet 84,9 m -> 53,9 m par vie) et il était INVISIBLE :
+	# on ne pouvait ni le voir ni le lire. Les touffes montrent OÙ ; ce nombre montre COMBIEN.
+	# Affiché seulement quand il mord, pour que l'apparition du chiffre SOIT l'information.
+	if _terrain < 0.995:
+		status += "   sous-bois x%.2f" % _terrain
 
 	var bar_block_w := LABEL_W + BAR_W + NUM_GAP + NUM_W
 	var status_w: float = _font.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x

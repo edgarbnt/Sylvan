@@ -95,6 +95,8 @@ var _patch_count := 0             # 0 = OFF (perpetual field inchangé)
 # facteur secondaire ; l'occlusion par le marqueur était la cause.
 var _patch_radius := 0.95         # rayon EXTERNE de la couronne de baies (< eat_radius 1.0)
 var _patch_count_min := 0         # borne basse par épisode ; == _patch_count → variation OFF
+var _bush_cache = null            # modèle de buisson (habillage visuel), chargé une fois
+var _bush_tried := false
 var _patch_spacing_max := 0.0     # 0 = pas de borne haute (comportement d'origine)
 var _patch_spacing := 9.0         # distance mini entre deux centres (traversée = 818 ticks = 41 pts d'énergie)
 var _regrow_ticks := 2000         # une baie repousse SUR PLACE après ce délai
@@ -583,6 +585,38 @@ func _log_patches() -> void:
 		print("[patch] %s : %d types SERVIS depuis %s |%s" % [_prefix, _n_types, src, s])
 
 
+# Modèle de buisson du pack, chargé une fois puis dupliqué, teinté à la couleur PERÇUE.
+# null → l'appelant garde sa sphère (headless, pack absent, ou habillage non demandé).
+func _load_bush_model(mat: StandardMaterial3D) -> Node3D:
+	if not _bush_tried:
+		_bush_tried = true
+		if OS.get_environment("SYLVAN_FOREST_MESH") != "1" or DisplayServer.get_name() == "headless":
+			return null
+		var dir := ProjectSettings.globalize_path("res://../ForestLowPolyAssets/Assets/gltf/")
+		var doc := GLTFDocument.new()
+		var st := GLTFState.new()
+		if doc.append_from_file(dir + "Bush_1_A_Color1.gltf", st) == OK:
+			_bush_cache = doc.generate_scene(st)
+		print("[patch] %s : habillage BUISSONS %s" % [_prefix,
+			"modele KayKit" if _bush_cache != null else "REPLI sphere (pack introuvable)"])
+	if _bush_cache == null:
+		return null
+	var inst: Node3D = _bush_cache.duplicate()
+	# Mis au gabarit du volume PERÇU (rayon de la SphereShape3D) : un buisson dessiné plus petit que
+	# ce que la rétine voit ferait croire à un espace libre là où l'entité voit un objet.
+	inst.scale = Vector3(PATCH_BUSH_R * 2.0, PATCH_BUSH_R * 2.0, PATCH_BUSH_R * 2.0)
+	inst.position = Vector3(0.0, -PATCH_BUSH_R, 0.0)   # origine du modèle = sa base, celle du corps = son centre
+	_tint_node(inst, mat)
+	return inst
+
+
+func _tint_node(n: Node, mat: StandardMaterial3D) -> void:
+	if n is MeshInstance3D:
+		(n as MeshInstance3D).material_override = mat
+	for c in n.get_children():
+		_tint_node(c, mat)
+
+
 func _place_patch_bushes() -> void:
 	# Un buisson-marqueur LARGE par bosquet, toujours visible même quand le bosquet est vidé.
 	# C'est lui qui porte l'aliasing : il dit « il y a un bosquet ici » et rien sur le stock.
@@ -607,6 +641,16 @@ func _place_patch_bushes() -> void:
 			bcs.shape = bsh
 			ba.add_child(bcs)
 			bm.add_child(ba)
+			# HABILLAGE (2026-07-29, opt-in SYLVAN_FOREST_MESH, mode visuel). Un vrai buisson à la
+			# place de la sphère. La forme change, RIEN d'autre : la SphereShape3D ci-dessus reste le
+			# volume perçu, `retina_color` reste la couleur lue, et le modèle est teinté vers elle —
+			# donc l'owner voit toujours ce que l'entité perçoit. Le maillage-sphère est simplement
+			# masqué : si le pack manque, il reste visible et on retombe sur l'ancien rendu.
+			var pretty := _load_bush_model(mat)
+			if pretty != null:
+				bm.add_child(pretty)
+				bm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				bm.transparency = 1.0        # la sphère disparaît, son Area3D enfant reste actif
 			_patch_meshes.append(bm)
 			_patch_areas.append(ba)
 	for i in range(_patch_meshes.size()):
