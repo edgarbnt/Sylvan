@@ -294,6 +294,8 @@ func _load_tree_model(mat: StandardMaterial3D) -> Node3D:
 		var st := GLTFState.new()
 		if doc.append_from_file(dir + "Tree_1_A_Color1.gltf", st) == OK:
 			_mesh_cache = doc.generate_scene(st)
+		print("[forest] habillage ARBRES : %s" % ("modele KayKit" if _mesh_cache != null
+			else "REPLI primitif (pack introuvable a %s)" % dir))
 	if _mesh_cache == null:
 		return null
 	var inst: Node3D = _mesh_cache.duplicate()
@@ -604,7 +606,9 @@ func _build_undergrowth() -> void:
 	# dessiner de la DENSITÉ au lieu de dessiner des PLANTES — on voyait la statistique, pas le motif.
 	# On sème donc de vraies touffes du pack, plus petites, plus nombreuses et bien plus dispersées.
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.24, 0.34, 0.18)   # vert-olive MAT (tout ce qu'elle perçoit est émissif)
+	# Assez CLAIR pour se détacher de l'humus (0.17,0.26,0.13) : à 0.24 il s'en distinguait à peine et
+	# se lisait comme une ombre. Reste MAT, quand tout ce que l'entité perçoit est émissif.
+	mat.albedo_color = Color(0.38, 0.52, 0.24)
 	mat.roughness = 1.0
 	var fallback := CylinderMesh.new()           # repli si le pack manque (il est git-ignoré)
 	fallback.top_radius = 0.0
@@ -625,7 +629,7 @@ func _build_undergrowth() -> void:
 				node = m
 			node.position = Vector3(c.x + cos(a) * r, 0.0, c.z + sin(a) * r)
 			node.rotate_y(_rng_grass.randf_range(0.0, TAU))
-			var sc := _rng_grass.randf_range(0.55, 1.15)   # tailles variées : un semis régulier
+			var sc := _rng_grass.randf_range(1.1, 2.3)     # tailles variées : un semis régulier
 			node.scale = Vector3(sc, sc, sc)               # se lit comme une texture, pas une plante
 			_grass_root.add_child(node)
 
@@ -641,6 +645,8 @@ func _load_grass_model(mat: StandardMaterial3D) -> Node3D:
 		var st := GLTFState.new()
 		if doc.append_from_file(dir + "Grass_1_A_Color1.gltf", st) == OK:
 			_grass_cache = doc.generate_scene(st)
+		print("[forest] habillage SOUS-BOIS : %s" % ("modele KayKit" if _grass_cache != null
+			else "REPLI primitif (pack introuvable)"))
 	if _grass_cache == null:
 		return null
 	var inst: Node3D = _grass_cache.duplicate()
