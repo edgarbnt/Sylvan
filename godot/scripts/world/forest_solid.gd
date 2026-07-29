@@ -46,6 +46,7 @@ var _grass_root: Node3D = null # racine du sous-bois VISUEL ; null = jamais cons
 var _grass_per_tree := 10      # touffes semées par arbre dans son disque de traînée
 var _grass_cache = null        # modèle d'herbe chargé une fois puis dupliqué
 var _grass_tried := false
+var _mat_cache := {}           # (materiau source, couleur) -> materiau teinte, partage entre instances
 var _grass_radius := 2.5       # = SYLVAN_TERRAIN_RADIUS, le disque RÉELLEMENT compté
 var _rng_grass := RandomNumberGenerator.new()  # flux DÉDIÉ : le décor ne doit pas décaler
                                                # le tirage des commandes (§6quater F)
@@ -340,12 +341,19 @@ func _tint(n: Node, mat: StandardMaterial3D) -> void:
 		# de transparence, donc chaque carte de feuilles devenait un rectangle plein. On duplique
 		# le matériau du modèle et on n'écrase QUE la couleur : le cutout, la texture et le mode de
 		# culling survivent, et la teinte perçue est quand même respectée.
+		# MATÉRIAU TEINTÉ MIS EN CACHE. Il était dupliqué PAR INSTANCE : à 40 arbres x 70 touffes
+		# ça faisait ~2800 duplicatas de matériau pour trois couleurs distinctes — le genre de
+		# gaspillage qui rend « augmenter la densité » cher sans raison. La clé combine la source et
+		# la couleur voulue : deux objets qui partagent les deux partagent le matériau.
 		var src := mi.get_active_material(0)
 		if src != null:
-			var d := src.duplicate()
-			if d is StandardMaterial3D:
-				(d as StandardMaterial3D).albedo_color = mat.albedo_color
-			mi.material_override = d
+			var key := "%s|%s" % [src.get_instance_id(), str(mat.albedo_color)]
+			if not _mat_cache.has(key):
+				var d := src.duplicate()
+				if d is StandardMaterial3D:
+					(d as StandardMaterial3D).albedo_color = mat.albedo_color
+				_mat_cache[key] = d
+			mi.material_override = _mat_cache[key]
 		else:
 			mi.material_override = mat
 	for c in n.get_children():

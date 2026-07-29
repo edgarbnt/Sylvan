@@ -86,6 +86,16 @@ class WorldPreset:
     food_type_hues: tuple = ()   # teintes PAR TYPE "r,g,b;r,g,b;..." — () = les TYPE_COLORS du code
 
     # --- forêt (§2.2/§2.3/§2.8/§2.9) — tout à 0/False = monde d'avant, bit-identique -----------
+    # HAUTEUR DES ARBRES (2026-07-29). Restée muette jusqu'ici, donc au défaut GDScript de 2,0 m —
+    # soit un arbre plus court que le loup n'est long (2,22 m). Incohérent avec son propre tronc :
+    # un fût de 0,23-0,47 m de rayon est un arbre MÛR, et un arbre mûr fait 15-25 m, pas 2.
+    # ⚠️ POURQUOI C'EST GRATUIT CÔTÉ PERCEPTION, et c'est ce qui autorise à y toucher maintenant,
+    # WM en cours d'entraînement : les rayons de la rétine sont STRICTEMENT horizontaux
+    # (perception.gd construit fwd et right avec y=0), et le raycast du corps aussi. La section
+    # qu'ils rencontrent est le cercle de rayon `trunk_r`, INDÉPENDANT de la hauteur du cylindre
+    # tant que celui-ci couvre la hauteur du rayon. Grandir un arbre ne change donc ni la
+    # profondeur lue, ni la couleur, ni l'occlusion. Seul l'œil de l'owner y gagne.
+    forest_height_m: float = 0.0        # 0 = ne pas servir (défaut GDScript, mondes historiques intacts)
     forest_count: int = 0               # arbres SOLIDES (occlusion + collision), 0 = aucune forêt
     forest_stands: int = 0              # peuplements Neyman-Scott (0 = semis uniforme)
     forest_clearings: int = 0           # clairières (disques d'exclusion)
@@ -228,6 +238,8 @@ class WorldPreset:
             env["SYLVAN_SPEED_COST"] = f"{self.speed_cost}"
         if self.forest_count > 0:
             env["SYLVAN_FOREST_COUNT"] = f"{self.forest_count}"
+            if self.forest_height_m > 0.0:
+                env["SYLVAN_FOREST_HEIGHT"] = f"{self.forest_height_m}"
             if self.forest_count_min:
                 env["SYLVAN_FOREST_COUNT_MIN"] = f"{self.forest_count_min}"
             env["SYLVAN_FOREST_STANDS"] = f"{self.forest_stands}"
@@ -587,6 +599,11 @@ FORET_V1 = dataclasses.replace(
     # devient cohérente avec l'épaisseur de ses propres troncs, au lieu de l'être avec un chiffre
     # emprunté à un autre âge de peuplement. Peuplements et clairières suivent le même facteur.
     forest_count=40, forest_count_min=20, forest_stands=12, forest_clearings=6,
+    # 12 m : un fût de 0,35 m de rayon porte, dans la nature, un arbre de 15-25 m. On reste
+    # sous cette bande parce que le visuel sert à JUGER un comportement : à 25 m la caméra de
+    # suivi ne cadre plus que des troncs et l'entité devient un point. 12 m lit comme une
+    # futaie et garde la scène observable. Perceptivement neutre (rayons horizontaux).
+    forest_height_m=12.0,
     forest_appearance_var=0.15,
     forest_radius_var=0.35,             # troncs de 0,23 à 0,47 m : la GÉOMÉTRIE varie, donc s'apprend
     forest_ring_m=(2.5, 35.0),
