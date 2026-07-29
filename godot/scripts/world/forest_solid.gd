@@ -238,7 +238,7 @@ func _ensure_built() -> void:
 			#   3. défaut OFF + repli sur les primitives si le pack manque (il est git-ignoré, donc
 			#      absent pour quiconque clone le dépôt) → aucune régression possible.
 			if _use_mesh:
-				var pretty := _load_tree_model()
+				var pretty := _load_tree_model(body_mat)
 				if pretty != null:
 					pretty.position = off
 					body.add_child(pretty)
@@ -257,7 +257,7 @@ func _ensure_built() -> void:
 # inatteignable et on mesurerait un échec du MONDE, pas de l'entité — §2).
 # Charge le modèle d'arbre UNE fois et le teinte à la couleur perçue. Renvoie un duplicata prêt à
 # être posé, ou null (pack absent, mode headless, chargement raté) → l'appelant garde les primitives.
-func _load_tree_model() -> Node3D:
+func _load_tree_model(mat: StandardMaterial3D) -> Node3D:
 	if not _mesh_tried:
 		_mesh_tried = true
 		# HEADLESS = on ne charge RIEN. Les workers de collecte ne doivent payer ni le temps de
@@ -277,20 +277,24 @@ func _load_tree_model() -> Node3D:
 	# ferait croire à un passage qui n'existe pas — le mensonge inverse de celui du houppier brun.
 	var s := _height / 2.0
 	inst.scale = Vector3(s, s, s)
-	_tint(inst)
+	_tint(inst, mat)
 	return inst
 
 
-# Teinte TOUT le modèle vers `retina_color`. C'est ce qui rend l'habillage honnête : la géométrie
-# gagne en détail, la couleur reste celle que l'entité lit dans la méta.
-func _tint(n: Node) -> void:
+# Applique au modèle LE MATÉRIAU DU CORPS — surtout pas un matériau neuf.
+#
+# 🚨 CORRIGÉ AUSSITÔT QU'ÉCRIT (2026-07-29) : ma première version fabriquait un StandardMaterial3D
+# figé sur la couleur GLOBALE. Or `_apply_tree_appearance()` donne à CHAQUE arbre une teinte jittée
+# (appearance_var) et l'écrit à la fois dans sa méta `retina_color` et dans `_mats[i]`. Le modèle
+# habillé ignorait donc la variation : l'entité percevait 40 verts distincts pendant que l'owner
+# voyait 40 arbres identiques — exactement le mensonge visuel reproché au houppier brun, retourné.
+# En partageant `_mats[i]`, la variation par-arbre se propage seule, et le visuel gagne au passage
+# la richesse qu'il avait perdue : la diversité qu'on affiche est celle qui EXISTE.
+func _tint(n: Node, mat: StandardMaterial3D) -> void:
 	if n is MeshInstance3D:
-		var m := StandardMaterial3D.new()
-		m.albedo_color = _color
-		m.roughness = 0.9
-		(n as MeshInstance3D).material_override = m
+		(n as MeshInstance3D).material_override = mat
 	for c in n.get_children():
-		_tint(c)
+		_tint(c, mat)
 
 
 # Un arbre ABSENT doit l'être pour TOUT LE MONDE : le rendu, la collision, et la rétine. Séparer ces
