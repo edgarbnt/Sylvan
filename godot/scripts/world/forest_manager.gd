@@ -107,7 +107,11 @@ func _make_ground_grass(world_node: Node) -> void:
 	# tirait tout vers le pâle. Un sol de forêt est sombre et désaturé — c'est lui qui donne au
 	# reste son contraste. Aucune contrainte de perception ici : le sol n'est sur aucune couche
 	# rétine, l'entité ne le voit pas.
-	grass.albedo_color = Color(0.17, 0.26, 0.13)   # humus / sous-bois
+	# RECENTRÉ (2026-07-29) : 0.17 était une sur-correction. En partant d'un vert de pelouse trop
+	# vif j'ai basculé à un humus si sombre que le sol lisait comme de la terre nue, surtout au
+	# crépuscule où le brouillard chaud ajoute son propre brun. Assez sombre pour donner du
+	# contraste aux objets, assez vivant pour rester un sous-bois.
+	grass.albedo_color = Color(0.22, 0.32, 0.16)
 	grass.roughness = 0.95
 	gmesh.set_surface_override_material(0, grass)
 
