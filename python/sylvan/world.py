@@ -551,7 +551,14 @@ FORET_V1 = dataclasses.replace(
     # encaissable, agrandir le DÉPART aurait doublé la réserve et adouci le monde (plancher 25 % ->
     # 50 %). Avec (200, 60) le plancher de famine reste 750 ticks = 25,0 % et le compte retombe
     # exactement sur la cible pré-enregistrée : 10,0 événements/vie.
-    gauge_max=200.0,
+    # 200 -> 300 (owner, 2026-07-29) : à 200 le 4e type de proie était ARITHMÉTIQUEMENT
+    # inencaissable. Les valeurs nutritives par type sont arbitraires (0,25/0,6/1,0/1,5), donc un
+    # repas vaut 35, 84, 140 ou 210 points ; l'entité mange à 54 de médiane, et 54+210 = 264 > 200.
+    # Mesuré sur les 353 repas de la collecte du 2026-07-29 : les gains se rangent en modes PARFAITS
+    # (35 : 76 repas, 84 : 53, 140 : 41, aucun hors mode) et le mode 210 apparaît **0 fois**. La
+    # meilleure nourriture du monde était toujours indiscernable d'un repas ordinaire — or c'est
+    # exactement le lien type→conséquence pour lequel ce monde existe. 300 laisse 54+210 = 264 tenir.
+    gauge_max=300.0,
     # HORLOGES RAMENÉES DANS LA VIE (audit S3) : une vie sans manger dure 375 ticks. Une repousse à
     # 2 500 ticks ne se déclenchait JAMAIS (le monde était un garde-manger qui se vide) et un cycle
     # de flaque à 300 tenait à peine un cycle. Une mécanique qui ne se déclenche pas n'existe pas.
@@ -739,15 +746,31 @@ def selfcheck() -> int:
     # densités). Toute la calibration en événements/vie suppose que le repas est encaissé EN ENTIER ;
     # si le plafond ne le permet pas, cette calibration est fausse et rien ne le dit. On exige donc
     # que le repas tienne depuis le niveau où elle mange RÉELLEMENT, pas depuis un niveau théorique.
-    EATS_AT = 56.0                       # médiane mesurée à 25 bosquets (probe_foret_densite.sh)
-    assert f.gauge_max - EATS_AT >= f.restore_per_item, (
-        f"repas indélivrable : {f.restore_per_item} pts servis mais seulement "
-        f"{f.gauge_max - EATS_AT} encaissables depuis {EATS_AT} (plafond {f.gauge_max})")
+    # Médiane MESURÉE sur les 353 repas de la collecte complète (foret_v1*_planner, 2026-07-29).
+    # Remplace le 56,0 qu'une sonde de 6 vies avait donné : même ordre, mais celle-ci vient du monde
+    # réellement servi, à l'échelle réelle. Ce que cette constante ne capte PAS, et il faut le dire :
+    # l'entité se recharge aussi par opportunisme à jauge haute (p90 = 177), et aucun plafond fini
+    # n'empêche cet écrêtage-là — c'est un comportement du planner, pas une propriété du monde. La
+    # garde ci-dessous contrôle donc ce qui relève du MONDE : qu'une entité affamée PUISSE encaisser
+    # le meilleur repas.
+    EATS_AT = 54.0
+    # 🚨 LE MAXIMUM RÉEL, PAS LE NOMINAL (corrigé le 2026-07-29, lacune de ma propre garde). Les
+    # types de proie portent des valeurs nutritives ARBITRAIRES : un repas vaut restore x valeur_type,
+    # donc jusqu'à 1,5x le nominal. Vérifier le nominal laissait passer un monde où le MEILLEUR type
+    # (210 pts) dépasse la jauge entière (200) et ne peut JAMAIS être encaissé — mesuré sur la
+    # collecte : 51,8 % des repas écrêtés. Une garde qui contrôle la valeur moyenne d'un mécanisme
+    # dont tout l'intérêt est la VARIATION ne contrôle pas le mécanisme.
+    biggest = f.restore_per_item * (max(f.type_values) if f.type_values else 1.0)
+    assert f.gauge_max - EATS_AT >= biggest, (
+        f"repas indélivrable : le meilleur type vaut {biggest:.0f} pts ({f.restore_per_item} x "
+        f"{max(f.type_values)}) mais seulement {f.gauge_max - EATS_AT:.0f} sont encaissables depuis "
+        f"{EATS_AT} (plafond {f.gauge_max}) — le type le plus nourrissant serait indistinguable")
     floor_ticks = f.init_energy / f.energy_drain
     assert abs(floor_ticks / f.episode_steps - 0.25) < 0.005, floor_ticks
-    print(f"  [ok] foret_v1 : repas {f.restore_per_item:.0f} pts ENCAISSABLE depuis {EATS_AT:.0f} "
-          f"(plafond {f.gauge_max:.0f}) et plancher de famine inchangé à "
-          f"{floor_ticks / f.episode_steps * 100:.1f} % — agrandir la jauge n'adoucit rien")
+    print(f"  [ok] foret_v1 : le MEILLEUR repas ({biggest:.0f} pts = {f.restore_per_item:.0f} x "
+          f"{max(f.type_values)}) est ENCAISSABLE depuis {EATS_AT:.0f} (plafond {f.gauge_max:.0f}) "
+          f"→ les {len(f.type_values)} types rendent {len(set(f.type_values))} conséquences "
+          f"distinctes ; plancher de famine inchangé à {floor_ticks / f.episode_steps * 100:.1f} %")
 
     print(f"  [ok] foret_v1 : les 2 pulsions reçoivent la MÊME géométrie de bosquets "
           f"(écart {f.patch_spacing_min_m}-{f.patch_spacing_max_m} m, "
