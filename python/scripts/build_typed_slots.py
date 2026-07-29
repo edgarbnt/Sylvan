@@ -79,6 +79,9 @@ def scan_run(run: Path) -> dict:
                              float(r["obs"]["thirst"]), float(r["obs"]["health"])))
     rgbn, dist, dom, ys = [], [], [], {o: [] for o in OUTCOMES}
     ret_sample = []
+    # État du tick précédent, pour ne compter qu'un FRONT de dégâts par épisode (voir plus bas).
+    # Remis à faux par run : deux runs distincts ne se chaînent pas.
+    was_hurting = False
     for i in range(len(recs) - 1):
         ret, e, t, h = recs[i]
         e1, t1, h1 = recs[i + 1][1], recs[i + 1][2], recs[i + 1][3]
@@ -100,10 +103,19 @@ def scan_run(run: Path) -> dict:
         dom.append(int(v.argmax()) if v.max() - v.min() > 0.15 else -1)
         ys["energy"].append(float(not boundary and e1 - e > RELIEF))
         ys["thirst"].append(float(not boundary and t1 - t > RELIEF))
-        dmg = (i > 0 and recs[i - 1][3] - h > DMG_DROP
-               and not (e - recs[i - 1][1] > LIFE_JUMP or t - recs[i - 1][2] > LIFE_JUMP
-                        or h - recs[i - 1][3] > LIFE_JUMP))
-        ys["damage"].append(float(dmg))
+        # 🚨 LES DÉGÂTS COMME ÉVÉNEMENT, PAS COMME DURÉE (corrigé 2026-07-29). `energy` et `thirst`
+        # ci-dessus sont des FRONTS : une remontée de jauge = un repas = UN tick. Les dégâts, eux,
+        # étaient vrais à CHAQUE tick passé dans la zone — soit ~110 ticks pour un seul événement.
+        # La contingence P(conséquence | groupe) comparait donc un événement à une durée, et les
+        # dégâts écrasaient tout : mesuré sur ce monde, 16 241 reliefs de dégâts contre 126
+        # d'énergie, si bien que les QUATRE groupes se liaient à « damage », y compris le rouge.
+        # On ne touche NI le seuil NI le gate : on rend la grandeur comparable en ne comptant que
+        # le FRONT MONTANT — l'entrée en dégâts, une fois par épisode de dégâts.
+        hurting = (i > 0 and recs[i - 1][3] - h > DMG_DROP
+                   and not (e - recs[i - 1][1] > LIFE_JUMP or t - recs[i - 1][2] > LIFE_JUMP
+                            or h - recs[i - 1][3] > LIFE_JUMP))
+        ys["damage"].append(float(hurting and not was_hurting))
+        was_hurting = hurting
         if i % 10 == 0:
             ret_sample.append(ret)
     return {"rgbn": np.array(rgbn), "dist": np.array(dist), "dom": np.array(dom),
@@ -190,11 +202,14 @@ def stage_b_bind(C: np.ndarray, pooled: dict) -> dict:
 # ------------------------------------------------------------------ gates + émission
 
 def g_slot_positions(C_ordered: np.ndarray, thr_ordered: np.ndarray,
-                     retinas: list, cls_of_slot: list[int]) -> dict:
+                     retinas: list, cls_of_slot: list[int], src_wm: str = SRC_WM) -> dict:
     """Position du slot TYPÉ vs oracle couleur-rendue (rayon le plus proche de la classe),
     par type, sur les rétines variées échantillonnées."""
     from sylvan.models.slot_head import SelfSupervisedSlotHead
-    payload = torch.load(SRC_WM, map_location="cpu", weights_only=False)
+    # 🚨 LE CHECKPOINT JUGÉ DOIT ÊTRE CELUI QU'ON ÉMET (corrigé 2026-07-29). Ce gate lisait la
+    # CONSTANTE SRC_WM pendant que l'émission, elle, honore --src : passer --src rendait donc un
+    # verdict G-slot sur un AUTRE modèle que celui écrit, sans rien signaler.
+    payload = torch.load(src_wm, map_location="cpu", weights_only=False)
     head = SelfSupervisedSlotHead(n_resources=3)
     head.load_state_dict({k.removeprefix("slot_encoder."): v for k, v in payload["model"].items()
                           if k.startswith("slot_encoder.")})
@@ -294,7 +309,7 @@ def main() -> None:
     cls_of_slot = [cls_of_group[j] for j in slot_order]
 
     # G-slot (varié, oracle couleur-rendue)
-    gs = g_slot_positions(C_ord, thr_ord, varied["retinas"], cls_of_slot)
+    gs = g_slot_positions(C_ord, thr_ord, varied["retinas"], cls_of_slot, args.src)
     names = ("food", "water", "danger")
     for s in range(3):
         med, p90, n = gs[s]
