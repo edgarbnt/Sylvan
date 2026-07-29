@@ -94,7 +94,11 @@ func _make_ground_grass(world_node: Node) -> void:
 	if gmesh == null:
 		return
 	var grass := StandardMaterial3D.new()
-	grass.albedo_color = Color(0.27, 0.5, 0.21)   # grass green
+	# Sol de SOUS-BOIS, pas de pelouse (2026-07-29) : le vert vif uniforme aplatissait la scène et
+	# tirait tout vers le pâle. Un sol de forêt est sombre et désaturé — c'est lui qui donne au
+	# reste son contraste. Aucune contrainte de perception ici : le sol n'est sur aucune couche
+	# rétine, l'entité ne le voit pas.
+	grass.albedo_color = Color(0.17, 0.26, 0.13)   # humus / sous-bois
 	grass.roughness = 0.95
 	gmesh.set_surface_override_material(0, grass)
 

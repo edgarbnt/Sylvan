@@ -43,6 +43,8 @@ var _mesh_cache = null         # modèle chargé UNE fois puis dupliqué (un glT
 var _mesh_tried := false       # on ne retente pas un chargement qui a échoué à chaque arbre
 var _grass_root: Node3D = null # racine du sous-bois VISUEL ; null = jamais construit (headless)
 var _grass_per_tree := 10      # touffes semées par arbre dans son disque de traînée
+var _grass_cache = null        # modèle d'herbe chargé une fois puis dupliqué
+var _grass_tried := false
 var _grass_radius := 2.5       # = SYLVAN_TERRAIN_RADIUS, le disque RÉELLEMENT compté
 var _rng_grass := RandomNumberGenerator.new()  # flux DÉDIÉ : le décor ne doit pas décaler
                                                # le tirage des commandes (§6quater F)
@@ -256,7 +258,14 @@ func _ensure_built() -> void:
 			if _use_mesh:
 				var pretty := _load_tree_model(body_mat)
 				if pretty != null:
-					pretty.position = off
+					# 🚨 LES ARBRES VOLAIENT (repéré à l'œil par l'owner, 2026-07-29). Le CORPS est
+					# posé à y = _height/2 parce qu'un CylinderMesh est centré sur son origine et
+					# doit donc remonter d'une demi-hauteur pour toucher le sol. Le modèle glTF, lui,
+					# a son origine à sa BASE : le placer sur l'origine du corps le décollait
+					# d'exactement une demi-hauteur, soit 1 m. On redescend donc de la même quantité.
+					# La collision, elle, n'a jamais bougé — c'est bien pourquoi seul l'œil pouvait
+					# le voir, et pourquoi aucune mesure ne l'aurait signalé.
+					pretty.position = off + Vector3(0.0, -_height * 0.5, 0.0)
 					body.add_child(pretty)
 					mesh.visible = false
 					can.visible = false
@@ -590,13 +599,17 @@ func _build_undergrowth() -> void:
 		c.queue_free()                       # les arbres bougent à chaque épisode : on re-sème
 	if _centers.is_empty():
 		return
+	# 🚨 PREMIÈRE VERSION REJETÉE À L'ŒIL (owner, 2026-07-29) : dix cônes sombres serrés dans 2,5 m ne
+	# se lisaient pas comme de la végétation mais comme une TACHE brune au sol. L'erreur était de
+	# dessiner de la DENSITÉ au lieu de dessiner des PLANTES — on voyait la statistique, pas le motif.
+	# On sème donc de vraies touffes du pack, plus petites, plus nombreuses et bien plus dispersées.
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.16, 0.24, 0.13)   # olive sombre, MAT : ne peut pas passer pour un objet
+	mat.albedo_color = Color(0.24, 0.34, 0.18)   # vert-olive MAT (tout ce qu'elle perçoit est émissif)
 	mat.roughness = 1.0
-	var tuft := CylinderMesh.new()               # touffe basse et large, pas un objet dressé
-	tuft.top_radius = 0.0
-	tuft.bottom_radius = 0.32
-	tuft.height = 0.22
+	var fallback := CylinderMesh.new()           # repli si le pack manque (il est git-ignoré)
+	fallback.top_radius = 0.0
+	fallback.bottom_radius = 0.06
+	fallback.height = 0.35
 	for c in _centers:
 		for _k in range(_grass_per_tree):
 			var a := _rng_grass.randf_range(0.0, TAU)
@@ -604,12 +617,35 @@ func _build_undergrowth() -> void:
 			# réellement comptée par speed_multiplier_at, au lieu de s'entasser près du tronc.
 			# rayon = SYLVAN_TERRAIN_RADIUS : on dessine le disque SERVI, pas un joli disque.
 			var r := sqrt(_rng_grass.randf()) * _grass_radius
-			var m := MeshInstance3D.new()
-			m.mesh = tuft
-			m.material_override = mat
-			m.position = Vector3(c.x + cos(a) * r, 0.10, c.z + sin(a) * r)
-			m.rotate_y(_rng_grass.randf_range(0.0, TAU))
-			_grass_root.add_child(m)
+			var node := _load_grass_model(mat)
+			if node == null:
+				var m := MeshInstance3D.new()
+				m.mesh = fallback
+				m.material_override = mat
+				node = m
+			node.position = Vector3(c.x + cos(a) * r, 0.0, c.z + sin(a) * r)
+			node.rotate_y(_rng_grass.randf_range(0.0, TAU))
+			var sc := _rng_grass.randf_range(0.55, 1.15)   # tailles variées : un semis régulier
+			node.scale = Vector3(sc, sc, sc)               # se lit comme une texture, pas une plante
+			_grass_root.add_child(node)
+
+
+# Touffe d'herbe du pack, chargée une fois puis dupliquée. null → l'appelant prend son repli.
+func _load_grass_model(mat: StandardMaterial3D) -> Node3D:
+	if not _grass_tried:
+		_grass_tried = true
+		if DisplayServer.get_name() == "headless":
+			return null
+		var dir := ProjectSettings.globalize_path("res://../ForestLowPolyAssets/Assets/gltf/")
+		var doc := GLTFDocument.new()
+		var st := GLTFState.new()
+		if doc.append_from_file(dir + "Grass_1_A_Color1.gltf", st) == OK:
+			_grass_cache = doc.generate_scene(st)
+	if _grass_cache == null:
+		return null
+	var inst: Node3D = _grass_cache.duplicate()
+	_tint(inst, mat)
+	return inst
 
 
 func _env(key: String, dflt: String) -> String:
