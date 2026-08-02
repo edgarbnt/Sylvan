@@ -163,6 +163,38 @@ visé échoue mais **rien n'est exporté** : morts de faim identiques (12→12),
 HAUSSE. La forme « socle designé + hystérésis conservée » n'a pas reproduit la pathologie du
 remplacement. C'est l'acquis principal.
 
+### 🛑 CHANTIER CLOS EN NÉGATIF INFORMATIF (2026-08-02) — le CHOIX n'est pas le goulot, re-démontré
+Les métriques **par unité de temps VÉCU** — les seules bien conditionnées, la survie étant
+bimodale (29/36 vies meurent avant 600 pas, 6/36 vont au bout, presque rien entre) — **ne bougent
+pas** :
+
+| par 1000 pas VÉCUS | REF | HOMEO | p |
+|---|---|---|---|
+| consommation | 3,23 | 3,30 | **0,877** |
+| boissons | 0,98 | 1,16 | 0,631 |
+| vies sans aucune boisson | 24/36 | 17/36 | 0,148 |
+
+⇒ Les gains apparents (survie +46 %, consommation +53 %) viennent **entièrement** de 4 vies
+longues de plus, c'est-à-dire de la queue bimodale. **Tant qu'elle est en vie, elle se comporte
+pareil.**
+
+**L'ARGUMENT QUI CLÔT LE CHANTIER** : G0 a établi que la règle change les décisions **51 %** du
+temps ; G2 établit que changer ces décisions ne change **pas** le taux d'acquisition (3,23→3,30,
+p=0,877). Modifier la moitié des choix sans bouger le taux d'acquisition **prouve que le choix
+n'est pas le goulot** — la conclusion de juillet, re-démontrée par un autre chemin, dans un monde
+réparé, avec une forme qui n'exporte rien. Négatif propre.
+
+**Acquis conservés** : (a) la doctrine de forme est validée — « socle designé + hystérésis
+conservée » n'exporte PAS son échec, contrairement au remplacement de juillet ; (b) le drapeau
+`SYLVAN_PLANNER_HOMEO` reste disponible, éteint, si un monde futur rend le choix limitant ;
+(c) `diag_arbitrage_homeo_g0.py` et son contrôle de sensibilité (une ligne plate = un test qui
+ne mesure rien) sont réutilisables.
+
+**LE LEVIER EST AILLEURS, ET IL EST DÉJÀ CHIFFRÉ** : seulement **7 %** des approches de nourriture
+closent sous 1 m (la proie FUIT à 0,023 m/pas et le virage serré exige de ralentir à 0,025 m/pas),
+et **49 %** des approches sous 3 m ne donnent rien. Facteur ~7 sur la conversion décision→repas,
+contre ~0 pour la décision. → chantier PORTÉE/APPROCHE.
+
 **⚠️ Ne PAS étendre l'échantillon maintenant.** Ajouter des graines après avoir vu une tendance
 favorable fabrique de la significativité (p-hacking). Si on veut trancher, il faut **pré-déclarer**
 l'extension et sa règle d'arrêt AVANT de la lancer.
