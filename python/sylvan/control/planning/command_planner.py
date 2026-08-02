@@ -414,6 +414,12 @@ class CommandPlanner:
                   # PÉRIMÉ d'un facteur 2. Affiché pour que le log PROUVE la valeur servie.
                   f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate} "
                   f"| vis_thr={self.cfg.slot_vis_thr}")
+        # Un réglage servi doit être PROUVÉ par le log, sinon on ne sait pas ce qu'on a mesuré.
+        if os.environ.get("SYLVAN_PLANNER_HOMEO", "0") == "1":
+            print(f"[planner-cmd] ARBITRAGE HOMÉOSTATIQUE actif : l'ordre de cible devient "
+                  f"« jauge la plus DÉMUNIE d'abord », escomptée par le trajet "
+                  f"(γ={os.environ.get('SYLVAN_PLANNER_HOMEO_GAMMA', '0.999')}). "
+                  f"Le scoring des commandes et l'hystérésis d'incumbent restent designés.")
         # CRITIQUE APPRIS (2026-07-05, Phase B) : remplace la queue analytique (alternance+drain)
         # quand SYLVAN_PLANNER_COST=critic. Gates offline passés : AUC .995, non-saturation .66,
         # swap .95 (vs hasard pour la valeur plate B0). Chargé une fois, gelé.
@@ -1049,6 +1055,32 @@ class CommandPlanner:
             # le bat de plus de δ = bruit de score induit par le jitter (~75 pas pour 1.5 m à
             # 0.02 m/pas ; calibration initiale, jugée par le gate abandons<15% sans perte de survie).
             best_f, best_w = float(s_food.max()), float(s_water.max())
+            # ⭐ G1 ARBITRAGE HOMÉOSTATIQUE (2026-08-02, docs/design_arbitrage_homeostatique.md).
+            # OPT-IN `SYLVAN_PLANNER_HOMEO=1` ; défaut OFF = trajectoires bit-identiques.
+            #
+            # RÈGLE : la jauge la plus DÉMUNIE d'abord, escomptée par le trajet à payer.
+            # Elle remplace l'ORDRE de cible uniquement ; le scoring des commandes vers la cible
+            # retenue reste designé, et l'hystérésis d'incumbent ci-dessous s'applique TOUJOURS
+            # (le négatif G3 du 2026-07-20 venait d'un remplacement qui court-circuitait la
+            # consistance — ici on se branche AVANT elle, pas à sa place).
+            #
+            # POURQUOI SI SIMPLE : le G0 a montré que la fonction de besoin non-séparable
+            # D(H)=(Σ|h*−h|ⁿ)^(1/m) est INERTE sur ce choix — désaccord 51,0 % identique pour tous
+            # les (n,m), tous les γ et tous les apports. `D` étant symétrique et Schur-convexe pour
+            # n>1, comparer (de−R, dt) à (de, dt−R) revient toujours à comparer de et dt. Poser la
+            # norme ici aurait habillé un résultat trivial d'une théorie qui ne travaille pas (§2).
+            # ⚠️ γ est un CHOIX, pas une mesure : G0 l'a trouvé inerte sur la distribution observée
+            # (les écarts de déficit dominent). Il est gardé parce que la théorie prouve γ<1
+            # nécessaire à la stabilité physiologique, et parce qu'il est le seul frein contre la
+            # traversée de carte vers une jauge à peine plus démunie (le mur « poursuite lointaine
+            # ne paie que 37,7 % » du chantier précédent).
+            if os.environ.get("SYLVAN_PLANNER_HOMEO", "0") == "1":
+                _g = float(os.environ.get("SYLVAN_PLANNER_HOMEO_GAMMA", "0.999"))
+                _sp = max(cfg.nominal_speed, 1e-6)
+                _def_f = max(0.0, 1.0 - e0)          # déficit d'ÉNERGIE → valeur d'un repas
+                _def_w = max(0.0, 1.0 - t0)          # déficit de SOIF    → valeur d'une boisson
+                best_f = _def_f * _g ** (math.hypot(fx, fz) / _sp)
+                best_w = _def_w * _g ** (math.hypot(wx, wz) / _sp)
             delta = float(os.environ.get("SYLVAN_PLANNER_COMMIT_DELTA", "0.0"))
             inc = getattr(self, "_incumbent_target", None)
             if inc == "food":
