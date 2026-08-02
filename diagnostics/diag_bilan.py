@@ -122,9 +122,18 @@ def section_substrat(wm_path: str) -> tuple[CommandWorldModel | None, dict]:
 # --------------------------------------------------------------------------------------------- #
 
 def load_perception_pairs(corpus: str, half_fov: float, limit: int = 0):
-    """(obs, rétine, position VRAIE) sur les ticks où la nourriture est visible et dans le champ."""
-    obs_l, ret_l, tgt_l = [], [], []
+    """(obs, rétine, position VRAIE, id d'épisode) sur les ticks où la nourriture est en vue.
+
+    L'ID D'ÉPISODE N'EST PAS DÉCORATIF : sans lui on ne peut pas découper honnêtement. À
+    0,05 m/tick, deux ticks voisins sont quasi identiques ; un split ALÉATOIRE met donc le
+    jumeau de chaque tick de test dans le train, et la sonde MÉMORISE au lieu de généraliser.
+    Mesuré le 2026-08-02 sur ce corpus : sonde latent 0,42 m en split aléatoire contre 2,58 m
+    en split par épisode — un facteur 6, et un verdict inversé (le latent semblait battre le
+    slot, il est en réalité moins bon)."""
+    obs_l, ret_l, tgt_l, epi_l = [], [], [], []
+    eid = 0
     for f in sorted(glob.glob(os.path.join(corpus, "episode_*.jsonl"))):
+        got = False
         for line in open(f):
             if not line.strip():
                 continue
@@ -141,15 +150,20 @@ def load_perception_pairs(corpus: str, half_fov: float, limit: int = 0):
             obs_l.append(o["proprio"] + ret + [o["energy"] / 100.0])
             ret_l.append(ret)
             tgt_l.append([v[0], v[1]])
+            epi_l.append(eid)
+            got = True
             if limit and len(obs_l) >= limit:
                 break
+        if got:
+            eid += 1
         if limit and len(obs_l) >= limit:
             break
     if not obs_l:
-        return None, None, None
+        return None, None, None, None
     return (torch.tensor(obs_l, dtype=torch.float32),
             torch.tensor(ret_l, dtype=torch.float32),
-            torch.tensor(tgt_l, dtype=torch.float32))
+            torch.tensor(tgt_l, dtype=torch.float32),
+            torch.tensor(epi_l))
 
 
 def _bands(err: torch.Tensor, dist: torch.Tensor) -> None:
@@ -170,12 +184,13 @@ def section_perception(wm: CommandWorldModel, corpus: str, half_fov: float,
     print("=" * 78)
     print(f"  corpus : {corpus}   (vérité = food_rel0, oracle de MESURE)")
 
-    obs, retina, truth = load_perception_pairs(corpus, half_fov, limit)
+    obs, retina, truth, epi = load_perception_pairs(corpus, half_fov, limit)
     if obs is None:
         print("  ⚠️  aucun tick avec nourriture visible dans le champ — rien à mesurer.")
         return {}
     dist = truth.norm(dim=1)
-    print(f"  ticks  : {obs.shape[0]}   distance vraie médiane {dist.median():.2f} m")
+    print(f"  ticks  : {obs.shape[0]} · {int(epi.max()) + 1} épisodes   "
+          f"distance vraie médiane {dist.median():.2f} m")
 
     out: dict = {}
 
@@ -192,42 +207,63 @@ def section_perception(wm: CommandWorldModel, corpus: str, half_fov: float,
         print("\n  — pas de canal-slot sur ce WM.")
 
     # (b) Ce que le LATENT PORTE — sépare « l'info est absente » de « l'info est mal lue ».
+    #     ⚠️ SPLIT PAR ÉPISODE, jamais aléatoire (cf. `load_perception_pairs`).
     if probe:
+        n_ep = int(epi.max()) + 1
+        if n_ep < 4:
+            print("\n  ⚠️  moins de 4 épisodes : split honnête impossible, sondes latent sautées.")
+            return out
         lat = torch.cat([wm.encoder(obs[i:i + 2048]) for i in range(0, len(obs), 2048)])
-        mu, sd = lat.mean(0, keepdim=True), lat.std(0, keepdim=True).clamp(min=1e-2)
+        cut = int(0.8 * n_ep)
+        tr, te = epi < cut, epi >= cut
+        mu, sd = lat[tr].mean(0, keepdim=True), lat[tr].std(0, keepdim=True).clamp(min=1e-2)
         x = (lat - mu) / sd
-        n_tr = int(0.8 * len(x))
-        perm = torch.randperm(len(x), generator=torch.Generator().manual_seed(0))
-        tr, te = perm[:n_tr], perm[n_tr:]
 
         # Ridge fermée : déterministe, pas d'optimiseur, pas de graine à discuter.
-        xb = torch.cat([x[tr], torch.ones(len(tr), 1)], dim=1)
+        xb = torch.cat([x[tr], torch.ones(int(tr.sum()), 1)], dim=1)
         w = torch.linalg.lstsq(xb.T @ xb + 1e-2 * torch.eye(xb.shape[1]),
                                xb.T @ truth[tr]).solution
-        pred_lin = torch.cat([x[te], torch.ones(len(te), 1)], dim=1) @ w
+        pred_lin = torch.cat([x[te], torch.ones(int(te.sum()), 1)], dim=1) @ w
         err_lin = (pred_lin - truth[te]).norm(dim=1)
         out["latent_lineaire"] = float(err_lin.median())
 
         with torch.enable_grad():
+            torch.manual_seed(0)
             mlp = torch.nn.Sequential(torch.nn.Linear(x.shape[1], 64), torch.nn.SiLU(),
                                       torch.nn.Linear(64, 32), torch.nn.SiLU(),
                                       torch.nn.Linear(32, 2))
             opt = torch.optim.Adam(mlp.parameters(), lr=1e-2)
-            for _ in range(400):
+            for _ in range(600):
                 opt.zero_grad()
                 ((mlp(x[tr]) - truth[tr]) ** 2).mean().backward()
                 opt.step()
         err_mlp = (mlp(x[te]) - truth[te]).norm(dim=1)
         out["latent_mlp"] = float(err_mlp.median())
 
-        print(f"\n  LATENT → position (held-out, ce que la représentation PORTE) :")
+        print(f"\n  LATENT → position (held-out PAR ÉPISODE — {cut} train / {n_ep - cut} test) :")
         print(f"      sonde LINÉAIRE : méd={err_lin.median():.2f} m")
         print(f"      sonde MLP      : méd={err_mlp.median():.2f} m")
-        gap = float(err_lin.median() / max(float(err_mlp.median()), 1e-6))
-        print(f"      écart lin/MLP  : ×{gap:.1f}")
-        if gap > 1.5:
-            print("      → le latent PORTE la position mais de façon NON LINÉAIRE (latent non factorisé).")
-            print("        LeCun/LeWM 2026 : sous SIGReg l'écart est ~1 et la position est une direction.")
+        if out["latent_mlp"] > out.get("slot", 0.0) > 0:
+            print(f"      → le latent est MOINS bon que le slot ({out['slot']:.2f} m) : lire la position")
+            print("        depuis le latent n'est PAS la voie (mesuré, split honnête).")
+
+    # (c) GISEMENT vs DISTANCE — c'est le gisement qui décide, pas la distance.
+    #     Le coût du planner est −min_dist sur le slot TRANSPORTÉ : une erreur de distance
+    #     décale le score de TOUS les candidats pareil (argmax inchangé) ; une erreur de
+    #     gisement change QUEL candidat se rapproche.
+    if getattr(wm, "with_slot", False):
+        pos = wm.slot_encoder.positions(retina)[:, 0, :]
+        db = torch.atan2(pos[:, 0], pos[:, 1]) - torch.atan2(truth[:, 0], truth[:, 1])
+        db = torch.atan2(torch.sin(db), torch.cos(db)).abs() * 180.0 / math.pi
+        dd = (pos.norm(dim=1) - dist).abs()
+        out["bearing_deg"] = float(db.median())
+        out["dist_err"] = float(dd.median())
+        print(f"\n  DÉCOMPOSITION du slot — c'est le gisement qui décide :")
+        print(f"      |gisement| : méd={db.median():.1f}°   (q75={db.quantile(0.75):.1f}°)")
+        print(f"      |distance| : méd={dd.median():.2f} m")
+        lat_err = float(dist.median()) * math.sin(math.radians(float(db.median())))
+        print(f"      → à {dist.median():.1f} m, {db.median():.0f}° font {lat_err:.2f} m de côté "
+              f"(bouche : {PERCEPTION_BAR_M:.1f} m)")
     return out
 
 
@@ -350,12 +386,19 @@ def main() -> int:
     print("=" * 78)
     slot_err = perc.get("slot")
     lat_mlp = perc.get("latent_mlp")
+    brg = perc.get("bearing_deg")
+    de = perc.get("dist_err")
     if slot_err is not None and slot_err > PERCEPTION_BAR_M:
         print(f"  Le GOULOT est la PERCEPTION : le slot rend {slot_err:.2f} m "
               f"(barre {PERCEPTION_BAR_M:.1f} m = le rayon de la bouche).")
-        if lat_mlp is not None and lat_mlp < slot_err / 1.5:
-            print(f"  Et l'information EST disponible : le latent la porte à {lat_mlp:.2f} m.")
-            print("  → ce n'est pas un manque d'information, c'est un mauvais READOUT.")
+        if brg is not None and de is not None:
+            print(f"  Et c'est le GISEMENT, pas la distance : {brg:.0f}° contre {de:.2f} m "
+                  f"d'erreur de distance.")
+            print("  → viser mieux ne demande pas de mieux estimer la distance, mais de mieux")
+            print("    SÉLECTIONNER les rayons qui portent l'objet.")
+        if lat_mlp is not None and lat_mlp > slot_err:
+            print(f"  Le latent ne peut pas remplacer le slot : {lat_mlp:.2f} m contre "
+                  f"{slot_err:.2f} m (split honnête).")
     elif slot_err is not None:
         print(f"  La perception tient ({slot_err:.2f} m). Le goulot est ailleurs.")
     if vie.get("pct_budget", 100) < 50:

@@ -3,6 +3,23 @@
 **Méthode** : tout ce qui suit est LU sur disque ou MESURÉ sur corpus. Rien n'est repris de la doc
 sans vérification — parce que la doc s'est révélée en retard d'une génération sur le code.
 
+> ## 🚨 CORRECTIONS DU 2026-08-02 (fin de session) — LIRE AVANT LE RESTE
+>
+> Deux affirmations de la première rédaction de ce document étaient FAUSSES. Elles sont corrigées
+> en §7 ; les sections d'origine sont laissées telles quelles pour que l'erreur reste lisible.
+>
+> **1. « Le latent porte la position mieux que le slot » → FAUX.** Le chiffre de 0,55 m venait
+> d'une sonde à split ALÉATOIRE. À 0,05 m/tick deux ticks voisins sont quasi identiques : le
+> jumeau de chaque tick de test était dans le train. Sous split PAR ÉPISODE, le latent rend
+> **2,58 m** contre **1,42 m** au slot. Le slot est MEILLEUR.
+>
+> **2. « Le contrôle position_head prouve que la perception est le goulot » → à moitié.** Le
+> contrôle est valide, mais ce n'est pas la `position_head` qui pilotait : ce WM n'a pas de canal
+> slot, donc le planner est retombé sur `food_xz_from_radar` — **le radar de VÉRITÉ**. Le bon
+> énoncé est : avec une perception PARFAITE l'entité fait 10,5 repas/vie et survit 1833 ticks,
+> contre 1,3 et 370 avec le slot. La perception reste bien le goulot, et la borne est même mieux
+> fondée qu'annoncé — mais aucune tête apprise n'a produit ces chiffres.
+
 ---
 
 ## 1. CE QUI EST VRAI AUJOURD'HUI (mesuré)
@@ -271,3 +288,76 @@ est disponible.
 - `diag_bilan.py` : une commande, quatre sections (substrat / perception / vie / pureté).
 - Le code mort des 4 approches réfutées est retiré (il fabriquait des poids aléatoires à chaque
   chargement) ; la brèche `with_position_head` dans le chemin « pur » du planner est fermée.
+
+---
+
+## 7. CORRECTIONS ET ÉTAT RÉEL (fin de session 2026-08-02)
+
+### 7.1 La fuite train/test qui inversait le verdict
+
+Même corpus, même tête, deux découpes :
+
+| découpe | latent | slot |
+|---|---|---|
+| aléatoire (**fuite**) | 0,42 m | 1,43 m |
+| **par épisode (honnête)** | **2,58 m** | **1,42 m** |
+
+L'agent avance de 0,05 m/tick : deux ticks voisins sont quasi le même état. Un split aléatoire
+met donc le jumeau de chaque tick de test dans le train, et la sonde MÉMORISE. Le facteur est
+de 6 et il **inverse la conclusion**.
+
+Contaminés par ce biais : `diag_latent_carries_position.py` (d'où venait le 0,55 m),
+la première version de `diag_bilan.py`, et `scripts/train_position_head.py`.
+`diag_bilan.py` est corrigé (split par épisode obligatoire, moins de 4 épisodes → sondes sautées).
+
+### 7.2 Le slot est bon en DISTANCE et mauvais en GISEMENT
+
+| perception | position | gisement | distance |
+|---|---|---|---|
+| slot codé-main | 1,42 m | **23–25°** | **0,06 m** |
+| latent (honnête) | 2,58 m | 37° | 0,69 m |
+| position_head (hors corpus d'entraînement) | 2,86 m | 57° | 1,90 m |
+
+Le slot lit la profondeur du rayon, donc sa distance est quasi exacte (6 cm). Son erreur de
+position est presque ENTIÈREMENT du gisement : 23° à 3,2 m font **1,24 m de côté**, pour une
+bouche de 1,0 m. **L'entité rate parce qu'elle vise à côté, pas parce qu'elle juge mal la
+distance.**
+
+C'est une cible bien plus étroite que « la position est fausse » : il faut mieux SÉLECTIONNER
+les rayons, la géométrie du décodage n'est pas en cause.
+
+### 7.3 Ce que le gate G0 a réfuté (deux fois)
+
+`diagnostics/diag_locator_g0.py` — une tête lisant le latent, entraînée uniquement sur du vécu :
+
+| mode | médiane | < 2 m | > 2 m |
+|---|---|---|---|
+| transport + ancre de conséquence | 3,43 m | 1,05 m | 4,00 m |
+| régression sur cibles rétro-propagées | 3,47 m | 1,13 m | 4,01 m |
+| slot codé-main | **1,43 m** | 0,60 m | 2,30 m |
+
+- **Mode implicite** : satisfait les trois pertes SANS RIEN SUIVRE (corrélation r ≈ −0,09).
+  L'échelle n'est ancrée qu'en un point (la bouche) et le signal d'échelle du transport
+  (|α−1|×0,05 m/tick) passe sous le plancher de bruit de la proie (0,023 m/tick).
+- **Mode rétro** : bonnes étiquettes (0,87 m à k=10) mais 15 ticks ne couvrent que 0,75 m de
+  trajet — rien au-delà de 2 m n'est jamais étiqueté.
+
+Et un test croisé montre que **ni le bruit ni la couverture ne sont la limite** : avec des
+étiquettes PARFAITES (σ=0) et la couverture COMPLÈTE (66 k ticks), une tête sur le latent
+plafonne à 1,68 m. Le latent n'a tout simplement pas de quoi faire mieux que le slot.
+
+### 7.4 Où en est réellement le point 1
+
+**La voie « lire la position depuis le latent » est fermée**, par mesure, sous trois formes
+(transport+conséquence, rétro-propagation, étiquettes parfaites). Le latent porte le TYPE à
+99,9 % mais pas la position mieux que le slot.
+
+**Ce qui reste vrai et exploitable :**
+- le goulot est bien la perception (borne oracle : ×8 sur les repas, ×5 sur la survie) ;
+- le défaut est le GISEMENT du slot (23°), pas sa distance (0,06 m) ;
+- la dernière clé-apparence est la sélection des rayons par requête-couleur ;
+- la proie mobile (`prey_speed=0.023`) empêche l'ancrage par transport et n'apporte rien
+  (le planner fait de la poursuite pure et ne peut pas intercepter — déjà noté dans `world.py`).
+
+**La question à poser ensuite n'est donc plus « comment lire la position autrement »
+mais « comment sélectionner les rayons sans nommer une couleur ».**
