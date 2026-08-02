@@ -86,3 +86,43 @@ maintenant pour ne pas le « découvrir » après coup.
 ## Ce que ce chantier ne fait pas
 Il ne corrige ni le rayon de braquage (−23,3 pts), ni l'arbitrage (clos en négatif), ni la survie
 bimodale. Ce sont des sujets distincts.
+
+---
+
+## ⭐⭐ VERDICT G0 (2026-08-02, `diagnostics/diag_mouvement_g0.py`) : **STOP — REDIRECTION VERS LA PERCEPTION**
+
+### G0-A ❌ — le mouvement n'est lisible à AUCUN décalage
+| Δ | déplacement VRAI | changement d'ERREUR du slot | SNR |
+|---|---|---|---|
+| 1 | 0,023 m | 0,066 m | 0,35 |
+| 10 | 0,230 m | 0,627 m | 0,37 |
+| 30 | 0,690 m | 1,590 m | 0,43 |
+| 60 | 1,380 m | 2,324 m | **0,59** |
+
+L'asymétrie supposée est **réelle mais insuffisante** : le SNR monte bien avec Δ (0,35 → 0,59),
+donc le mouvement accumule plus vite que le bruit — mais à peine. Le bruit croît en Δ^0,87 quand le
+signal croît en Δ^1,0 : le SNR progresse en Δ^0,13, et n'atteint jamais 1,0 dans un horizon utile.
+**Barre STOP pré-enregistrée (SNR < 1,0 partout) : franchie.**
+
+### G0-B ❌ — l'information n'est pas dans le capteur non plus
+Avec des étiquettes **PARFAITES**, une tête sur deux rétines + ego-motion prédit la direction de la
+proie à : 85,3° (Δ=10) · 80,7° (20) · 71,8° (30) · 73,1° (45) · 68,9° (60) · 67,6° (90).
+**Jamais près de la barre 45°, jamais loin du hasard 90°.** Le balayage montre que le résultat BOUGE
+avec le paramètre — ce n'est donc pas un test dégénéré, c'est une absence d'information.
+
+### Conséquence
+La cause est identifiée et unique : **le bruit de la perception domine le mouvement à toutes les
+échelles**. Ce n'est pas un problème de modélisation du mouvement, c'est un problème de PRÉCISION.
+
+⇒ **Le chantier redirige vers la PRÉCISION DE LA PERCEPTION**, exactement comme la réserve du design
+l'annonçait avant de lancer. C'est le **quatrième chemin indépendant** à y mener :
+1. l'ablation de capture — le biais de visée coûte **−14,8 pts** ;
+2. le G0 critique-de-rang — le rêve ne porte aucun signal sur le résultat (p = 0,334) ;
+3. l'estimation naïve de vitesse — **3,3× pire** que de supposer l'objet immobile ;
+4. ce G0 — SNR 0,59 max, et 68° avec des étiquettes parfaites.
+
+### La cible est précise
+`[MESURÉ, sondes du 2026-08-02]` L'erreur de gisement vaut **10,5°** quand un rayon touche vraiment
+la cible, et **33°** quand aucun ne la touche — ce qui arrive **61 %** du temps. Et la gate de
+visibilité servie est à **AUC 0,559**, quasi le hasard. **L'entité invente une position, et elle ne
+sait pas qu'elle invente.** C'est là qu'est le prochain chantier.
