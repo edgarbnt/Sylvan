@@ -151,3 +151,38 @@ apprise ne devient nécessaire que si la persistance géométrique échoue en vi
 
 ⚠️ `[INFÉRÉ]` « zéro apprentissage suffit » vient d'un calcul de marge, pas d'une implémentation.
 G1 doit l'implémenter et le juger EN VIES, avec contrôle d'action et KILL à magnitude.
+
+---
+
+## 🛑 VERDICT G1 (2026-08-02) : **KILL — la FORME est réfutée, pas le diagnostic**
+
+Contrôle d'action PASSÉ dans les 3 graines (1050 · 500 · 1200 bascules refusées) — le bras a agi.
+
+| | REF | PERSISTANCE |
+|---|---|---|
+| survie moyenne | 1358 | **632** |
+| repas | 117 | **48** |
+| boissons | 93 | **41** |
+| vies pleines | 12 | **4** |
+| **consommation / 1000 pas VÉCUS** | **3,60** | **2,94** |
+
+**−18,3 %** sur la métrique non bimodale ⇒ **KILL pré-enregistré (au-delà de −15 %) déclenché.**
+
+⚠️ Honnêteté statistique : p = 0,167, donc la baisse n'est pas *établie* à 36 vies/bras. Mais le
+KILL est une règle de DÉCISION à magnitude, posée d'avance précisément pour ne pas dépendre d'un
+seuil de significativité — et **toutes** les mesures bougent dans le même sens (survie −53 %, repas
+−59 %, boissons −56 %, vies pleines 12→4).
+
+### La cause, annoncée AVANT le lancement
+La position conservée **VIEILLIT** : elle n'est pas transportée par l'ego-motion. Sur 3 replans
+gardés (30 ticks), l'entité parcourt ~1,4 m — la position gelée devient donc périmée de plus d'un
+mètre, **pire que la bascule qu'elle empêchait**. C'était la réserve écrite au moment de lancer.
+
+### Ce qui N'EST PAS réfuté
+Le G0 tient : les bascules coûtent **22,7 points** de réussite, et ce résultat a survécu à ses deux
+contrôles adverses (stratification par durée, précédence temporelle). C'est **ma forme de
+correctif** qui est fausse, pas le diagnostic.
+
+**Suite possible, NON lancée** : transporter la position conservée par l'ego-motion
+(`wm.transport_slot` existe et est validé) au lieu de la figer. À pré-inscrire proprement — pas à
+enchaîner sur la lancée, ce qui est le réflexe qui a le plus coûté ce 2026-08-02.
