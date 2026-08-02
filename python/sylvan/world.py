@@ -200,6 +200,20 @@ class WorldPreset:
                 env["SYLVAN_WATER_PATCHES_MIN"] = f"{self.patches_min}"
             env["SYLVAN_WATER_REGROW"] = f"{self.regrow_ticks}"
             env["SYLVAN_DRINK_RADIUS"] = f"{self.eat_radius_m}"
+            # PANNE SILENCIEUSE RÉPARÉE (2026-08-02) — TROISIÈME du même genre, et la plus chère.
+            # `restore_per_item` n'était exporté qu'à la NOURRITURE (SYLVAN_FOOD_ENERGY_PER). L'eau
+            # retombait donc sur le défaut du GDScript, 40, alors que la nourriture était passée à
+            # 140 le 2026-07-28. Or la soif descend EXACTEMENT au même rythme que la faim : une
+            # boisson à 40 exigeait 2,1x plus de trajets qu'un repas pour le même bénéfice.
+            # MESURÉ AVANT CORRECTIF (diagnostics/diag_viabilite_monde.py, 12 vies) : nécessaire
+            # 3,87 boissons/1000 pas contre 1,84 repas ; réalisé 0,76 (déficit 5x) contre 2,54.
+            # Morts : soif 26, faim 6. Budget de trajet exigé 50 m par 1000 pas pour 47 m
+            # parcourables ⇒ MONDE INVIVABLE : aucune entité, même parfaite, ne pouvait y survivre,
+            # ce qui a rendu SANS OBJET tout jugement comportemental rendu dans foret_v1.
+            # L'ironie est que le commentaire de `food_manager.gd:255-265` avait déjà fait ce calcul
+            # (« avec restore=40 : bilan NÉGATIF → mort certaine [...] aucune compétence ne peut s'y
+            # voir ») — mais d'un seul côté du bilan.
+            env["SYLVAN_WATER_ENERGY_PER"] = f"{self.restore_per_item}"
             # PANNE SILENCIEUSE RÉPARÉE (2026-07-28) : la géométrie des bosquets n'était servie qu'à
             # la NOURRITURE. L'eau retombait donc sur les défauts du GDScript — écart mini 9,0 m et
             # PAS de borne haute — un intervalle que le placeur ne peut pas satisfaire pour 180
