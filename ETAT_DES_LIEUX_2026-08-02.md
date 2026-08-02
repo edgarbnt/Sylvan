@@ -361,3 +361,80 @@ plafonne à 1,68 m. Le latent n'a tout simplement pas de quoi faire mieux que le
 
 **La question à poser ensuite n'est donc plus « comment lire la position autrement »
 mais « comment sélectionner les rayons sans nommer une couleur ».**
+
+---
+
+## 8. LA VRAIE NATURE DU PROBLÈME DE PERCEPTION (mesuré en fin de session)
+
+### 8.1 La géométrie n'est PAS en cause — le plafond est excellent
+
+Avec une sélection de rayons PARFAITE, le soft-argmax de production rend :
+
+| | position | gisement | gisement > 2 m |
+|---|---|---|---|
+| sélection parfaite | **0,24 m** | **5,0°** | **2,6°** |
+| slot servi | 1,42 m | 23,1° | 25,8° |
+
+Le décodage géométrique (angles de rayon connus → coordonnée) est donc très bon. **Ce n'est pas
+lui qu'il faut remplacer** : c'est l'optique du capteur, au même titre que les angles de la rétine.
+
+### 8.2 Ce n'est pas non plus la forme des requêtes
+
+Le monde sert 4 teintes de nourriture pour UNE requête à seuil lâche. Hypothèse naturelle :
+4 requêtes serrées feraient sortir les troncs. **Réfuté** — 23,6° contre 23,1°, à tous les seuils
+testés (0,95 / 0,98 / 0,995). La structure de la requête n'est pas le facteur limitant.
+
+### 8.3 LE VRAI FACTEUR : la cible est INVISIBLE 61 % du temps
+
+| | n | gisement | position | distance vraie |
+|---|---|---|---|---|
+| **un rayon touche la cible** | 1535 (39 %) | **10,5°** | **0,41 m** | 1,93 m |
+| aucun rayon ne la touche | 2381 (61 %) | 33,0° | 2,53 m | 4,06 m |
+
+Et le taux de contact s'effondre avec la distance : **70 % (<2 m) → 38 % (2-4 m) → 16 % (>4 m)**.
+
+**Quand l'entité voit vraiment la nourriture, elle la localise bien.** Le reste du temps elle
+pointe autre chose — et le planner le poursuit.
+
+### 8.4 Et elle ne sait pas qu'elle ne voit pas
+
+La gate de visibilité servie ne discrimine RIEN :
+
+| | visibilité médiane | passe la gate |
+|---|---|---|
+| un rayon touche | 0,1145 | 96 % |
+| aucun rayon ne touche | 0,1099 | 79 % |
+
+AUC = **0,559** (le hasard est à 0,5). Aucun seuil ne sépare : à tous les seuils, ~44 % seulement
+des ticks retenus voient vraiment. Une tête APPRISE sur le latent monte à **0,670** — modeste mais
+réel, et deux fois plus informatif que la gate actuelle.
+
+### 8.5 La mémoire comblerait la majorité du trou
+
+Parmi les 61 % de ticks où la cible n'est pas touchée, elle l'a été récemment :
+
+| fenêtre | part |
+|---|---|
+| ≤ 10 ticks | 22,7 % |
+| ≤ 20 ticks | 36,8 % |
+| ≤ 40 ticks | **52,7 %** |
+| ≤ 80 ticks | 68,4 % |
+| jamais (dans 80) | 31,6 % |
+
+Avec une mémoire à 40 ticks, la part de ticks disposant d'une cible VALIDE passerait de **39 % à
+~71 %**. Le module `SlotMemory` existe (`python/sylvan/control/slot_memory.py`), il est câblé en
+opt-in et n'a **jamais été promu** faute de valeur closed-loop démontrée.
+
+### 8.6 Ce que ça change pour « rendre la perception apprise »
+
+La perception a deux moitiés, et une seule est impure :
+
+- **la GÉOMÉTRIE** (angles connus → coordonnée) : excellente, et légitimement conçue — c'est
+  l'optique du capteur, pas de la cognition ;
+- **la SÉLECTION** (quels rayons appartiennent à quelle pulsion) : codée-main par couleur, donc
+  impure — mais **ce n'est pas elle qui limite le comportement**.
+
+Ce qui limite, c'est que la cible est **invisible 61 % du temps** et que l'entité **l'ignore**.
+Le lien perception→conséquence à apprendre n'est donc pas « quels rayons sont rouges » (réfuté
+3 fois) mais **« puis-je me fier à ce que je crois voir »** — signal dense, purement issu du vécu
+(« j'y suis allé, ai-je mangé ? »), et modulaire (une tête de confiance par pulsion).
