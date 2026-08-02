@@ -81,6 +81,53 @@ class SelfSupervisedSlotHead(nn.Module):
         else:
             self.color_queries = None
             self.query_thr = None
+        # SAILLANCE DE PULSION APPRISE (chantier « perception pure de la faim », 2026-08-02).
+        # Remplace la RÈGLE-COULEUR codée-main par un s(rgb) appris de la CONSÉQUENCE VÉCUE
+        # (wm.ate) — la dernière clé-apparence structurelle du projet. La GÉOMÉTRIE du
+        # soft-argmax ne change PAS d'une ligne : seule la SÉLECTION change de source.
+        # Opt-in `SYLVAN_SLOT_DRIVE_SALIENCY="<idx>:<ckpt>[,<idx>:<ckpt>...]"`, défaut None =
+        # chemin cosinus BYTE-IDENTIQUE. Les ressources sans tête gardent leur requête.
+        self.drive_saliency: dict[int, object] = {}
+        self._load_drive_saliency(os.environ.get("SYLVAN_SLOT_DRIVE_SALIENCY", ""))
+
+    def _load_drive_saliency(self, spec: str) -> None:
+        if not spec:
+            return
+        from .drive_saliency import load_drive_saliency  # import paresseux
+        for part in spec.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            idx_s, _, path = part.partition(":")
+            k = int(idx_s)
+            if not 0 <= k < self.n_resources:
+                raise ValueError(f"slot {k} hors bornes (n_resources={self.n_resources})")
+            head, ck = load_drive_saliency(path)
+            # ⚠️ VOLONTAIREMENT hors de l'arbre de modules (dict simple, pas add_module) :
+            # ces têtes ne doivent PAS entrer dans le state_dict, sinon tous les checkpoints
+            # existants échoueraient au chargement strict. Elles sont gelées et en eval.
+            head.requires_grad_(False)
+            self.drive_saliency[k] = head
+            print(f"[slot] SAILLANCE APPRISE sur le slot {k} ({ck.get('drive', '?')}) "
+                  f"— la règle-couleur est court-circuitée · ρ̂={ck.get('rho_hat', float('nan')):.2f} m")
+
+    def _affinity(self, rgb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """[..., NRAY, 3] -> (score [..., K, NRAY], seuil [K]).
+
+        UNE seule source d'appartenance rayon→ressource, quelle que soit son origine : le
+        cosinus codé-main, ou la saillance APPRISE là où une tête est branchée. Tout ce qui
+        suit dans `_attend` est identique — c'est le point du chantier.
+        """
+        rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
+        score = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)
+        thr = self.query_thr.clone()
+        if self.drive_saliency:
+            from .drive_saliency import SAL_THR
+            score = score.clone()
+            for k, head in self.drive_saliency.items():
+                score[..., k, :] = head.s(rgb)
+                thr[k] = SAL_THR
+        return score, thr
 
     def _attend(self, retina: torch.Tensor) \
             -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
@@ -102,9 +149,8 @@ class SelfSupervisedSlotHead(nn.Module):
         # ci-dessus. C'est l'anomalie A2 de l'audit du 2026-07-24, assumée et documentée.
         if self.color_queries is not None:
             rgb = r[..., 1:4]
-            rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
-            cos = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)
-            aff = (cos - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
+            cos, thr = self._affinity(rgb)
+            aff = (cos - thr.unsqueeze(-1)).clamp(min=0.0)
             sal_cos = cos.amax(dim=-2).clamp(min=0.0)
             prox = ((1.0 - depth).clamp(min=0.0)) ** 2
             _hard = os.environ.get("SYLVAN_SLOT_HARD_MASK", "1") != "0"
@@ -173,9 +219,10 @@ class SelfSupervisedSlotHead(nn.Module):
         sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
         if self.color_queries is None:
             return sal.amax(-1, keepdim=True).expand(*sal.shape[:-1], self.n_resources)
-        rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
-        aff = (torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)
-               - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
+        # MÊME source d'affinité que `_attend` : sans ce miroir, la gate de visibilité servie
+        # et le slot divergeraient dès qu'une tête apprise est branchée.
+        score, thr = self._affinity(rgb)
+        aff = (score - thr.unsqueeze(-1)).clamp(min=0.0)
         return (aff * sal.unsqueeze(-2)).amax(-1)
 
     @torch.no_grad()
