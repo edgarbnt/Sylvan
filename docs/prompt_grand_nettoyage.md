@@ -4,8 +4,47 @@
 
 ---
 
-Salut. Ce soir est un **tournant** : on professionnalise le projet. Deux livrables, dans cet ordre :
-**(A) un grand nettoyage**, **(B) un outil visuel complet**. Utilise plusieurs agents en parallèle.
+Salut. Deux livrables, dans cet ordre : **(A) un grand nettoyage**, **(B) un outil visuel complet**.
+Utilise plusieurs agents en parallèle.
+
+## POURQUOI ON FAIT ÇA — lis ceci avant tout, ça te servira à trancher les cas limites
+
+Depuis des semaines, l'owner a le sentiment que le projet n'avance pas. Ce sentiment est **fondé**,
+mais la cause n'est pas celle qu'on croyait, et elle a été identifiée le 2026-08-02.
+
+**Ce n'est pas que les idées échouent. C'est qu'on ne peut RIEN MESURER.** Deux raisons empilées :
+
+1. **Le monde était invivable** — arithmétiquement prouvé : survivre exigeait 50 m de trajet par
+   1000 pas quand le corps en parcourt 47. Toutes les mesures comportementales des semaines
+   précédentes n'étaient donc pas fausses, elles étaient **vides**. On comparait des choses dans un
+   instrument cassé. La cause tenait en une ligne : un réglage donné à la nourriture et jamais à
+   l'eau.
+2. **L'instrument ne discrimine toujours pas** : la survie est BIMODALE (29 vies sur 36 meurent vers
+   350 pas, 6 vont à 3000). Résultat, tous les A/B d'une journée entière sont sortis entre p = 0,13
+   et p = 0,88. **Un gain réel de 20 % est invisible.**
+
+Et la couche des harnais est truffée de pannes silencieuses. En une seule journée on a trouvé : un
+script qui effaçait le corpus de référence, un contrôle qui affichait « DÉTERMINISTE » sur deux runs
+morts, une sonde câblée sur l'ancien monde, cinq gates cassés depuis un commit de nettoyage, des
+logs détruits par `kill -9`. **Ces bugs ont coûté plus cher que la science.**
+
+**L'owner a envisagé de tout recommencer à zéro.** La décision a été de NE PAS le faire, pour une
+raison mesurée : le substrat FONCTIONNE (le modèle du monde rêve juste à 0,13 m ; la perception pose
+sa lecture sur une vraie proie 85 % du temps ; le corps obéit). Ce sont des mois de travail valides.
+Ce qui est pourri, c'est **la couche autour** — les harnais, les docs empilés, les 315 flags, une
+carte d'archi de 318 Ko devenue illisible.
+
+### Le critère qui doit guider CHACUNE de tes décisions
+> **« Est-ce que ça nous rapproche de pouvoir mesurer vite et faire confiance au résultat ? »**
+
+- Un doc qui contient un chiffre mesuré ou une réfutation → **on garde** (consolidé).
+- Un script qui duplique un autre à trois flags près → **on fusionne**.
+- Un flag dont le défaut ne correspond plus à la config servie → **c'est un bug**, pas du ménage.
+- Une vue de l'outil qui ne sert ni à voir ni à débugger → **on ne la construit pas**.
+
+Ce n'est donc **pas un chantier cosmétique**. C'est réparer la capacité à savoir si une idée marche.
+Tant qu'on ne peut pas mesurer, aucune idée — bonne ou mauvaise — ne peut être départagée, et c'est
+exactement ce qui donne l'impression de tourner en rond depuis des semaines.
 
 ## 0. Lis d'abord (dans cet ordre, rien d'autre)
 1. `CLAUDE.md` — les 4 principes de travail. Ils prévalent sur tout ce prompt.
