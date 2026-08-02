@@ -194,3 +194,80 @@ Aujourd'hui la survie est à 12 % du budget (trop dur, l'entité ne fait rien d'
 Avec une perception correcte elle passerait à ~60 % — **exactement la bande où la valeur
 discrimine**, ni saturée ni effondrée. La perception et le prérequis du critique se règlent
 donc d'un seul geste.
+
+---
+
+## 6. MESURES DU 2026-08-02 (outillage réparé)
+
+### 6.1 Le slot ne se dégrade pas : il s'effondre à PORTÉE
+
+`diag_bilan.py`, corpus `gate_foret_cl`, vérité `food_rel0` :
+
+| distance vraie | slot (servi) | readout latent | gain |
+|---|---|---|---|
+| < 2 m | 0,60 m | 0,45 m | ×1,3 |
+| 2–4 m | 1,50 m | 0,48 m | ×3,1 |
+| 4–6 m | 3,11 m | 0,68 m | ×4,6 |
+| > 6 m | 4,10 m | **0,89 m** | ×4,6 |
+
+Le slot voit bien de près et devient aveugle au-delà de 2 m — or la nourriture est à **3,16 m
+médians**. Le readout latent, lui, reste **sous 1 m à toute distance**, donc sous le rayon de
+bouche (1,0 m).
+
+**Pourquoi** : à 3 m une baie de 0,18 m sous-tend ~3,4°, soit UN rayon de rétine (pas de 3,33°).
+Le vote cosinus ray-par-ray est alors minoritaire face aux troncs qui passent le seuil. L'encodeur
+d'attention, lui, pondère les 36 rayons ENSEMBLE et peut utiliser le contexte (« ce rayon rougeâtre
+est isolé au milieu de verts »).
+
+### 6.2 ⚰️ La consistance-de-transport seule est RÉFUTÉE dans ce monde
+
+Le signal qui a fait émerger le slot en 2026-06 suppose l'objet IMMOBILE. Mesuré :
+
+| gap | résidu de transport | = |
+|---|---|---|
+| 2 | 0,046 m | 0,023 × 2 |
+| 8 | 0,184 m | 0,023 × 8 |
+| 16 | 0,368 m | 0,023 × 16 |
+
+Le résidu vaut EXACTEMENT `prey_speed × gap` : c'est le déplacement de la proie. Or les arbres
+sont **statiques**, donc leur résidu est nul.
+
+⇒ **L'optimum de la consistance-de-transport pure est de verrouiller sur un tronc.** Le monde a
+évolué (proie mobile depuis v6) et a invalidé le mécanisme de pureté sur lequel la perception
+reposait. C'est le même défaut que l'audit A4 signalait côté rêve, ici côté perception.
+
+### 6.3 Ce qui reste comme ancre PURE : la conséquence
+
+Inventaire des événements de conséquence, tous corpus forêt (457 vies, 271 731 ticks) :
+
+| | nombre | densité |
+|---|---|---|
+| repas | **534** | 0,20 % |
+| boissons | **670** | 0,25 % |
+| dégâts | **0** | 0,00 % |
+
+🚨 **Zéro dégât** : la pulsion danger n'a aucun signal vécu dans tout le corpus — un drive servi
+mais jamais mordu.
+
+**Un repas rétro-propagé rend toute la trajectoire d'approche.** En partant de « la nourriture
+était à ma bouche quand j'ai mangé » et en remontant le temps par la seule ego-motion :
+
+| k ticks avant le repas | erreur vs food_rel0 | < 1 m |
+|---|---|---|
+| 1 | 0,62 m | 91 % |
+| 10 | 0,85 m | 65 % |
+| 20 | 1,16 m | 44 % |
+| 30 | 1,42 m | 36 % |
+
+Valide jusqu'à ~20 ticks (au-delà, la dérive de la proie et l'incertitude d'ancre dominent).
+Cela fournit **~3 200 positions étiquetées SANS aucune couleur** — uniquement « j'ai mangé » et
+ma propre proprioception. C'est la première fois du projet qu'un signal de position pur ET dense
+est disponible.
+
+### 6.4 Ce que l'outillage réparé a coûté/rapporté
+
+- `from_checkpoint` centralise désormais les DEUX calages du slot (seuils par-requête, angles du
+  cône). Sans eux le même checkpoint rendait 1,42 m au serveur et 3,07 m aux diagnostics.
+- `diag_bilan.py` : une commande, quatre sections (substrat / perception / vie / pureté).
+- Le code mort des 4 approches réfutées est retiré (il fabriquait des poids aléatoires à chaque
+  chargement) ; la brèche `with_position_head` dans le chemin « pur » du planner est fermée.
