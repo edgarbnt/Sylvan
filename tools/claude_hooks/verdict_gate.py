@@ -76,11 +76,23 @@ def last_assistant_text(transcript: Path) -> str:
 
 
 def offenders(text: str) -> list[str]:
-    """Lignes qui affirment une cause sans étiquette d'origine ni précaution."""
+    """Lignes qui affirment une cause sans étiquette d'origine ni précaution.
+
+    ⚠️ FAUX POSITIF CORRIGÉ (2026-08-02, dès le premier déclenchement réel) : la version initiale
+    bloquait sur le TITRE « ## Ce qui est établi ». Un titre de section n'affirme rien — le contenu
+    dessous portait ses chiffres et ses sources. Un garde qui crie au loup sur des titres finit
+    ignoré, et un garde ignoré ne vaut rien. On exige donc une vraie PHRASE : pas un titre markdown,
+    pas une cellule de tableau, et un verbe conjugué autour de l'affirmation.
+    """
     bad = []
     for line in text.splitlines():
         s = line.strip()
-        if not s or len(s) < 15:
+        if not s or len(s) < 40:
+            continue
+        if s.startswith("#") or s.startswith("|") or s.startswith(">"):
+            continue  # titre, tableau, citation : pas une affirmation
+        # Une phrase, pas un fragment : il faut au moins un point ou une virgule.
+        if not re.search(r"[.,;]", s):
             continue
         if CLAIM.search(s) and not TAG.search(s) and not HEDGE.search(s):
             bad.append(s[:160])
