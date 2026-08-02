@@ -35,7 +35,16 @@ RUN_DIR="$ROOT/data/replay_buffer/$TAG"
 export PYTHONPATH=python
 eval "$(env_pytorch_3.12/bin/python -m sylvan.world --preset foret_v1 --env)"
 
+# AGILITÉ DU CORPS, surchargeable pour SONDER (2026-08-02). Le rayon de braquage vaut
+# kin_speed·vx/kin_turn : mesuré à 2,00 m en croisière pour une bouche de 1,00 m, donc l'entité ne
+# peut pas virer À L'INTÉRIEUR de sa propre allonge et orbite autour d'une proie mobile.
+# ⚠️ Le WM a été entraîné à kin_turn=6 : le changer rend son rêve FAUX. C'est une SONDE, pas un
+# réglage promouvable — un vrai correctif demanderait de recollecter puis ré-entraîner le WM.
+[ -n "${KIN_TURN:-}" ] && export SYLVAN_KIN_TURN="$KIN_TURN"
+[ -n "${KIN_SPEED:-}" ] && export SYLVAN_KIN_SPEED="$KIN_SPEED"
+
 echo "=== GATE CLOSED-LOOP | WM=$WM | $NEP vies x $MS ticks | monde foret_v1 COMPLET ==="
+echo "    corps : kin_speed=$SYLVAN_KIN_SPEED kin_turn=$SYLVAN_KIN_TURN"
 echo "    ⚠️  canal-slot GREFFÉ (requêtes de l'ancien monde) — ce gate ne juge PAS les requêtes."
 
 pkill -9 -f serve_planner_command 2>/dev/null; sleep 1
