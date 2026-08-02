@@ -39,7 +39,11 @@ run_one() {   # $1=tag  $2=cf_tick("")  $3=cmd  $4=port -> repas dans [K, K+W]
   local ok=0
   for _i in $(seq 1 60); do ss -ltn 2>/dev/null | grep -q ":$port" && { ok=1; break; }; sleep 1; done
   [ "$ok" = 0 ] && { kill -9 $SRV 2>/dev/null; echo "NA"; return; }
+  # KEEP=1 : conserver le corpus ET enregistrer le bloc vérité-terrain (rétine incluse). Sans lui
+  # la sonde EFFACE ses données, donc on ne peut pas rejouer le rêve du WM sur les candidats après
+  # coup — c'est ce qui bloquait le G0 d'apprenabilité (2026-08-02).
   local rundir=/tmp/ff_${tag}; rm -rf "$rundir"; mkdir -p "$rundir"
+  [ -n "${KEEP:-}" ] && export SYLVAN_WM_COLLECT=1
   local CF=""; [ -n "$cf_tick" ] && CF="SYLVAN_CF_TICK=$cf_tick SYLVAN_CF_CMD=$cf_cmd SYLVAN_CF_HOLD=$HOLD"
   env $CF $WORLD_ENV SYLVAN_MAX_EPISODE_STEPS=$MAXS \
     ${KIN:+SYLVAN_KINEMATIC=1} \
@@ -60,7 +64,7 @@ rows=sorted((int(m.group(1)),float(m.group(2))) for m in (P.search(l) for l in o
 m=sum(1 for i in range(1,len(rows)) if k<=rows[i][0]<=k+w and rows[i][1]-rows[i-1][1]>5)
 print(m)
 PY
-  rm -rf "$rundir"
+  [ -n "${KEEP:-}" ] || rm -rf "$rundir"
 }
 
 echo "=== MARGE DU CRITIQUE — $PRESET  seed=$SEED  fork k=$K  fenetre W=$W  hold=$HOLD ==="
