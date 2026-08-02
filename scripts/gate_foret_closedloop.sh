@@ -25,8 +25,12 @@ NEP="${1:-12}"
 MS="${2:-3000}"
 WM="${WM_CKPT:-data/checkpoints/wm_foret_attn_slot/wm_best.pt}"
 PORT="${PORT:-6069}"
-RUN_DIR="$ROOT/data/replay_buffer/gate_foret_cl"
-TAG=gate_foret_cl
+# TAG surchargeable : `data/replay_buffer/gate_foret_cl` est le corpus de RÉFÉRENCE de
+# `diagnostics/diag_bilan.py` (c'est sur lui qu'est mesurée la baseline 1,42 m / 23,1°). Ce
+# script le `rm -rf`, donc tout A/B lancé sous le TAG par défaut REMPLACE silencieusement la
+# référence par son propre bras. Poser TAG=... pour comparer sans détruire.
+TAG="${TAG:-gate_foret_cl}"
+RUN_DIR="$ROOT/data/replay_buffer/$TAG"
 
 export PYTHONPATH=python
 eval "$(env_pytorch_3.12/bin/python -m sylvan.world --preset foret_v1 --env)"
