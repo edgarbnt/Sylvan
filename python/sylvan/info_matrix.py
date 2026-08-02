@@ -318,6 +318,12 @@ def build_stages(wm: CommandWorldModel, obs: torch.Tensor, cmds: torch.Tensor,
     rétine brute -> encodeur -> latent rêvé à chaque profondeur demandée -> slot -> token du planner.
     Le rêve est celui du déploiement (`rollout_open_loop` sous les commandes RÉELLEMENT exécutées) :
     mesurer sur un rollout teacher-forced donnerait une matrice qui décrit un pipeline qu'on ne sert pas.
+
+    ⚠️ SLOT OPTIONNEL (2026-08-02). Les colonnes « slot » et « token planner » ne sont produites que
+    si le checkpoint porte RÉELLEMENT un canal-slot. Avant ce correctif l'appelant forçait
+    `with_slot=True` : sur un WM sans slot, `slot_encoder` était à poids ALÉATOIRES et ces deux
+    colonnes rendaient du bruit avec l'apparence d'une mesure. Une colonne absente se lit ; une
+    colonne fausse se croit.
     """
     P = wm.proprio_dim
     horizon = max(2, max(depths) + 1)
@@ -334,7 +340,6 @@ def build_stages(wm: CommandWorldModel, obs: torch.Tensor, cmds: torch.Tensor,
         lat.append(wm.rollout_open_loop(obs[idx], seq)["predicted_latents"][:, keep])
     encoded = torch.cat(enc)
     latents = torch.cat(lat)                                  # [N, len(depths), latent_dim]
-    slot = torch.cat([wm.encode_slot(obs[starts[i:i + 4096]]) for i in range(0, len(starts), 4096)])
 
     st = Stages()
     st.names.append("rétine")
@@ -349,12 +354,15 @@ def build_stages(wm: CommandWorldModel, obs: torch.Tensor, cmds: torch.Tensor,
         st.reps[name] = latents[:, k]
         st.parent[name] = prev                                # la chaîne du rêve
         prev = name
-    st.names.append("slot")
-    st.reps["slot"] = slot
-    st.parent["slot"] = "rétine"                              # BRANCHE SÉPARÉE (slot_encoder)
-    st.names.append("token planner")
-    st.reps["token planner"] = planner_token(energy[starts] / 100.0, slot)
-    st.parent["token planner"] = "slot"
+    if getattr(wm, "with_slot", False):
+        slot = torch.cat([wm.encode_slot(obs[starts[i:i + 4096]])
+                          for i in range(0, len(starts), 4096)])
+        st.names.append("slot")
+        st.reps["slot"] = slot
+        st.parent["slot"] = "rétine"                          # BRANCHE SÉPARÉE (slot_encoder)
+        st.names.append("token planner")
+        st.reps["token planner"] = planner_token(energy[starts] / 100.0, slot)
+        st.parent["token planner"] = "slot"
     return st
 
 

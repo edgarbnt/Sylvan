@@ -42,6 +42,16 @@ class RetinaAttentionEncoder(nn.Module):
 
     Contrat préservé : même signature, même largeur de sortie. La proprioception et l'énergie (tout
     ce qui n'est pas la rétine) traversent inchangées, concaténées au résumé rétinien.
+
+    ⚰️ NÉGATIF BANKÉ (2026-07-30, code retiré le 2026-08-02). Une tête `affinity_head` a été greffée
+    ici pour classer chaque rayon depuis les tokens et remplacer le `cos>seuil` du slot. Mesuré sur
+    `gate_foret_cl` : **2,10 m contre 2,18 m** pour le cosinus — donc rien. Avec une couche de
+    self-attention inter-rayons non plus (rappel 74 %, précision 11 %). La cause est structurelle et
+    mérite d'être retenue : **39,9 % des rayons d'arbres tombent dans le même volume (depth,R,G,B)
+    que les rayons de nourriture**, donc aucune fonction du rayon SEUL ne les sépare. Le code est
+    retiré parce qu'il fabriquait des poids ALÉATOIRES à chaque chargement de checkpoint — un module
+    mort qui salit toutes les mesures coûte plus cher qu'il ne documente.
+    Détail : `docs/diag_perception_consequence_2026-07-30.md`.
     """
 
     def __init__(self, obs_dim: int, hidden_dim: int, latent_dim: int,
@@ -59,6 +69,17 @@ class RetinaAttentionEncoder(nn.Module):
                                    nn.Linear(d_token, 1))
         self.net = nn.Sequential(nn.Linear(d_token + n_other, hidden_dim), nn.SiLU(),
                                  nn.Linear(hidden_dim, latent_dim))
+
+    def tokens(self, obs: torch.Tensor) -> torch.Tensor:
+        """Tokens PAR RAYON [..., 36, d_token] — la représentation avant l'agrégation par attention.
+
+        Exposée parce que c'est le seul point du pipeline où l'information a déjà traversé un
+        encodeur APPRIS tout en restant INDEXÉE PAR RAYON, donc par direction connue. Une lecture
+        géométrique apprise doit partir d'ici : la rétine brute n'est pas séparable (39,9 % de
+        chevauchement) et le latent agrégé a perdu l'index de direction."""
+        ret = obs[..., self.retina_at:self.retina_at + self.retina_dim]
+        rays = ret.reshape(*ret.shape[:-1], self.n_rays, self.ray_ch)
+        return self.token(rays)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         lead = obs[..., :self.retina_at]

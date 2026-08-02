@@ -12,6 +12,7 @@ invariant and integrates into a trajectory at eval/planning time.
 
 from __future__ import annotations
 
+import math
 import os
 
 import torch
@@ -59,6 +60,7 @@ class CommandWorldModel(nn.Module):
         retina_attention: bool = False,
         with_slot: bool = False,
         slot_resources: int = 1,
+        with_position_head: bool = False,
     ) -> None:
         super().__init__()
         # obs = proprio ++ food radar ++ energy. In CPG mode the POLICY's vision channel carries
@@ -116,6 +118,18 @@ class CommandWorldModel(nn.Module):
             self.bearing_head = nn.Sequential(
                 nn.Linear(latent_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, 2),  # (cos, sin) du bearing
             )
+        # TÊTE DE POSITION depuis le LATENT (plan_latent revival, 2026-07-30). Le latent de
+        # l'encodeur d'attention porte la position de la bouffe à 0,55 m (sonde MLP) contre
+        # 2,18 m pour le slot cosinus. Cette tête MLP 128→64→32→2 lit le latent (t0 UNIQUEMENT)
+        # et prédit la position ego de la nourriture. Entraînée avec L2(food_rel0) — la cible
+        # EST dans le corpus (pas un oracle qu'on injecte). SAUVÉE dans le checkpoint.
+        self.with_position_head = with_position_head
+        if with_position_head:
+            self.position_head = nn.Sequential(
+                nn.Linear(latent_dim, latent_dim // 2), nn.SiLU(),
+                nn.Linear(latent_dim // 2, latent_dim // 4), nn.SiLU(),
+                nn.Linear(latent_dim // 4, 2),
+            )
         # CANAL-SLOT object-centric (2026-06-25, internaliser l'échafaudage). Le slot = coordonnée ego de l'objet,
         # ENCODÉE par attention géométrique sur la rétine (slot_head, label-free) puis TRANSPORTÉE le long du rêve par
         # l'ego-motion que le WM prédit (displacement-head) — équivariant par construction (cf plan §1). Composant du WM
@@ -133,6 +147,9 @@ class CommandWorldModel(nn.Module):
             # → translations 3× trop petites → le slot ORBITE (bearing OK mais distance constante → coût plat → 0
             # engagement closed-loop : 7/16). Magnitude 1 le fait APPROCHER → 13/16 (≈ codé-main). C'est une géométrie,
             # pas une quantité à fitter. Buffer (non entraîné).
+            self.register_buffer("slot_calib", torch.tensor([1.0, -1.0, -1.0]))
+        elif with_position_head:
+            # slot_calib aussi nécessaire pour position_head (transport géométrique identique)
             self.register_buffer("slot_calib", torch.tensor([1.0, -1.0, -1.0]))
 
     @classmethod
@@ -158,14 +175,65 @@ class CommandWorldModel(nn.Module):
             retina_attention=meta.get("retina_attention", False),
             with_slot=meta.get("with_slot", False),
             slot_resources=meta.get("slot_resources", 1),
+            with_position_head=meta.get("with_position_head", False),
         )
         kwargs.update(overrides)
         model = cls(**kwargs)
-        model.load_state_dict(payload["model"])
+        # Si les overrides AJOUTENT des modules absents du checkpoint (ex. with_slot=True
+        # sur un WM qui n'a pas été entraîné avec), on les initialise aléatoirement — le
+        # retrain les optimisera. strict=False ÉCHOUE silencieusement si une clé existante
+        # est mal orthographiée → on vérifie que les clés MANQUANTES sont uniquement les
+        # nouveaux modules.
+        state = payload["model"]
+        missing = set(model.state_dict().keys()) - set(state.keys())
+        unexpected = set(state.keys()) - set(model.state_dict().keys())
+        if missing or unexpected:
+            model.load_state_dict(state, strict=False)
+            if missing:
+                import warnings
+                warnings.warn(f"from_checkpoint: {len(missing)} nouvelles clés initialisées "
+                              f"aléatoirement (overrides ajoutent des modules): "
+                              f"{sorted(missing)[:5]}...")
+        else:
+            model.load_state_dict(state)
+        model._calibrate_slot(meta)
         return model
 
+    def _calibrate_slot(self, meta: dict) -> None:
+        """Deux calages du slot que `load_state_dict` ne peut PAS faire — et dont l'oubli est MUET.
+
+        Centralisés ici le 2026-08-02 parce que chaque appelant les refaisait (ou les oubliait) :
+        `serve_planner_command` les appliquait, `diag_info_matrix` et `diag_bilan` non — le même
+        checkpoint rendait donc 1,42 m au serveur et 3,07 m aux diagnostics, sans qu'aucun des deux
+        ne se plaigne. Un outil qui accuse la perception d'un défaut qui est le sien est pire
+        qu'un outil absent.
+
+        1. SEUILS PAR-REQUÊTE. `query_thr` est un buffer `persistent=False` : il n'est jamais dans
+           le state_dict et retombe donc au défaut 0,55 à chaque chargement. Les marges MESURÉES
+           par type vivent dans `meta["query_thr"]`.
+        2. ANGLES DES RAYONS. `sin`/`cos` SONT persistants, donc `load_state_dict` restaure la
+           table 360° du checkpoint même quand le monde sert un cône. Les angles doivent refléter
+           la géométrie RÉELLEMENT servie (`SYLVAN_RETINA_FOV_DEG`), sinon le soft-argmax décode
+           la rétine du cône avec les angles de la 360° et rend des coordonnées fausses.
+        """
+        if not getattr(self, "with_slot", False):
+            return
+        se = self.slot_encoder
+        qthr = meta.get("query_thr")
+        if qthr is not None and getattr(se, "query_thr", None) is not None:
+            with torch.no_grad():
+                se.query_thr.copy_(torch.tensor(qthr, dtype=torch.float32))
+        fov = float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360"))
+        if abs(fov - 360.0) > 1e-6 and getattr(se, "sin", None) is not None:
+            n = se.sin.shape[0]
+            th = torch.tensor([(k if k <= n // 2 else k - n) * math.radians(fov) / n
+                               for k in range(n)], dtype=torch.float32)
+            with torch.no_grad():
+                se.sin.copy_(torch.sin(th))
+                se.cos.copy_(torch.cos(th))
+
     def encode_slot(self, obs: torch.Tensor) -> torch.Tensor:
-        """obs [..., obs_dim] → slot food [..., 2] (x_right, z_fwd) depuis la tranche rétine (attention apprise)."""
+        """obs [..., obs_dim] → slot food [..., 2] (x_right, z_fwd) depuis la tranche rétine."""
         retina = obs[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
         return self.slot_encoder.positions(retina)[..., 0, :]
 
@@ -255,10 +323,10 @@ class CommandWorldModel(nn.Module):
             "predicted_latents": torch.stack(latents, dim=1),      # [B, T, latent_dim] — dreamed RSSM latents (critic probe)
         }
         if getattr(self, "with_slot", False):
-            # SLOT object-centric : init depuis la perception à t0 (ou slot0 fourni), puis dead-reckon par la displacement RÊVÉE.
-            disp_real = disp_stack / DISPLACEMENT_SCALE            # [B, T, 3] = (d_fwd,d_lat,d_yaw) réels
+            # SLOT object-centric : init depuis la perception à t0 (ou slot0 fourni), puis dead-reckon
+            # par la displacement RÊVÉE.
+            disp_real = disp_stack / DISPLACEMENT_SCALE            # [B, T, 3]
             if slot0 is not None:
-                # MÉMOIRE SPATIALE (Task 3): override t0 with persisted belief from the server.
                 slot = slot0.to(obs0.device).expand(batch_size, -1).contiguous()
             else:
                 slot = self.encode_slot(obs0)                      # [B, 2] à t=0
@@ -278,7 +346,7 @@ class CommandWorldModel(nn.Module):
                     sl = slots0.to(obs0.device).reshape(1, -1, 2).expand(batch_size, -1, -1).contiguous()
                 else:
                     retina = obs0[..., self.proprio_dim:self.proprio_dim + RETINA_DIM]
-                    sl = self.slot_encoder.positions(retina)       # [B, R, 2] à t=0
+                    sl = self.slot_encoder.positions(retina)
                 all_slots = [sl]
                 for t in range(horizon - 1):
                     sl = self.transport_slot(sl, disp_real[:, t].unsqueeze(-2))
@@ -323,6 +391,19 @@ def compute_command_wm_losses(
     # VICReg (Phase B step 2) on the RSSM latents — the representation eff_rank watches.
     # Weights 0 → terms vanish exactly → 1.2 behavior unchanged (reversible).
     vic_var, vic_cov = vicreg_terms(outputs["latents"], gamma=vicreg_gamma)
+    # POSITION HEAD loss (2026-07-30) : L2(position_head(latent_t0), food_rel0).
+    # La cible EST dans le corpus (pas un oracle externe). Entraînée sur t0 UNIQUEMENT
+    # pour que le latent encode la position AU MOMENT de la perception. Si on la veut
+    # aussi sur le rêve, ajouter un rollout + position_head(dreamed_latents).
+    pos_loss = torch.tensor(0.0, device=outputs["latents"].device)
+    if w.get("position", 0.0) > 0 and hasattr(model, "with_position_head") and model.with_position_head:
+        lat_t0 = outputs["latents"][:, 0, :]        # [B, 128] — latent à t=0 uniquement
+        pred_pos = model.position_head(lat_t0)       # [B, 2]
+        # food_rel0 est passé via le batch (ajouté dans train_wm_command)
+        if "food_rel0" in outputs:
+            pos_loss = F.mse_loss(pred_pos, outputs["food_rel0"])
+        else:
+            pos_loss = torch.tensor(0.0, device=outputs["latents"].device)
     total = (
         w["latent"] * latent_loss
         + w["proprio"] * proprio_loss

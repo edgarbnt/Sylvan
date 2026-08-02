@@ -570,6 +570,10 @@ class CommandPlanner:
         #    WM (out["slot"]). Le WM perçoit l'objet via son slot_encoder (rétine de l'obs) et le transporte par sa
         #    PROPRE displacement → coordonnée ego par pas. PLUS de coordonnée codée-main ni de boucle trigo de pose
         #    (l'échafaudage est dissous). Single-resource (l'eau reste gérée par le chemin multi-ressource ci-dessous). ──
+        # ⚠️ NE PAS rouvrir cette condition à `with_position_head`. Elle l'a été le 2026-07-30 pour
+        # une sonde, et c'était une BRÈCHE : `position_head` est entraînée en L2 sur `food_rel0`,
+        # donc elle encode « la nourriture est rouge/rose ». L'accepter ici faisait emprunter le
+        # chemin étiqueté « object-centric PUR » à une tête supervisée-oracle, sans aucune barrière.
         if getattr(self.world_model, "with_slot", False) and water is None:
             obs0 = obs.to(self.device).reshape(1, -1).expand(n, -1).contiguous()
             # MÉMOIRE SPATIALE (Task 3): when slot_belief is provided, override the t0 slot with the

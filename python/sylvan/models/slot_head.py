@@ -34,9 +34,12 @@ class SelfSupervisedSlotHead(nn.Module):
     def __init__(self, n_resources: int = 1) -> None:
         super().__init__()
         self.n_resources = n_resources
-        # un scoreur d'attention par ressource (type) ; n_resources=1 pour l'instant (food).
+        # Score APPRIS par ressource, sur la rétine BRUTE [B, 36, 4]. Entraîné par CONSISTANCE DE
+        # TRANSPORT (zéro label). ⚠️ En multi-ressource il est INTÉGRALEMENT ÉCRASÉ par le readout
+        # géométrique ci-dessous (audit A2, 2026-07-24) : 2498 paramètres calculés puis jetés.
         self.score = nn.ModuleList(
-            nn.Sequential(nn.Linear(4, 32), nn.SiLU(), nn.Linear(32, 32), nn.SiLU(), nn.Linear(32, 1))
+            nn.Sequential(nn.Linear(4, 32), nn.SiLU(), nn.Linear(32, 32), nn.SiLU(),
+                          nn.Linear(32, 1))
             for _ in range(n_resources)
         )
         # ANGLES DES RAYONS — géométrie pure, doit refléter EXACTEMENT perception.gd. Avec un vrai
@@ -48,6 +51,13 @@ class SelfSupervisedSlotHead(nn.Module):
         th = torch.tensor([(k if k <= NRAY // 2 else k - NRAY) * _fov / NRAY for k in range(NRAY)])
         self.register_buffer("sin", torch.sin(th))
         self.register_buffer("cos", torch.cos(th))
+        # ⚰️ NÉGATIF BANKÉ (2026-07-30, code retiré le 2026-08-02) : un `affinity_net` (MLP 4→32→1
+        # par ressource) devait remplacer les requêtes-couleur codées-main en classant chaque rayon.
+        # Mesuré : 2,09 m contre 2,18 m au cosinus — RIEN. Cause structurelle : 39,9 % des rayons
+        # d'arbres partagent le volume (depth,R,G,B) des rayons de nourriture, donc aucune fonction
+        # du rayon SEUL ne les sépare. Même verdict pour la variante sur tokens encodeur (2,10 m) et
+        # pour le score-token entraîné par transport (1,50 m). Détail :
+        # `docs/diag_perception_consequence_2026-07-30.md`.
         # REQUÊTES-COULEUR par slot (chantier multi-ressource 2026-07-04, design cible de la recette
         # ajout-pulsion : « tête de lecture paramétrée par la requête-couleur » — même statut de pureté
         # que les tokens color-gatés de Mode-1 : une requête sur SON capteur, pas un oracle ; ressource
@@ -72,97 +82,76 @@ class SelfSupervisedSlotHead(nn.Module):
             self.color_queries = None
             self.query_thr = None
 
-    def _attend(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Shared helper: returns (dist, sal, a_list) without allocating positions.
+    def _attend(self, retina: torch.Tensor) \
+            -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
+        """Returns (dist, sal, a_list) — softmax attention weights per resource.
 
-        dist  [..., NRAY]          — ray distance in metres
-        sal   [..., NRAY]          — saliency mask (coloured object, un-normalised)
-        a_list list of [..., NRAY] — normalised learned attention per resource
+        dist    [..., NRAY]          — ray distance in metres
+        sal     [..., NRAY]          — saliency mask (coloured object, un-normalised)
+        a_list  list of [..., NRAY]  — normalised attention per resource
         """
         r = retina.reshape(*retina.shape[:-1], NRAY, 4)
         depth, R, G, B = r[..., 0], r[..., 1], r[..., 2], r[..., 3]
         dist = depth * RANGE + DEPTH_OFFSET                          # [..., NRAY]
+        # SAILLANCE SATURATION (K=1, byte-identique). Ancre l'attention sur un objet COLORÉ.
         sat = torch.stack([R, G, B], -1).amax(-1) - torch.stack([R, G, B], -1).amin(-1)
         sal = sat.clamp(min=0.0) * torch.sigmoid(40.0 * (0.95 - depth))
         scores = [self.score[k](r).squeeze(-1) for k in range(self.n_resources)]
         a_list = [torch.softmax(s, dim=-1) for s in scores]
+        # REQUÊTES-COULEUR (K>1) : le readout GÉOMÉTRIQUE écrase intégralement le score appris
+        # ci-dessus. C'est l'anomalie A2 de l'audit du 2026-07-24, assumée et documentée.
         if self.color_queries is not None:
-            # SAILLANCE REQUÊTÉE-COULEUR : chaque slot ne « voit » que les rayons dont la teinte matche
-            # sa requête (affinité cosinus seuillée). Ancre chaque slot sur SON type d'objet → pas de
-            # slot mort ni de liage ambigu. K=1 → None → saillance agnostique historique, byte-identique.
             rgb = r[..., 1:4]
-            rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)     # [..., NRAY, 3]
-            aff = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)  # [..., K, NRAY]
-            # marge PAR-REQUÊTE [K,1] broadcast sur [..., K, NRAY] (défaut 0.55 = bit-identique)
-            aff = (aff - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
-            # SOFTMAX MASQUÉ (K>1) : le gating saillance×affinité×proximité entre DANS le softmax
-            # comme log-prior. Leçon (slot-eau effondré, 2026-07-04) : gater APRÈS le softmax crée une
-            # région morte — le scoreur peut fuir les rayons de sa couleur (masse gatée → 0, position →
-            # origine à coût quasi nul, gradient évanoui, irrécupérable). En log-prior, la masse somme
-            # à 1 sur les rayons de MA couleur PAR CONSTRUCTION ; le scoreur ne peut que redistribuer.
-            # Proximité incluse (sémantique planner : « le plus proche de cette couleur »).
+            rgbn = rgb / (rgb.norm(dim=-1, keepdim=True) + 1e-6)
+            cos = torch.einsum("...nc,kc->...kn", rgbn, self.color_queries)
+            aff = (cos - self.query_thr.unsqueeze(-1)).clamp(min=0.0)
+            sal_cos = cos.amax(dim=-2).clamp(min=0.0)
             prox = ((1.0 - depth).clamp(min=0.0)) ** 2
-            # READOUT GÉOMÉTRIQUE PUR (K>1, décision 2026-07-04 après 7 itérations) : le scoreur APPRIS
-            # est retiré des logits — chaque variante apprise trouvait un optimum pathologique (collapse
-            # origine 1.8 m, centroïde 64-67°, distorsions 15-19°) alors que le prior géométrique seul
-            # = argmin-souple « le plus proche de ma couleur » ≈ plancher capteur (0.46-0.68 m). Même
-            # leçon que slot_calib : c'est une GÉOMÉTRIE, pas une quantité à fitter. Prior de distance
-            # −2/m = départage nearest-vs-centroïde (Δ2 m → e⁴≈55×). Zéro paramètre, zéro entraînement.
-            # MASQUE COULEUR DUR (fix 2026-07-06) : les rayons de MAUVAISE couleur (aff==0) sont
-            # EXCLUS du softmax (logit −inf), pas juste log(1e-8)=−18. Bug mesuré : sans ça, un rayon
-            # BLEU (eau) PROCHE battait un rayon ROUGE (bouffe) LOIN via le prior −4/m·dist → le
-            # slot-bouffe lisait la position de l'EAU (1.1 m au lieu de 6.0 m) → planner orbite un
-            # fantôme en monde épars (bouffe-loin+eau-proche). Dense (bouffe proche) non affecté.
-            # Toggle SYLVAN_SLOT_HARD_MASK (défaut 1=fix) : 0 reproduit l'ancien masque MOU pour l'A/B
-            # de non-régression dense (le fix change aussi le dense multi-objet).
-            import os as _os
-            _hard = _os.environ.get("SYLVAN_SLOT_HARD_MASK", "1") != "0"
+            _hard = os.environ.get("SYLVAN_SLOT_HARD_MASK", "1") != "0"
             NEG = -1e9
             a_list = []
             for k in range(self.n_resources):
-                logit = torch.log(sal * aff[..., k, :] * prox + 1e-8) - 4.0 * dist
+                logit = torch.log(sal_cos * aff[..., k, :] * prox + 1e-8) - 4.0 * dist
                 if _hard:
-                    logit = torch.where(aff[..., k, :] > 0.0, logit, torch.full_like(logit, NEG))
+                    logit = torch.where(aff[..., k, :] > 0.0, logit,
+                                        torch.full_like(logit, NEG))
                 a_list.append(torch.softmax(logit, dim=-1))
+            sal = sal_cos
         return dist, sal, a_list
 
     def positions(self, retina: torch.Tensor) -> torch.Tensor:
-        """retina [..., 144] → [..., n_resources, 2] (x_right, z_fwd) en mètres.
-
-        L'attention apprise est GATÉE par une SAILLANCE perceptuelle (le rayon a touché un objet COLORÉ ≠ vide) :
-        saliency = saturation_couleur × hit. C'est la perception (pas un label de position, pas un oracle ;
-        color-AGNOSTIQUE → général, §3) ; elle BRISE la sous-détermination de la transport-consistance (qui sinon
-        verrouille aussi bien sur une direction VIDE opposée → 127° MAE, non robuste). La position fine ÉMERGE
-        toujours de l'attention apprise + la consistance ; la saillance ne fait qu'ancrer 'sur un objet'."""
+        """retina [..., 144] → [..., n_resources, 2] (x_right, z_fwd) en mètres."""
         dist, sal, a_list = self._attend(retina)
+        # attention masquée par requête-couleur : déjà une distribution propre, et le découplage
+        # direction/distance corrige les fuites cross-azimut.
+        gated = self.color_queries is not None
         outs = []
         for k in range(self.n_resources):
-            if self.color_queries is not None:
-                w = a_list[k]                      # softmax masqué : déjà une distribution propre
+            if gated:
+                w = a_list[k]                      # softmax déjà propre (masque couleur)
             else:
                 w = a_list[k] * sal
                 w = w / (w.sum(-1, keepdim=True) + 1e-6)
             px = (w * dist * self.sin).sum(-1); pz = (w * dist * self.cos).sum(-1)
-            if self.color_queries is not None:
+            if gated:
                 # DÉCOUPLAGE direction/distance (K>1 ; diagnostic 2026-07-04 : bearing 1.5° parfait
                 # mais distance ÉCRASÉE 1.07 vs 2.64 m — les fuites d'attention vers d'autres items
                 # de la même couleur à d'autres azimuts s'ANNULENT vectoriellement → la norme fond).
                 # Direction = soft-argmax vectoriel (robuste) ; distance = moyenne SCALAIRE pondérée
                 # (pas d'annulation). Un seul item visible → strictement identique à l'ancien calcul.
-                vec_norm = (px ** 2 + pz ** 2 + 1e-4).sqrt()  # eps DANS le sqrt (grad de sqrt(0) = inf)
+                vec_norm = (px ** 2 + pz ** 2 + 1e-4).sqrt()
                 d_scalar = (w * dist).sum(-1)
                 px = px / vec_norm * d_scalar
                 pz = pz / vec_norm * d_scalar
             outs.append(torch.stack([px, pz], dim=-1))
         return torch.stack(outs, dim=-2)                             # [..., n_resources, 2]
 
-    def positions_and_salience(self, retina: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def positions_and_salience(self, retina: torch.Tensor) \
+            -> tuple[torch.Tensor, torch.Tensor]:
         """retina [..., 144] → (positions [..., n_resources, 2], salience [..., n_resources]).
 
         salience = un-normalised gated attention mass (a * sal).sum(-1) per resource.
-        salience → 0 means no coloured object was hit (occluded / out of range).
-        Output byte-identical to positions() for the positions tensor.
-        """
+        salience → 0 means no coloured object was hit (occluded / out of range)."""
         dist, sal, a_list = self._attend(retina)
         pos_outs, sal_outs = [], []
         for k in range(self.n_resources):

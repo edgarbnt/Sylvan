@@ -180,7 +180,7 @@ class _PlannerService:
         # MARGES PAR-REQUÊTE (P6-reopen) : le WM TYPÉ (build_typed_slots) porte des seuils MESURÉS
         # par type dans meta — le buffer (non-persistant, défaut 0.55 = historique) les reçoit ici.
         _qthr = meta.get("query_thr")
-        if _qthr is not None and getattr(wm.slot_encoder, "query_thr", None) is not None:
+        if _qthr is not None and hasattr(wm, "slot_encoder") and getattr(wm.slot_encoder, "query_thr", None) is not None:
             with torch.no_grad():
                 wm.slot_encoder.query_thr.copy_(torch.tensor(_qthr, dtype=torch.float32))
             print(f"[planner-cmd] MARGES PAR-REQUÊTE (mesurées) : "
@@ -191,7 +191,7 @@ class _PlannerService:
         # sinon le décodage de position lit la rétine du cône avec la table d'angles de la 360° et
         # rend des coordonnées fausses SANS RIEN SIGNALER. Défaut 360 → recopie à l'identique.
         _fov = float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360"))
-        if abs(_fov - 360.0) > 1e-6 and getattr(wm.slot_encoder, "sin", None) is not None:
+        if abs(_fov - 360.0) > 1e-6 and hasattr(wm, "slot_encoder") and getattr(wm.slot_encoder, "sin", None) is not None:
             import math as _m
             _n = wm.slot_encoder.sin.shape[0]
             _th = torch.tensor([(k if k <= _n // 2 else k - _n) * _m.radians(_fov) / _n
@@ -212,7 +212,7 @@ class _PlannerService:
         self.remeasure = None
         _re_every = int(os.environ.get("SYLVAN_REMEASURE_EVERY", "0"))
         if _re_every > 0:
-            if meta.get("slot_resources", 1) > 1 and getattr(wm.slot_encoder, "query_thr", None) is not None:
+            if meta.get("slot_resources", 1) > 1 and hasattr(wm, "slot_encoder") and getattr(wm.slot_encoder, "query_thr", None) is not None:
                 from sylvan.control.remeasure import PeriodicRemeasure
                 self.remeasure = PeriodicRemeasure(_re_every)
                 print(f"[planner-cmd] RE-MESURE PÉRIODIQUE active : every={_re_every} pas "

@@ -37,7 +37,10 @@ from sylvan.models.command_wm import CommandWorldModel                  # noqa: 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARCHI = os.path.join(ROOT, "tools", "archi_hud", "architecture.json")
-LIVE_WM = "data/checkpoints/wm_objcentric_kin/wm_best.pt"   # substrat SERVI (CLAUDE.md, corps cinématique)
+# Substrat SERVI par les harnais forêt (scripts/gates_foret_v2.sh, collect_foret_v1.sh).
+# ⚠️ 2026-08-02 : pointait `wm_objcentric_kin` (obs 277, ancien monde) — un WM que le monde
+# servi ne peut plus alimenter, et que cet outil ne pouvait de toute façon pas charger.
+LIVE_WM = "data/checkpoints/wm_foret_v2_slot/wm_best.pt"
 DROP_ALERT = 0.15          # chute entre deux étages voisins au-delà de laquelle on pointe le module
 MLP_GAP_ALERT = 0.10       # sur ce projet le MLP n'a jamais battu franchement le linéaire : suspect
 
@@ -56,14 +59,18 @@ def declared_wm() -> str | None:
 
 
 def load_wm(path: str) -> CommandWorldModel:
+    """Charge le WM DÉCRIT PAR SON CHECKPOINT — jamais une architecture supposée.
+
+    ⚠️ CORRIGÉ LE 2026-08-02. Cette fonction construisait le modèle à la main sans passer
+    `retina_attention` et en FORÇANT `with_slot=True`. Deux pannes silencieuses en découlaient :
+      1. un WM à encodeur d'ATTENTION (toute la génération forêt) ne se chargeait pas du tout —
+         l'outil phare du projet était donc aveugle au substrat réellement servi ;
+      2. sur un WM SANS canal-slot, le forçage créait un slot_encoder à poids ALÉATOIRES, et les
+         colonnes « slot » et « token planner » rendaient du BRUIT présenté comme une mesure.
+    `from_checkpoint` lit l'architecture dans le meta ; l'absence de slot est désormais dite, pas
+    compensée (cf. `build_stages`, qui omet les colonnes correspondantes)."""
     pl = torch.load(path, map_location="cpu", weights_only=False)
-    meta = pl["meta"]
-    wm = CommandWorldModel(
-        obs_dim=meta["obs_dim"], proprio_dim=meta["proprio_dim"],
-        predictor_arch=meta.get("predictor_arch", "shallow"),
-        with_slot=True, slot_resources=meta.get("slot_resources", 1),
-    )
-    wm.load_state_dict(pl["model"])
+    wm = CommandWorldModel.from_checkpoint(pl)
     wm.eval()                                   # WM GELÉ : on mesure ce qu'il contient déjà
     return wm
 
