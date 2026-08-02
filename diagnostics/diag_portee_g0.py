@@ -55,6 +55,13 @@ TURN_REAL = SPEED / 2.00  # rad/tick — rayon de braquage MESURÉ 2,00 m en cro
 SLOW_SPEED = 0.025  # m/tick — vitesse réelle mesurée dans le dernier mètre
 SLOW_RANGE = 1.5  # m — distance sous laquelle elle ralentit
 BEARING_ERR = math.radians(23.1)  # erreur de gisement médiane mesurée
+# 🚨 CORRECTION MAJEURE (2026-08-02, après coup) : la 1ʳᵉ version tirait cette erreur À CHAQUE PAS,
+# indépendamment. C'est FAUX et ça sous-estimait gravement la perception : mesurée sur corpus réel,
+# l'erreur de gisement du slot est un BIAIS PERSISTANT, pas un bruit — autocorrélation +0,948 à
+# 1 pas, +0,772 à 5, +0,597 à 10, +0,319 à 20, et elle ne se décorrèle qu'à ~50 pas, soit plus
+# qu'une approche entière. Un bruit indépendant se MOYENNE et s'annule ; un biais persistant fait
+# viser à côté pendant TOUTE l'approche. On modélise donc un AR(1) à l'autocorrélation mesurée.
+BEARING_RHO = 0.948  # autocorrélation à 1 pas, MESURÉE
 SEEN_P = 0.50  # part des ticks où la cible est réellement vue
 
 
@@ -70,6 +77,9 @@ def run(n: int, seed: int, turn: float, slow: bool, bearing: bool, blind: bool) 
     pdir = torch.stack([torch.cos(pdir), torch.sin(pdir)], 1)
     caught = torch.zeros(n, dtype=torch.bool)
     last = prey.clone()  # dernière position CONNUE (sert quand la cible n'est pas vue)
+    # État du biais de visée AR(1) — persistant, à l'autocorrélation mesurée (voir BEARING_RHO).
+    bias = torch.randn(n, generator=g) * BEARING_ERR
+    innov = BEARING_ERR * math.sqrt(max(0.0, 1.0 - BEARING_RHO ** 2))
 
     for _ in range(MAX_TICKS):
         rel = prey - pos
@@ -87,8 +97,10 @@ def run(n: int, seed: int, turn: float, slow: bool, bearing: bool, blind: bool) 
             target = prey
 
         want = torch.atan2(target[:, 1] - pos[:, 1], target[:, 0] - pos[:, 0])
-        if bearing:  # VISÉE bruitée — l'erreur de gisement de la perception servie
-            want = want + torch.randn(n, generator=g) * BEARING_ERR
+        # VISÉE — biais PERSISTANT (AR(1)), pas un bruit par pas : c'est ce que la mesure dit.
+        bias = BEARING_RHO * bias + innov * torch.randn(n, generator=g)
+        if bearing:
+            want = want + bias
         err = torch.remainder(want - head + math.pi, 2 * math.pi) - math.pi
         head = head + err.clamp(-turn, turn)
 
