@@ -77,7 +77,35 @@ jauge nécessiteuse dans ≥ 70 % des cas ; (c) le contrôle de viabilité du mo
 Re-mesurer aussi les deux murs hérités (taux de succès des poursuites lointaines, part des
 bascules exigeant une cible hors-vue) — s'ils dominent, le chantier est **re-scopé avant** G1.
 
+### ⭐ VERDICT G0 (2026-08-02, `diagnostics/diag_arbitrage_homeo_g0.py`, 84 vies / 79 434 ticks) : PASSÉ, MAIS LA FORME EST DÉGÉNÉRÉE — G1 SIMPLIFIÉ
+- **G0-a ✅** : désaccord **51,0 %** des 2 415 décisions jugées (barre 15 %).
+- **G0-b ✅** : dans les 200 ticks précédant une mort de soif, la règle dit **BOIRE 83,2 %** du
+  temps alors qu'elle ne poursuivait l'eau que **53,5 %** (barre 70 %).
+- 🚨 **MAIS LA NORME n/m N'ACHÈTE RIEN, et c'est démontré** : le désaccord vaut 51,0 % pour
+  **tous** les exposants testés (2;1,5 · 3;2 · 4;3 · 6;4) **et** tous les escomptes (0,999 ·
+  0,997 · 0,99), à **tous** les apports (140 · 84 · 40 · 20). Raison analytique : `D` est
+  symétrique et Schur-convexe pour `n>1`, donc comparer `(de−R, dt)` à `(de, dt−R)` revient
+  toujours à comparer `de` et `dt`. **Pour deux jauges SYMÉTRIQUES à apport ÉGAL, la forme
+  homéostatique se réduit EXACTEMENT à « la jauge la plus démunie d'abord ».**
+  ⇒ La non-séparabilité achète l'aversion au risque et la dose-réponse non linéaire, **pas**
+  l'arbitrage entre deux pulsions symétriques. Poser la norme `n/m` ici serait **habiller un
+  résultat trivial d'une théorie qui ne travaille pas** (§2) → **G1 est simplifié**, et les
+  exposants sortent du chantier.
+
+🩹 **Deux erreurs de mesure attrapées dans ce G0 même, à ne pas refaire** : (1) la 1ʳᵉ version de
+G0-b était **TAUTOLOGIQUE** — « campée » était défini comme *poursuivre la jauge haute alors que
+l'autre est basse*, donc la nécessiteuse avait par construction le plus gros déficit et la règle
+la désignait 100 % du temps ; les 100 % étaient dans ma définition, pas dans les données. (2) la
+1ʳᵉ version comparait les gains **NUS**, sans coût de trajet, ce qui ne pouvait par construction
+rien exercer de la forme. Le contrôle qui a sauvé le verdict est le **balayage de sensibilité** :
+une ligne PLATE prouve qu'un test ne mesure pas ce qu'il prétend.
+
 ### G1 — implémentation DESIGNÉE, opt-in, zéro constante fittée
+**FORME PINNÉE AU VERDICT G0 (simplifiée)** : priorité à la jauge la plus démunie, arbitrée contre
+le coût de trajet. **Pas de norme `n/m`** — G0 a prouvé qu'elle est inerte ici. Les exposants et
+l'escompte ne sont plus des paramètres de ce chantier.
+
+### G1-bis — ancienne rédaction, PÉRIMÉE (conservée pour mémoire)
 `D(H)` dans le coût du planner, `SYLVAN_PLANNER_COST=homeostatic`, défaut inchangé.
 **Forme PINNÉE au verdict G0** : `n=4, m=3` (n > m > 1, valeurs de la littérature), jauges
 normalisées par leur plage, cible = jauge pleine. ⚠️ Ces exposants sont une **préférence du corps**
