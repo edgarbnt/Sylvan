@@ -705,6 +705,50 @@ class CommandPlanner:
                 _vis = self.world_model.slot_encoder.visibility(_ret0)
                 _pos0 = self.world_model.slot_encoder.positions(_ret0)      # [R, 2]
             _slots0 = _pos0.clone()
+            # ⭐ G1 IDENTITÉ D'OBJET (2026-08-02, docs/design_identite_objet.md) — PERSISTANCE DE
+            # CIBLE, opt-in `SYLVAN_SLOT_PERSIST=1`, défaut OFF = lecture inchangée.
+            #
+            # CE QUE ÇA CORRIGE (mesuré) : le slot répond « où est le truc le plus proche de MA
+            # couleur ? » À NEUF à chaque lecture, sans notion de continuité. Si la proie poursuivie
+            # passe derrière un arbre pendant qu'une autre apparaît, il BASCULE silencieusement.
+            # 59,8 % des approches sous 3 m contiennent une bascule, et elles réussissent 43,4 %
+            # contre 66,2 % sans — 22,7 points. L'écart SURVIT à la stratification par durée
+            # (+50,1 pts sur les approches de 20-50 ticks) et à la précédence temporelle (une
+            # bascule dans les 20 premiers ticks → 35,7 % contre 57,1 %), donc ce n'est pas un
+            # artefact de « les approches ratées durent plus longtemps ».
+            #
+            # POURQUOI SANS RÉSEAU : G0-2 — les segments sans bascule durent 89 ticks au 90e
+            # centile, or une proie ne parcourt que 2,05 m en 89 ticks pour un seuil d'ambiguïté de
+            # 2,90 m (⅓ de l'espacement minimum entre bosquets). La simple continuité géométrique
+            # suffit à ré-identifier ; apprendre serait payer pour ce que la géométrie donne.
+            #
+            # RÈGLE : un saut au-delà de R est REFUSÉ et l'ancienne lecture conservée, au plus K
+            # replans d'affilée — au-delà, l'objet a réellement disparu et on accepte le nouveau.
+            # ⚠️ La position conservée VIEILLIT (elle n'est pas transportée par l'ego-motion), d'où
+            # un K court. C'est une PREMIÈRE FORME, à juger en vies, pas une solution figée.
+            if os.environ.get("SYLVAN_SLOT_PERSIST", "0") == "1":
+                _R = float(os.environ.get("SYLVAN_SLOT_PERSIST_R", "2.0"))
+                _K = int(os.environ.get("SYLVAN_SLOT_PERSIST_K", "3"))
+                if not hasattr(self, "_persist_prev"):
+                    self._persist_prev = {}
+                    self._persist_held = {}
+                    print(f"[planner-cmd] PERSISTANCE ACTIVE (R={_R} m, K={_K} replans)", flush=True)
+                for _k in range(_slots0.shape[0]):
+                    _new = (float(_slots0[_k, 0]), float(_slots0[_k, 1]))
+                    _old = self._persist_prev.get(_k)
+                    if _old is not None and math.hypot(_new[0] - _old[0], _new[1] - _old[1]) > _R \
+                            and self._persist_held.get(_k, 0) < _K:
+                        _slots0[_k, 0], _slots0[_k, 1] = _old[0], _old[1]
+                        self._persist_held[_k] = self._persist_held.get(_k, 0) + 1
+                        # PREUVE D'ACTION : la persistance est INTERNE au planner et ne laisse
+                        # aucune trace dans le corpus. Sans ce compteur, un bras inerte
+                        # ressemblerait à « aucun effet » — le piège exact du 2026-08-02 soir.
+                        self._persist_n = getattr(self, "_persist_n", 0) + 1
+                        if self._persist_n == 1 or self._persist_n % 50 == 0:
+                            print(f"[planner-cmd] persistance : {self._persist_n} bascules refusées", flush=True)
+                    else:
+                        self._persist_prev[_k] = _new
+                        self._persist_held[_k] = 0
             if slots_belief is not None:
                 for _k in range(_slots0.shape[0]):
                     if float(_vis[_k]) <= self.cfg.slot_vis_thr and _k < len(slots_belief) and slots_belief[_k] is not None:
