@@ -112,3 +112,45 @@ porte sur le comportement.
 ## Ce que ce chantier ne fait pas
 Il ne corrige ni le rayon de braquage (−23,3 pts), ni la cécité au mouvement des objets (dette n°1,
 qui reste ouverte en aval de celui-ci), ni la survie bimodale.
+
+---
+
+## ⭐ VERDICT G0 (2026-08-02, `diagnostics/diag_perception_honnete_g0.py`) : **STOP — mais avec une réserve qui compte**
+
+13 582 ticks jugés (cible dans le cône), dont 37,6 % avec un rayon touchant vraiment la proie.
+
+| signal (tiré de la RÉTINE seule) | taux de bon classement |
+|---|---|
+| proximité du plus proche rayon retenu | **65,2 %** |
+| nombre de rayons retenus | 62,8 % |
+| masse de saillance | 62,7 % |
+| écart 1er-2e pic | 46,2 % |
+| piqué de l'attention | 45,1 % |
+| entropie de l'attention | 44,9 % |
+| *[contrôle] jauge SERVIE* | *58,8 %* |
+
+**Trois estimations indépendantes convergent** : 65,2 % (meilleur signal fabriqué), **63,8 %** (tête
+apprise sur la rétine ENTIÈRE, découpe par épisode), 67 % (tête de juillet). Le plafond n'est donc
+pas un mauvais choix de signal — **barre STOP de 70 % non atteinte**.
+
+Le signal est statistiquement RÉEL (permutation corrigée pour 6 signaux : hasard médian 50,6 %,
+95e centile 51,2 %, p = 0,000) mais **pratiquement inutilisable**. Significatif ≠ utilisable : la
+barre était posée sur l'usage, pas sur la significativité.
+
+⚠️ **Piqué et entropie sont SOUS 50 %** — une attention piquée n'indique PAS une cible réelle.
+Mon intuition était fausse, et elle est réfutée dans le bon sens.
+
+### 🚨 RÉSERVE MATÉRIELLE SUR MA PROPRE ÉTIQUETTE
+`[MESURÉ]` Parmi les ticks où **aucun rayon ne touche la cible**, des rayons de proie sont
+néanmoins visibles **88,5 %** du temps (contre 97,2 % quand un rayon la touche vraiment). Les deux
+taux sont PROCHES — d'où le plafond.
+
+Mais `food_rel0` ne désigne que la proie **la plus proche**. Donc une grande part de ce que j'ai
+compté comme « elle invente » est en réalité « **elle voit correctement une AUTRE proie** ».
+
+⇒ **La question est peut-être mal posée.** L'entité n'a pas besoin de savoir si elle voit LA proie
+la plus proche ; elle a besoin de savoir si elle voit UNE proie attrapable. Le vrai manque ne serait
+alors pas la confiance, mais l'**identité d'objet** — « est-ce la même que tout à l'heure ? ».
+
+Le STOP vaut donc **pour la question telle que posée**. Reformuler la cible est une décision owner,
+pas une correction que je m'autorise après avoir vu le résultat.
