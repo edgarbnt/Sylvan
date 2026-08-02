@@ -1224,6 +1224,21 @@ class CommandPlanner:
         )
         best = int(torch.argmax(score).item())
         vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+        # ÉCHAFAUDAGE SPRINT — 2ᵉ SITE, AJOUTÉ APRÈS UN A/B NUL (2026-08-02).
+        # Le 1ᵉʳ site (branche multi-pulsion) ne couvrait que les replans où les DEUX ressources
+        # sont visibles EN MÊME TEMPS : mesuré, **16,8 %** des ticks. L'échafaudage ne se
+        # déclenchait donc quasiment jamais et l'A/B rendait « aucun effet » — vitesse demandée
+        # 0,250 IDENTIQUE dans les deux bras, ce qui l'a révélé. C'est exactement le TROU DE GATING
+        # déjà documenté pour le critique (« ne décidait que ~3 % des replans en monde épars »).
+        # Leçon : vérifier qu'un bras EXPÉRIMENTAL a réellement AGI avant de lire son verdict —
+        # une bannière au démarrage prouve le chargement, pas l'exécution.
+        if os.environ.get("SYLVAN_PLANNER_SPRINT", "0") == "1":
+            _rng = float(os.environ.get("SYLVAN_PLANNER_SPRINT_RANGE", "2.0"))
+            _flo = float(os.environ.get("SYLVAN_PLANNER_SPRINT_VX", "0.6"))
+            _cand = [math.hypot(a, b) for a, b, ok in
+                     ((fx, fz, has_food), (wx, wz, has_water)) if ok]
+            if _cand and min(_cand) < _rng:
+                vx = max(vx, _flo)
         out_d = {
             "command": (vx, om),
             "food": (fx, fz) if has_food else None,
