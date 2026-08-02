@@ -414,6 +414,15 @@ class CommandPlanner:
                   # PÉRIMÉ d'un facteur 2. Affiché pour que le log PROUVE la valeur servie.
                   f"| corps: speed={self.cfg.nominal_speed} turn={self.cfg.surv_turn_rate} "
                   f"| vis_thr={self.cfg.slot_vis_thr}")
+        # ÉCHAFAUDAGE DÉCLARÉ : il DOIT s'annoncer dans le log. Un échafaudage silencieux finit par
+        # être pris pour un acquis — c'est exactement ce que la bannière d'échafaudages évite.
+        if os.environ.get("SYLVAN_PLANNER_SPRINT", "0") == "1":
+            print(f"[planner-cmd] ⚠️ ÉCHAFAUDAGE SPRINT ACTIF : plancher de vitesse "
+                  f"vx≥{os.environ.get('SYLVAN_PLANNER_SPRINT_VX', '0.6')} sous "
+                  f"{os.environ.get('SYLVAN_PLANNER_SPRINT_RANGE', '2.0')} m. Compense la CÉCITÉ "
+                  f"du WM au mouvement propre de la proie (transport_slot = ego-motion seule). "
+                  f"DETTE, pas acquis — à dissoudre par un transport de slot conscient du "
+                  f"mouvement de l'objet (auto-supervisé).")
         # Un réglage servi doit être PROUVÉ par le log, sinon on ne sait pas ce qu'on a mesuré.
         if os.environ.get("SYLVAN_PLANNER_HOMEO", "0") == "1":
             print(f"[planner-cmd] ARBITRAGE HOMÉOSTATIQUE actif : l'ordre de cible devient "
@@ -1115,6 +1124,44 @@ class CommandPlanner:
             score = s_food if target_first == "food" else s_water
             best = int(torch.argmax(score).item())
             vx, om = (float(v) for v in self._cmd_seqs[best, 0])
+            # ⚠️⚠️ ÉCHAFAUDAGE DÉCLARÉ — POSÉ LE 2026-08-02, À DISSOUDRE (voir plus bas).
+            # OPT-IN `SYLVAN_PLANNER_SPRINT=1` ; défaut OFF = bit-identique.
+            #
+            # CE QU'IL COMPENSE (mesuré, diagnostics/diag_portee_g0.py) : dans le dernier mètre la
+            # vitesse tombe à 0,025 m/pas, soit EXACTEMENT la vitesse de la proie (0,023) → le
+            # rapprochement net devient nul et elle orbite. Ablation factorielle dans le budget
+            # métabolique réel : ce ralenti coûte −64,5 points de capture, contre −23,3 pour le
+            # rayon de braquage, −2,0 pour l'erreur de visée et −0,0 pour l'intermittence de la vue.
+            #
+            # POURQUOI ELLE RALENTIT — la cause n'est pas un mauvais réglage, c'est une CÉCITÉ :
+            # `command_wm.transport_slot` déplace le slot par la SEULE ego-motion de l'agent. Le
+            # déplacement PROPRE de la proie n'est modélisé nulle part ⇒ dans son imagination la
+            # proie est IMMOBILE et l'attend. Arriver lentement y est donc équivalent à arriver
+            # vite, et le terme d'énergie du score (`energy_weight * energy_pred[:, -1]`) tranche
+            # alors l'égalité en faveur de la commande LENTE, qui coûte moins. Le raisonnement est
+            # juste pour une baie posée par terre, et fatal pour une proie qui fuit.
+            #
+            # 🚨 CE QUE CET ÉCHAFAUDAGE N'EST PAS : une solution. Il masque la cécité au lieu de la
+            # corriger. Il est posé pour rendre les étages du dessus MESURABLES (aujourd'hui la
+            # perception et l'arbitrage sont tous deux inévaluables sous ce plafond : la perception
+            # ne pèse que 2 points tant qu'elle freine à l'arrivée). C'est le 2ᵉ correctif de la même
+            # famille en une journée — coût designé juste pour un monde statique, faux dès que le
+            # monde bouge — et cette récurrence est elle-même le signal que le substitut désigné
+            # arrive au bout (§3).
+            # ⇒ CHANTIER QUI LE DISSOUT : rendre le transport du slot conscient du mouvement propre
+            #   de l'objet. C'est AUTO-SUPERVISÉ et JEPA-pur — le déplacement d'une proie est
+            #   observable entre deux rétines consécutives, aucun label n'est nécessaire. Tant que
+            #   ce chantier n'a pas eu lieu, CET ÉCHAFAUDAGE RESTE UNE DETTE, pas un acquis.
+            if os.environ.get("SYLVAN_PLANNER_SPRINT", "0") == "1":
+                _rng = float(os.environ.get("SYLVAN_PLANNER_SPRINT_RANGE", "2.0"))
+                # PLANCHER = la vitesse d'APPROCHE qu'elle utilise déjà (vx 0,6 → 0,0469 m/pas
+                # mesurés), PAS une vitesse inventée : l'échafaudage l'empêche de FREINER, il ne
+                # lui donne aucune capacité nouvelle. (Au bord elle tombe à vx 0,25 → 0,025 m/pas,
+                # soit la vitesse de la proie.)
+                _flo = float(os.environ.get("SYLVAN_PLANNER_SPRINT_VX", "0.6"))
+                _tx, _tz = (fx, fz) if target_first == "food" else (wx, wz)
+                if math.hypot(_tx, _tz) < _rng:
+                    vx = max(vx, _flo)
             out_d: dict[str, object] = {
                 "command": (vx, om),
                 "food": (fx, fz),
