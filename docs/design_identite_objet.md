@@ -103,3 +103,51 @@ plus** (magnitude, pas direction).
   permutation.
 - Un composant peut avoir d'excellents chiffres et **zéro effet en vies** (`[MESURÉ]` A/B perception
   du matin). D'où un critère de succès comportemental, et non de suivi.
+
+---
+
+## ⭐⭐ VERDICT G0 (2026-08-02, `diagnostics/diag_identite_objet_g0.py`) : **PASSÉ, et il survit à ses contrôles**
+
+331 approches sous 3 m, 6 corpus.
+
+### G0-1 ✅ — la bascule COÛTE
+| | valeur |
+|---|---|
+| approches contenant une bascule | **59,8 %** (barre 20 %) |
+| réussite SANS bascule | **66,2 %** (n=133) |
+| réussite AVEC bascule | **43,4 %** (n=198) |
+| écart | **+22,7 points** (barre 15) |
+
+**La réserve du design est LEVÉE** : je craignais que les bascules soient fréquentes mais sans coût,
+puisque la théorie du régime optimal montre que prendre n'importe quelle proie est optimal ici. Elles
+coûtent.
+
+### Contrôles adverses — les deux tiennent
+**Causalité inverse ?** Une approche qui échoue dure plus longtemps, donc contient mécaniquement plus
+de bascules (durée médiane 41 ticks sans, 86 avec). L'écart **survit à la stratification par durée** :
+
+| durée | sans bascule | avec bascule | écart |
+|---|---|---|---|
+| 20-50 ticks | 81,2 % | 31,1 % | **+50,1** |
+| 50-120 | 70,7 % | 44,9 % | **+25,8** |
+| 120+ | 63,6 % | 54,9 % | +8,7 |
+
+**Précédence temporelle ?** Une bascule dans les **20 PREMIERS** ticks → réussite **35,7 %** contre
+**57,1 %** sans. La bascule PRÉCÈDE l'échec.
+
+⇒ Ce n'est pas un artefact de durée. La bascule est bien **en cause**.
+
+### G0-2 ✅ — et il n'y a probablement RIEN À APPRENDRE
+2 260 segments sans bascule, durée médiane 12 ticks, q90 = 89 ticks. Une proie parcourt
+**2,05 m** en 89 ticks, contre un seuil d'ambiguïté de **2,90 m** (⅓ de l'espacement minimum entre
+bosquets). ⇒ **la simple continuité géométrique suffit à ré-identifier** : suivre, pas apprendre.
+
+### G0-3 — 47,4 % de teintes distinctes (barre 50 %), **sans objet** puisque G0-2 passe.
+
+## Conséquence pour G1
+Le chantier devient **peu cher** : une persistance de cible (garder l'objet suivi tant qu'un candidat
+reste dans un rayon de continuité, plutôt que de recalculer à neuf), **sans réseau**. La forme
+apprise ne devient nécessaire que si la persistance géométrique échoue en vies.
+
+⚠️ `[INFÉRÉ]` « zéro apprentissage suffit » vient d'un calcul de marge, pas d'une implémentation.
+G1 doit l'implémenter et le juger EN VIES, avec contrôle d'action et KILL à magnitude.
