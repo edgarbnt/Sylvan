@@ -67,6 +67,7 @@ def main() -> None:
     ap.add_argument("--runs", nargs="+",
                     default=[f"data/replay_buffer/sp2_ref{s}" for s in (1, 2, 3)])
     ap.add_argument("--wm", default="data/checkpoints/wm_foret_v2_slot/wm_best.pt")
+    ap.add_argument("--question", choices=("plus-proche", "une-proie"), default="plus-proche")
     args = ap.parse_args()
 
     payload = torch.load(args.wm, map_location="cpu", weights_only=False)
@@ -95,11 +96,38 @@ def main() -> None:
     F = torch.tensor(F).view(-1, 3)
     print(f"{len(X)} ticks\n")
 
-    # VÉRITÉ (oracle d'ÉVAL) : un rayon touche-t-il RÉELLEMENT la proie ?
+    # ── DEUX FORMULATIONS DE LA VÉRITÉ, jugées côte à côte ────────────────────────────────────
+    # (1) « LA PLUS PROCHE » : un rayon touche-t-il la proie que `food_rel0` désigne ?
+    # (2) « UNE PROIE »      : la position LUE par le slot est-elle réellement occupée ?
+    #     Reformulation demandée le 2026-08-02 : `food_rel0` ne désigne que la proie la plus
+    #     proche, donc la question (1) compte comme « invention » des cas où l'entité voit
+    #     correctement une AUTRE proie. La question (2) n'est PAS tautologique : le slot rend un
+    #     BARYCENTRE, qui peut tomber ENTRE deux proies, à un endroit où il n'y a rien.
+    #     Vérité (2) : la position du slot coïncide-t-elle (< 0,6 m) avec l'extrémité d'un rayon
+    #     touchant DE COULEUR DE PROIE (palette servie du monde — oracle d'ÉVAL) ?
     lab, vis_cone = true_food_rays(X.view(-1, 36, 4), F)
     touches = lab.any(dim=-1)
     keep = vis_cone            # on ne juge que là où la cible est dans le champ
     y = touches[keep]
+    if args.question == "une-proie":
+        from diag_drive_corpus import FOOD_HUES, RETINA_RANGE_M, DEPTH_OFFSET, ray_angles
+        pal = torch.tensor(FOOD_HUES)
+        pal = pal / pal.norm(dim=-1, keepdim=True)
+        rr = X.view(-1, 36, 4)
+        dd, cc = rr[..., 0], rr[..., 1:]
+        ccn = cc / (cc.norm(dim=-1, keepdim=True) + 1e-6)
+        is_prey = ((ccn @ pal.T).amax(-1) > 0.98) & (dd < 0.999)
+        th = ray_angles()
+        dm = dd * RETINA_RANGE_M + DEPTH_OFFSET
+        px, pz = dm * torch.sin(th), dm * torch.cos(th)
+        with torch.no_grad():
+            slot = wm.slot_encoder.positions(X)[:, 0, :]
+        d2 = torch.sqrt((px - slot[:, 0:1]) ** 2 + (pz - slot[:, 1:2]) ** 2)
+        d2 = torch.where(is_prey, d2, torch.full_like(d2, 1e9))
+        y = (d2.amin(-1) < 0.6)[keep]
+        print("  QUESTION : « la position lue est-elle occupée par UNE proie ? »")
+    else:
+        print("  QUESTION : « un rayon touche-t-il LA proie la plus proche ? »")
     print(f"  jugés : {int(keep.sum())} ticks (cible dans le cône)")
     print(f"  dont un rayon touche VRAIMENT : {100 * float(y.float().mean()):.1f} %\n")
     if int(y.sum()) < 100 or int((~y).sum()) < 100:

@@ -154,3 +154,40 @@ alors pas la confiance, mais l'**identité d'objet** — « est-ce la même que 
 
 Le STOP vaut donc **pour la question telle que posée**. Reformuler la cible est une décision owner,
 pas une correction que je m'autorise après avoir vu le résultat.
+
+---
+
+## ⭐ VERDICT DE LA QUESTION REFORMULÉE (2026-08-02) : le contrôle pré-enregistré la RECALE — et corrige le cadrage du jour
+
+Question (2) : « la position LUE par le slot est-elle réellement occupée par UNE proie ? »
+
+| signal | taux |
+|---|---|
+| −entropie de l'attention | **86,3 %** |
+| piqué de l'attention | 85,8 % |
+| écart 1er-2e pic | 84,6 % |
+| proximité du plus proche retenu | 70,1 % |
+| **[contrôle] jauge SERVIE** | **84,6 %** |
+
+**G0-contrôle ÉCHOUE.** J'avais pré-inscrit « la jauge SERVIE reste vers 56 %, sinon il n'y a rien à
+améliorer ». Elle est à **84,6 %** contre 86,3 % pour le meilleur candidat : **1,7 point d'écart**.
+Rien à construire. (Le script n'implémentait pas cette comparaison et affichait PASS — trou du
+diagnostic, pas de la pré-inscription. La pré-inscription l'emporte.)
+
+**Et le résultat est quasi TAUTOLOGIQUE** : le slot EST un barycentre pondéré par l'attention ; une
+attention concentrée fait tomber le barycentre sur les rayons, une attention étalée le fait tomber
+entre deux groupes. Que l'entropie prédise « le barycentre est-il posé sur quelque chose » est
+presque une identité. Même piège que le premier test du matin (un réseau RGB reproduisant une règle
+RGB).
+
+### ⭐⭐ CE QUI EST VRAIMENT ACQUIS, et qui corrige le cadrage de toute la journée
+`[MESURÉ]` **85,0 %** des ticks : la position lue par le slot est réellement occupée par une proie.
+
+⇒ **L'entité n'hallucine PAS.** Le « elle invente 61 % du temps » valait pour la question
+*« voit-elle LA proie la plus proche ? »* — et cette question était la mauvaise. Elle regarde une
+VRAIE proie, simplement pas celle que l'oracle `food_rel0` désignait.
+
+⇒ Le manque n'est donc ni la confiance, ni l'honnêteté de la perception, mais l'**IDENTITÉ
+D'OBJET** : elle ne sait pas dire « c'est la même qu'au tick précédent ». Ça expliquerait aussi
+pourquoi la mémoire n'a jamais rien donné — on ne mémorise pas un objet qu'on ne sait pas
+ré-identifier. **Piste, pas conclusion : à pré-inscrire avec ses propres barres avant tout code.**
