@@ -48,7 +48,7 @@ PYTHONPATH=python SYLVAN_PLANNER_COST=survival SYLVAN_PLANNER_DRAIN=0.0005 \
   SYLVAN_PLANNER_RESTORE=0.4 SYLVAN_PLANNER_HEADING_W=0.0 \
   ./env_pytorch_3.12/bin/python -m scripts.serve_planner_command \
   --wm "$WM" --residual data/checkpoints/hexapod_v2/policy_best.pt \
-  --host 127.0.0.1 --port "$PORT" --horizon 80 --replan-every 10 \
+  --host 127.0.0.1 --port "$PORT" --horizon 80 --replan-every "${REPLAN:-10}" \
   > "/tmp/${TAG}_srv.log" 2>&1 &
 SRV=$!
 for _ in $(seq 1 90); do ss -ltn 2>/dev/null | grep -q ":$PORT" && break; sleep 1; done
