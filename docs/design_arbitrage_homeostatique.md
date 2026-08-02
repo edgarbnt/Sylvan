@@ -127,6 +127,46 @@ de sensibilité est autorisé comme MESURE rapportée, jamais comme sélection.
 Le KILL est écrit ainsi **délibérément** : l'échec du chantier précédent n'était pas un raté du
 critère visé, c'était un **transfert du problème ailleurs**. On le surveille par construction.
 
+## ⭐⭐ VERDICT G2 (2026-08-02, runs `g2_{ref,homeo}_s{1,2,3}`, 36 vies/bras) : **PARTIEL** — direction bonne, barre visée NON atteinte, aucun échec exporté
+Drapeau vérifié actif dans les 3 graines du bras homéo, absent dans les 3 graines de référence.
+
+| | REF designé | HOMEO |
+|---|---|---|
+| survie moyenne | 828 | **1206** |
+| survie médiane | 350 | 380 |
+| consommation (repas+boissons) | 115 | **176** |
+| vies pleines | 6 | **10** |
+| morts de soif | 17 | **12** |
+| morts de faim | 12 | 12 |
+| morts au danger | 1 | 2 |
+| boissons — médiane par vie /1000 pas | 0,00 | **0,99** |
+| vies sans AUCUNE boisson | 67 % | **47 %** |
+| **G-soif** (le BUT) — morts-de-soif-avec-énergie-en-stock | 53,3 % | **42,3 %** |
+
+- **G-soif ❌** : 53,3 → 42,3 %, une vraie amélioration de 11 points, mais la barre pré-inscrite
+  était **≤ 30 %**. Elle n'est pas atteinte. Pas de re-négociation du seuil (§2).
+- **G-boire ⚠️ barre AMBIGUË DE MA PART** : j'avais écrit « 0,00 → ≥ 1,17 » en mélangeant une
+  observation MÉDIANE-par-vie (0,00) et un seuil POOLÉ (1,17). En médiane par vie : 0,00 → **0,99**
+  (sous la barre). En poolé : 1,67 → 1,72 (la réf passait déjà). **Faute de pré-inscription**, à ne
+  pas refaire : fixer la STATISTIQUE en même temps que le seuil.
+- **Non-régression ✅✅** : consommation +53 %, survie moyenne +46 %, vies pleines 6→10.
+- **Aucun signal significatif** : permutation 20 000 tirages — survie p=0,151, repas p=0,146,
+  boissons p=0,296. À 36 vies/bras, rien n'est établi.
+- 🛑 **KILL — déclenché à la LETTRE, et c'est un défaut de MA pré-inscription** : « morts-danger
+  en hausse » est vrai (1 → 2), mais sur 36 vies c'est du bruit, et la consommation MONTE au lieu
+  de baisser. J'avais écrit ce KILL sans magnitude. Je le rapporte tel quel plutôt que de le
+  réinterpréter après coup ; la leçon est qu'un KILL doit porter un seuil, pas une direction.
+
+**Ce qui distingue nettement ce résultat de l'échec de juillet** : là-bas le critère visé passait
+mais l'échec était EXPORTÉ (danger 5→13, consommation 108→96). Ici c'est l'inverse — le critère
+visé échoue mais **rien n'est exporté** : morts de faim identiques (12→12), consommation en
+HAUSSE. La forme « socle designé + hystérésis conservée » n'a pas reproduit la pathologie du
+remplacement. C'est l'acquis principal.
+
+**⚠️ Ne PAS étendre l'échantillon maintenant.** Ajouter des graines après avoir vu une tendance
+favorable fabrique de la significativité (p-hacking). Si on veut trancher, il faut **pré-déclarer**
+l'extension et sa règle d'arrêt AVANT de la lancer.
+
 ## Après (et seulement après)
 Une fois la forme du coût intrinsèque validée, l'étage appris devient celui que LeCun rend
 entraînable : un **critique qui PRÉDIT `D` futur** depuis le latent. Et la littérature
