@@ -207,7 +207,11 @@ def render(name: str, m: dict) -> bool:
 
 
 def selfcheck() -> int:
-    m = {"n": 100, "coverage": 0.9, "median": 0.3, "p90": 0.8, "truth_dist": 4.0}
+    m = {
+        "n": 100, "coverage": 0.9, "median": 0.3, "p90": 0.8, "truth_dist": 4.0,
+        "bearing_err_deg": 5.0, "bearing_coherence": 0.9,
+        "range_pred": 3.9, "range_true": 4.0,
+    }
     assert render("cas BON", m)
     assert not render("cas KILL", dict(m, median=3.1))
     assert not render("cas PORTANCE FAIBLE", dict(m, coverage=0.2))

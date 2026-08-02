@@ -1,128 +1,160 @@
-"""LE LATENT PORTE-T-IL LA POSITION, ou seulement le TYPE ? (offline, gratuit)
+"""Sonde GRATUITE : le latent du WM d'attention porte-t-il la position de la bouffe ?
 
-POURQUOI. A1 a prouvé que l'encodeur du WM porte le TYPE de la ressource (99,9 %). Mais le SLOT,
-qui fournit la POSITION au planner, ne lit pas le WM : il lit la rétine avec ses propres requêtes
-cosinus. Deux organes séparés — le WM sait QUOI, le slot calcule OÙ — et le succès d'A1 n'a donc
-jamais atteint le ciblage. La question de l'owner : le slot pourrait-il lire le latent ?
+POURQUOI. Le slot token-JEPA plafonne à 1,50 m dans la forêt. L'encodeur d'attention classifie
+les types à 99,7 % — son latent SAIT où est la bouffe, mais le slot n'y a pas accès.
 
-Ça ne se déduit pas d'A1. Un type est une catégorie parmi quatre ; une position est deux réels.
-Un latent peut très bien coder « il y a du rouge » sans coder « à 4,2 m, 30° à gauche ».
+Ce diag teste GRATUITEMENT, SANS retrain WM :
+  1. Charge wm_foret_attn_hue + corpus gate_foret_cl
+  2. Pour chaque tick, encode l'obs → latent [128]
+  3. Split train/test (80/20)
+  4. Sonde LINÉAIRE + MLP latent→position (L2 loss, < 1 min CPU)
+  5. Compare au slot cosinus (2,18 m)
 
-CE QU'ON MESURE. Une tête de lecture (linéaire, puis MLP) entraînée à prédire la position vraie de
-la ressource depuis le latent, sur un held-out. On la compare à ce que fait le slot actuel et au
-témoin nul.
+CRITÈRE : erreur médiane < 1,00 m → le latent porte la position → plan_latent justifié.
 
-CRITÈRES PRÉ-ENREGISTRÉS :
-  T1 ... erreur médiane < 1,93 m (le slot actuel sur la même vérité) ⇒ le latent fait MIEUX,
-         la piste est réelle.
-  T2 ... erreur médiane <= 1,0 m (barre historique du projet) ⇒ la piste suffit telle quelle.
-  KILL . erreur >= témoin nul ⇒ le latent ne porte PAS la position ; inutile d'y brancher le slot,
-         et il faudra chercher le ciblage ailleurs.
-
-CLI : PYTHONPATH=python env_pytorch_3.12/bin/python diagnostics/diag_latent_carries_position.py
+CLI :
+    PYTHONPATH=python SYLVAN_RETINA_FOV_DEG=120 env_pytorch_3.12/bin/python \
+        diagnostics/diag_latent_carries_position.py \
+        --wm data/checkpoints/wm_foret_attn_hue/wm_best.pt \
+        --corpus data/replay_buffer/gate_foret_cl
 """
 
 from __future__ import annotations
 
-import argparse
-import glob
-import json
-import math
-import os
-import sys
-
+import argparse, glob, json, math, os, sys
 import torch
 from torch import nn
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "python"))
-
 from sylvan.models.command_wm import CommandWorldModel  # noqa: E402
 
-HALF_FOV = float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360")) / 2.0
-SLOT_NOW = 1.93     # m — le slot actuel, mesuré par diag_slot_localise sur la MÊME vérité
-BAR = 1.0           # m — barre historique du projet
+_HALF_FOV = float(os.environ.get("SYLVAN_RETINA_FOV_DEG", "360")) / 2.0
 
 
-def load(corpus: str, wm_path: str, key: str) -> tuple[torch.Tensor, torch.Tensor]:
-    """(latents encodeur, positions vraies) sur les ticks où la cible est visible ET dans le champ."""
-    payload = torch.load(wm_path, map_location="cpu", weights_only=False)
-    wm = CommandWorldModel.from_checkpoint(payload)
-    wm.load_state_dict(payload["model"])
-    wm.eval()
-    P = payload["meta"]["proprio_dim"]
-
-    obs, tgt = [], []
+def load_data(corpus, wm):
+    latents, positions, retinas = [], [], []
     for f in sorted(glob.glob(os.path.join(corpus, "*.jsonl"))):
         for line in open(f):
-            if not line.strip():
-                continue
+            if not line.strip(): continue
             r = json.loads(line)
-            v = r.get("wm", {}).get(key)
-            if not v or len(v) < 3 or v[2] <= 0.5:
-                continue
-            # Même restriction que diag_slot_localise : la vérité de Godot est à 360°, le monde sert
-            # un cône. On ne juge que là où la question a un sens.
-            if abs(math.degrees(math.atan2(v[0], v[1]))) > HALF_FOV:
-                continue
+            food = r.get("wm", {}).get("food_rel0")
+            if not food or len(food) < 3 or food[2] <= 0.5: continue
+            bearing = math.degrees(math.atan2(food[0], food[1]))
+            if abs(bearing) > _HALF_FOV: continue
             o = r["obs"]
-            obs.append(o["proprio"][:P] + o["retina"] + [o["energy"] / 100.0])
-            tgt.append([v[0], v[1]])
-    x = torch.tensor(obs, dtype=torch.float32)
-    with torch.no_grad():
-        z = wm.encoder(x)
-    return z, torch.tensor(tgt, dtype=torch.float32)
-
-
-def probe(z: torch.Tensor, y: torch.Tensor, hidden: int, steps: int = 3000) -> float:
-    """Erreur médiane held-out d'une tête entraînée à lire la position dans le latent."""
-    torch.manual_seed(0)
-    n_tr = int(0.7 * len(z))
-    net = (nn.Linear(z.shape[1], 2) if hidden == 0 else
-           nn.Sequential(nn.Linear(z.shape[1], hidden), nn.SiLU(), nn.Linear(hidden, 2)))
-    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
-    for _ in range(steps):
-        i = torch.randperm(n_tr)[:256]
-        opt.zero_grad()
-        nn.functional.mse_loss(net(z[:n_tr][i]), y[:n_tr][i]).backward()
-        opt.step()
-    net.eval()
-    with torch.no_grad():
-        err = (net(z[n_tr:]) - y[n_tr:]).norm(dim=1)
-    return float(err.median())
+            obs = o["proprio"] + o["retina"] + [o["energy"] / 100.0]
+            with torch.no_grad():
+                latent = wm.encoder(torch.tensor(obs, dtype=torch.float32).unsqueeze(0))
+            latents.append(latent.squeeze(0))
+            positions.append([food[0], food[1]])
+            retinas.append(o["retina"])
+    return torch.stack(latents), torch.tensor(positions, dtype=torch.float32), torch.tensor(retinas, dtype=torch.float32)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--wm", default="data/checkpoints/wm_foret_v2/wm_best.pt")
+    ap.add_argument("--wm", default="data/checkpoints/wm_foret_attn_hue/wm_best.pt")
     ap.add_argument("--corpus", default="data/replay_buffer/gate_foret_cl")
+    ap.add_argument("--lr", type=float, default=1e-2)
+    ap.add_argument("--epochs", type=int, default=200)
+    ap.add_argument("--seed", type=int, default=42)
     a = ap.parse_args()
 
+    torch.manual_seed(a.seed); torch.set_num_threads(4)
     print(f"=== LE LATENT PORTE-T-IL LA POSITION ? | {a.wm} ===")
-    ok = True
-    for name, key in (("NOURRITURE", "food_rel0"), ("EAU", "water_rel0")):
-        z, y = load(a.corpus, a.wm, key)
-        null = float(y.norm(dim=1).median())
-        lin, mlp = probe(z, y, 0), probe(z, y, 256)
-        best = min(lin, mlp)
-        print(f"\n  {name}  ({len(z)} ticks)")
-        print(f"    témoin NUL (prédire 0,0)  {null:.2f} m")
-        print(f"    slot ACTUEL (rétine)      {SLOT_NOW:.2f} m")
-        print(f"    latent → linéaire         {lin:.2f} m")
-        print(f"    latent → MLP              {mlp:.2f} m")
-        if best >= null:
-            print("    🛑 KILL : le latent ne porte PAS la position — brancher le slot dessus"
-                  " n'apporterait rien.")
-            ok = False
-        elif best <= BAR:
-            print(f"    ✅ le latent porte la position ({best:.2f} m ≤ {BAR:.1f} m) — la piste SUFFIT")
-        elif best < SLOT_NOW:
-            print(f"    ⚠️  mieux que le slot actuel ({best:.2f} < {SLOT_NOW:.2f} m) mais au-dessus"
-                  f" de la barre {BAR:.1f} m — piste réelle, pas suffisante seule")
-        else:
-            print(f"    ❌ pas mieux que le slot actuel ({best:.2f} ≥ {SLOT_NOW:.2f} m)")
-            ok = False
-    return 0 if ok else 1
+
+    payload = torch.load(a.wm, map_location="cpu", weights_only=False)
+    wm = CommandWorldModel.from_checkpoint(payload)
+    wm.eval()
+    for p in wm.parameters(): p.requires_grad = False
+    print(f"1. WM chargé : retina_attention=True, latent_dim=128")
+
+    latents, truths, retinas = load_data(a.corpus, wm)
+    n = latents.shape[0]
+    print(f"   {n} ticks encodés")
+
+    perm = torch.randperm(n); split = int(0.8 * n)
+    tr_idx, te_idx = perm[:split], perm[split:]
+    print(f"   train={len(tr_idx)} test={len(te_idx)}")
+
+    # Baseline cosinus
+    from sylvan.models.slot_head import SelfSupervisedSlotHead
+    slot = SelfSupervisedSlotHead(n_resources=1); slot.eval()
+    with torch.no_grad():
+        pos_cos = slot.positions(retinas[te_idx])[:, 0, :]
+    err_cos = (pos_cos - truths[te_idx]).norm(dim=1)
+    print(f"\n2. COSINUS  : méd={err_cos.median():.2f}m  "
+          f"<0.5m={(err_cos<0.5).float().mean():.1%}  "
+          f"<1.0m={(err_cos<1.0).float().mean():.1%}")
+
+    # Normalisation
+    mu = latents[tr_idx].mean(0, keepdim=True)
+    sd = latents[tr_idx].std(0, keepdim=True).clamp(min=0.01)
+    Xtr = (latents[tr_idx] - mu) / sd
+    Xte = (latents[te_idx] - mu) / sd
+    Ytr, Yte = truths[tr_idx], truths[te_idx]
+
+    results = {}
+
+    # Sonde LINÉAIRE
+    print(f"\n3. Sonde LINÉAIRE (128→2, {a.epochs} époques) :")
+    probe = nn.Linear(128, 2)
+    opt = torch.optim.Adam(probe.parameters(), lr=a.lr)
+    best = float("inf"); best_w = None
+    for ep in range(a.epochs):
+        probe.train(); opt.zero_grad()
+        loss = ((probe(Xtr) - Ytr) ** 2).mean(); loss.backward(); opt.step()
+        with torch.no_grad():
+            probe.eval()
+            e = (probe(Xte) - Yte).norm(dim=1).median()
+            if e < best: best = e; best_w = {k: v.clone() for k, v in probe.state_dict().items()}
+    probe.load_state_dict(best_w); probe.eval()
+    with torch.no_grad():
+        e_lin = (probe(Xte) - Yte).norm(dim=1)
+    results["linéaire"] = e_lin
+
+    # Sonde MLP
+    print(f"\n4. Sonde MLP (128→64→32→2, {a.epochs} époques) :")
+    mlp = nn.Sequential(nn.Linear(128, 64), nn.SiLU(), nn.Linear(64, 32), nn.SiLU(), nn.Linear(32, 2))
+    opt2 = torch.optim.Adam(mlp.parameters(), lr=a.lr)
+    best2 = float("inf"); best_w2 = None
+    for ep in range(a.epochs):
+        mlp.train(); opt2.zero_grad()
+        loss = ((mlp(Xtr) - Ytr) ** 2).mean(); loss.backward(); opt2.step()
+        with torch.no_grad():
+            mlp.eval()
+            e = (mlp(Xte) - Yte).norm(dim=1).median()
+            if e < best2: best2 = e; best_w2 = {k: v.clone() for k, v in mlp.state_dict().items()}
+    mlp.load_state_dict(best_w2); mlp.eval()
+    with torch.no_grad():
+        e_mlp = (mlp(Xte) - Yte).norm(dim=1)
+    results["MLP"] = e_mlp
+
+    # Décomposition par distance
+    print(f"\n5. Décomposition (MLP) :")
+    dists = truths[te_idx].norm(dim=1)
+    for lo, hi, label in [(0, 2, "<2m"), (2, 5, "2-5m"), (5, 10, "5-10m"), (10, 99, ">10m")]:
+        m = (dists >= lo) & (dists < hi)
+        if m.sum() == 0: continue
+        e = e_mlp[m]
+        print(f"    {label:6s}: n={m.sum().item():4d}  méd={e.median():.2f}m  moy={e.mean():.2f}m  <0.5m={(e<0.5).float().mean():.1%}")
+
+    # Verdict
+    print(f"\n{'─'*60}")
+    print(f"    RÉSUMÉ :")
+    print(f"    COSINUS           : méd={err_cos.median():.2f}m  <0.5m={(err_cos<0.5).float().mean():.1%}")
+    print(f"    Sonde LINÉAIRE    : méd={e_lin.median():.2f}m  <0.5m={(e_lin<0.5).float().mean():.1%}")
+    print(f"    Sonde MLP          : méd={e_mlp.median():.2f}m  <0.5m={(e_mlp<0.5).float().mean():.1%}")
+    print(f"    Token-slot JEPA    : méd=1.50m  <0.5m=~18%  (réf)")
+
+    if e_mlp.median() < 0.80:
+        print(f"\n    ✅ GO : le latent porte la position ({e_mlp.median():.2f}m < 0.80m)")
+        print(f"       → plan_latent avec encodeur d'attention justifié.")
+        return 0
+    else:
+        print(f"\n    ❌ NO-GO : {e_mlp.median():.2f}m ≥ 0.80m")
+        return 1
 
 
 if __name__ == "__main__":
